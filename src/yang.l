@@ -50,7 +50,7 @@ alpha [A-Za-z_]
 digit [0-9]
 identifier {alpha}({alpha}|{digit})*
 int_literal {digit}+
-world_literal ({digit}+)?\.{digit}+
+float_literal ({digit}+)?\.{digit}+
 vector_size [1-9]{digit}*
 
 %%
@@ -108,16 +108,16 @@ int{vector_size} {
   yang_lval.node = new Node(Node::TYPE_INT, std::stoi(3 + yang_text));
   return T_TYPE_LITERAL;
 }
-world {
-  yang_lval.node = new Node(Node::TYPE_WORLD, 1);
+float {
+  yang_lval.node = new Node(Node::TYPE_FLOAT, 1);
   return T_TYPE_LITERAL;
 }
-world0 {
+float0 {
   yang_lval.node = new Node(Node::TYPE_VOID);
   return T_TYPE_LITERAL;
 }
-world{vector_size} {
-  yang_lval.node = new Node(Node::TYPE_WORLD, std::stoi(5 + yang_text));
+float{vector_size} {
+  yang_lval.node = new Node(Node::TYPE_FLOAT, std::stoi(5 + yang_text));
   return T_TYPE_LITERAL;
 }
 
@@ -147,7 +147,7 @@ world{vector_size} {
 ">" {return T_GT;}
 "<" {return T_LT;}
 "$" {return T_FOLD;}
-"." {return T_WORLD_CAST;}
+"." {return T_FLOAT_CAST;}
 
   /* Assignment operators. */
 
@@ -186,9 +186,9 @@ false {
   yang_lval.node = new Node(Node::INT_LITERAL, std::stoi(yang_text));
   return T_INT_LITERAL;
 }
-{world_literal} {
-  yang_lval.node = new Node(Node::WORLD_LITERAL, std::stod(yang_text));
-  return T_WORLD_LITERAL;
+{float_literal} {
+  yang_lval.node = new Node(Node::FLOAT_LITERAL, std::stod(yang_text));
+  return T_FLOAT_LITERAL;
 }
 
   /* Default. */

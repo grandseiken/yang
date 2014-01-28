@@ -28,7 +28,7 @@ public:
     ENCLOSING_FUNCTION,
     VOID,
     INT,
-    WORLD,
+    FLOAT,
     FUNCTION,
     USER_TYPE,
   };
@@ -37,7 +37,7 @@ public:
   Type(const yang::Type& type);
 
   // A count greater than one constructs a vector type. This is allowed
-  // only if the base is type INT or WORLD. This constructor can't create
+  // only if the base is type INT or FLOAT. This constructor can't create
   // FUNCTION types. Invalid construction will result in an ERROR type.
   Type(type_base base, std::size_t count = 1);
   // Construct FUNCTION types. Passing anything other than FUNCTION will
@@ -64,14 +64,14 @@ public:
   bool is_void() const;
   // True if this is not type VOID.
   bool not_void() const;
-  // True if this is type INT or WORLD with a count of 1.
+  // True if this is type INT or FLOAT with a count of 1.
   bool primitive() const;
-  // True if this is type INT or WORLD with a count greater than 1.
+  // True if this is type INT or FLOAT with a count greater than 1.
   bool is_vector() const;
   // True if this is type INT (either primitive or vector).
   bool is_int() const;
-  // True if this is type WORLD (either primitive or vector).
-  bool is_world() const;
+  // True if this is type FLOAT (either primitive or vector).
+  bool is_float() const;
   // True if this is type FUNCTION (with any argument and return types).
   bool function() const;
   // True if this is any USER_TYPE.

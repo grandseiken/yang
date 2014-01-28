@@ -8,7 +8,7 @@ Type::Type(const yang::Type& type)
 {
   _base =
       type._base == yang::Type::INT ? INT :
-      type._base == yang::Type::WORLD ? WORLD :
+      type._base == yang::Type::FLOAT ? FLOAT :
       type._base == yang::Type::FUNCTION ? FUNCTION :
       type._base == yang::Type::USER_TYPE ? USER_TYPE :
       VOID;
@@ -26,7 +26,7 @@ Type::Type(type_base base, std::size_t count)
   , _const(false)
 {
   if (base == FUNCTION || count == 0 ||
-      (count != 1 && base != INT && base != WORLD)) {
+      (count != 1 && base != INT && base != FLOAT)) {
     _base = ERROR;
     _count = 1;
   }
@@ -103,13 +103,13 @@ bool Type::not_void() const
 bool Type::primitive() const
 {
   return is_error() ||
-      (_count == 1 && (is_int() || is_world()));
+      (_count == 1 && (is_int() || is_float()));
 }
 
 bool Type::is_vector() const
 {
   return is_error() ||
-      (_count > 1 && (is_int() || is_world()));
+      (_count > 1 && (is_int() || is_float()));
 }
 
 bool Type::is_int() const
@@ -117,9 +117,9 @@ bool Type::is_int() const
   return is_error() || _base == INT;
 }
 
-bool Type::is_world() const
+bool Type::is_float() const
 {
-  return is_error() || _base == WORLD;
+  return is_error() || _base == FLOAT;
 }
 
 bool Type::function() const
@@ -199,7 +199,7 @@ yang::Type Type::external(bool exported) const
   t._const = _const;
   t._base =
       _base == INT ? yang::Type::INT :
-      _base == WORLD ? yang::Type::WORLD :
+      _base == FLOAT ? yang::Type::FLOAT :
       _base == FUNCTION ? yang::Type::FUNCTION :
       _base == USER_TYPE ? yang::Type::USER_TYPE :
       yang::Type::VOID;
@@ -231,7 +231,7 @@ std::string Type::string_internal() const
   std::string s =
       _base == VOID ? "void" :
       _base == INT ? "int" :
-      _base == WORLD ? "world" : "error";
+      _base == FLOAT ? "float" : "error";
 
   if (_count > 1) {
     s += std::to_string(_count);

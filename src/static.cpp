@@ -177,14 +177,14 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
   // For example, the erroneous (1, 1) + (1, 1, 1) results in an ERROR type,
   // since there's no way to decide if an int2 or int3 was intended. However,
   // the erroneous 1 == 1. gives type INT, as the result would be INT whether or
-  // not the operand type was intended to be int or world.
+  // not the operand type was intended to be int or float.
   switch (node.type) {
     case Node::TYPE_VOID:
       return Type::VOID;
     case Node::TYPE_INT:
       return Type(Type::INT, node.int_value);
-    case Node::TYPE_WORLD:
-      return Type(Type::WORLD, node.int_value);
+    case Node::TYPE_FLOAT:
+      return Type(Type::FLOAT, node.int_value);
     case Node::TYPE_FUNCTION:
     {
       Type t(Type::FUNCTION, results[0]);
@@ -323,8 +323,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     }
     case Node::INT_LITERAL:
       return Type::INT;
-    case Node::WORLD_LITERAL:
-      return Type::WORLD;
+    case Node::FLOAT_LITERAL:
+      return Type::FLOAT;
 
     case Node::TERNARY:
     {
@@ -397,11 +397,11 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     case Node::SUB:
     case Node::MUL:
     case Node::DIV:
-      // Takes two integers or worlds and produces a value of the same type,
+      // Takes two integers or floats and produces a value of the same type,
       // with vectorisation.
       if (!results[0].count_binary_match(results[1]) ||
           (!(results[0].is_int() && results[1].is_int()) &&
-           !(results[0].is_world() && results[1].is_world()))) {
+           !(results[0].is_float() && results[1].is_float()))) {
         error(node, s + " applied to " + rs[0] + " and " + rs[1]);
         return Type::ERROR;
       }
@@ -414,14 +414,14 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     case Node::LE:
     case Node::GT:
     case Node::LT:
-      // Takes two integers or worlds and produces an integer, with
+      // Takes two integers or floats and produces an integer, with
       // vectorisation.
       if (!results[0].count_binary_match(results[1])) {
         error(node, s + " applied to " + rs[0] + " and " + rs[1]);
         return Type::ERROR;
       }
       else if (!(results[0].is_int() && results[1].is_int()) &&
-               !(results[0].is_world() && results[1].is_world())) {
+               !(results[0].is_float() && results[1].is_float())) {
         error(node, s + " applied to " + rs[0] + " and " + rs[1]);
       }
       return Type(Type::INT, std::max(results[0].count(), results[1].count()));
@@ -445,7 +445,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     case Node::FOLD_MUL:
     case Node::FOLD_DIV:
       if (!results[0].is_vector() ||
-          !(results[0].is_int() || results[0].is_world())) {
+          !(results[0].is_int() || results[0].is_float())) {
         error(node, s + " applied to " + rs[0]);
         return Type::ERROR;
       }
@@ -458,7 +458,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     case Node::FOLD_GT:
     case Node::FOLD_LT:
       if (!results[0].is_vector() ||
-          !(results[0].is_int() || results[0].is_world())) {
+          !(results[0].is_int() || results[0].is_float())) {
         error(node, s + " applied to " + rs[0]);
       }
       return Type::INT;
@@ -471,7 +471,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       return Type(Type::INT, results[0].count());
 
     case Node::ARITHMETIC_NEGATION:
-      if (!(results[0].is_int() || results[0].is_world())) {
+      if (!(results[0].is_int() || results[0].is_float())) {
         error(node, s + " applied to " + rs[0]);
         return Type::ERROR;
       }
@@ -553,16 +553,16 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     }
 
     case Node::INT_CAST:
-      if (!results[0].is_world()) {
+      if (!results[0].is_float()) {
         error(node, s + " applied to " + rs[0]);
       }
       return Type(Type::INT, results[0].count());
 
-    case Node::WORLD_CAST:
+    case Node::FLOAT_CAST:
       if (!results[0].is_int()) {
         error(node, s + " applied to " + rs[0]);
       }
-      return Type(Type::WORLD, results[0].count());
+      return Type(Type::FLOAT, results[0].count());
 
     case Node::VECTOR_CONSTRUCT:
     {

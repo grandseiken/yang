@@ -22,7 +22,7 @@ std::string Type::string() const
   else {
     s += _base == VOID ? "void" :
          _base == INT ? "int" :
-         _base == WORLD ? "world" : "error";
+         _base == FLOAT ? "float" : "error";
 
     if (_count > 1) {
       s += std::to_string(_count);
@@ -51,9 +51,9 @@ bool Type::is_int() const
   return _base == INT && _count == 1;
 }
 
-bool Type::is_world() const
+bool Type::is_float() const
 {
-  return _base == WORLD && _count == 1;
+  return _base == FLOAT && _count == 1;
 }
 
 bool Type::is_int_vector() const
@@ -61,9 +61,9 @@ bool Type::is_int_vector() const
   return _base == INT && _count > 1;
 }
 
-bool Type::is_world_vector() const
+bool Type::is_float_vector() const
 {
-  return _base == WORLD && _count > 1;
+  return _base == FLOAT && _count > 1;
 }
 
 std::size_t Type::get_vector_size() const

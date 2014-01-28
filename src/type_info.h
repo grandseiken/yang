@@ -147,7 +147,7 @@ struct TypeInfo<yang::float_t> {
   yang::Type operator()(const Context&) const
   {
     yang::Type t;
-    t._base = yang::Type::WORLD;
+    t._base = yang::Type::FLOAT;
     return t;
   }
 };
@@ -168,7 +168,7 @@ struct TypeInfo<fvec_t<N>> {
   yang::Type operator()(const Context&) const
   {
     yang::Type t;
-    t._base = yang::Type::WORLD;
+    t._base = yang::Type::FLOAT;
     t._count = N;
     return t;
   }

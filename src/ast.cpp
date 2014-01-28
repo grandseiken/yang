@@ -11,7 +11,7 @@ Node::Node(node_type type)
   , text(yang_text ? yang_text : "")
   , type(type)
   , int_value(0)
-  , world_value(0)
+  , float_value(0)
 {
   orphans.insert(this);
 }
@@ -42,7 +42,7 @@ Node::Node(node_type type, yang::int_t value)
   , text(yang_text ? yang_text : "")
   , type(type)
   , int_value(value)
-  , world_value(0)
+  , float_value(0)
 {
   orphans.insert(this);
 }
@@ -52,7 +52,7 @@ Node::Node(node_type type, yang::float_t value)
   , text(yang_text ? yang_text : "")
   , type(type)
   , int_value(0)
-  , world_value(value)
+  , float_value(value)
 {
   orphans.insert(this);
 }
@@ -62,7 +62,7 @@ Node::Node(node_type type, const std::string& value)
   , text(yang_text ? yang_text : "")
   , type(type)
   , int_value(0)
-  , world_value(0)
+  , float_value(0)
   , string_value(value)
 {
   orphans.insert(this);
@@ -127,7 +127,7 @@ std::string Node::op_string(node_type t)
       t == Node::BITWISE_NEGATION ? "~" :
       t == Node::ARITHMETIC_NEGATION ? "-" :
       t == Node::INT_CAST ? "[]" :
-      t == Node::WORLD_CAST ? "." :
+      t == Node::FLOAT_CAST ? "." :
       t == Node::VECTOR_CONSTRUCT ? "()" :
       t == Node::VECTOR_INDEX ? "[]" :
       "unknown operator";

@@ -484,9 +484,9 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     case Node::TYPE_INT:
       return node.int_value > 1 ?
           vector_type(int_type(), node.int_value) : int_type();
-    case Node::TYPE_WORLD:
+    case Node::TYPE_FLOAT:
       return node.int_value > 1 ?
-          vector_type(world_type(), node.int_value) : world_type();
+          vector_type(float_type(), node.int_value) : float_type();
     case Node::TYPE_FUNCTION:
     {
       // When passing functions as arguments and returning them from functions,
@@ -637,8 +637,8 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
 
     case Node::INT_LITERAL:
       return constant_int(node.int_value);
-    case Node::WORLD_LITERAL:
-      return constant_world(node.world_value);
+    case Node::FLOAT_LITERAL:
+      return constant_float(node.float_value);
 
     case Node::TERNARY:
     {
@@ -770,7 +770,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     case Node::ARITHMETIC_NEGATION:
     {
       llvm::Constant* cmp = types[0]->isIntOrIntVectorTy() ?
-          constant_int(0) : constant_world(0);
+          constant_int(0) : constant_float(0);
       if (types[0]->isVectorTy()) {
         cmp = constant_vector(cmp, types[0]->getVectorNumElements());
       }
@@ -817,14 +817,14 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
 
     case Node::INT_CAST:
       return w2i(results[0]);
-    case Node::WORLD_CAST:
+    case Node::FLOAT_CAST:
       return i2w(results[0]);
 
     case Node::VECTOR_CONSTRUCT:
     {
       llvm::Value* v = constant_vector(
           types[0]->isIntegerTy() ?
-              constant_int(0) : constant_world(0), results.size());
+              constant_int(0) : constant_float(0), results.size());
       for (std::size_t i = 0; i < results.size(); ++i) {
         v = b.CreateInsertElement(v, results[i], constant_int(i), "vec");
       }
@@ -834,7 +834,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     {
       // Indexing out-of-bounds produces constant zero.
       llvm::Constant* zero = types[0]->isIntOrIntVectorTy() ?
-          constant_int(0) : constant_world(0);
+          constant_int(0) : constant_float(0);
       auto ge = b.CreateICmpSGE(results[1], constant_int(0), "idx");
       auto lt = b.CreateICmpSLT(
           results[1], constant_int(types[0]->getVectorNumElements()), "idx");
@@ -983,7 +983,7 @@ llvm::Function* IrGenerator::create_trampoline_function(
     std::size_t size = (*it)->getVectorNumElements();
     llvm::Value* v = (*it)->isIntOrIntVectorTy() ?
         constant_vector(constant_int(0), size) :
-        constant_vector(constant_world(0), size);
+        constant_vector(constant_float(0), size);
 
     for (std::size_t j = 0; j < size; ++j) {
       jt->setName("a" + std::to_string(i) + "_" + std::to_string(j));
@@ -1086,7 +1086,7 @@ llvm::Function* IrGenerator::create_reverse_trampoline_function(
   }
   else {
     llvm::Value* v = constant_vector(
-        return_type->isIntOrIntVectorTy() ? constant_int(0) : constant_world(0),
+        return_type->isIntOrIntVectorTy() ? constant_int(0) : constant_float(0),
         return_args);
     for (std::size_t i = 0; i < return_args; ++i) {
       v = b.CreateInsertElement(
@@ -1159,7 +1159,7 @@ llvm::Type* IrGenerator::int_type() const
       _builder.getContext(), 8 * sizeof(Node::int_value));
 }
 
-llvm::Type* IrGenerator::world_type() const
+llvm::Type* IrGenerator::float_type() const
 {
   return llvm::Type::getDoubleTy(_builder.getContext());
 }
@@ -1174,7 +1174,7 @@ llvm::Constant* IrGenerator::constant_int(yang::int_t value) const
   return llvm::ConstantInt::getSigned(int_type(), value);
 }
 
-llvm::Constant* IrGenerator::constant_world(yang::float_t value) const
+llvm::Constant* IrGenerator::constant_float(yang::float_t value) const
 {
   return llvm::ConstantFP::get(_builder.getContext(), llvm::APFloat(value));
 }
@@ -1211,7 +1211,7 @@ llvm::Value* IrGenerator::b2i(llvm::Value* v)
 
 llvm::Value* IrGenerator::i2w(llvm::Value* v)
 {
-  llvm::Type* type = world_type();
+  llvm::Type* type = float_type();
   if (v->getType()->isVectorTy()) {
     type = vector_type(type, v->getType()->getVectorNumElements());
   }
@@ -1222,9 +1222,9 @@ llvm::Value* IrGenerator::w2i(llvm::Value* v)
 {
   auto& b = _builder;
 
-  llvm::Type* back_type = world_type();
+  llvm::Type* back_type = float_type();
   llvm::Type* type = int_type();
-  llvm::Constant* zero = constant_world(0);
+  llvm::Constant* zero = constant_float(0);
   if (v->getType()->isVectorTy()) {
     std::size_t n = v->getType()->getVectorNumElements();
     back_type = vector_type(back_type, n);
@@ -1261,10 +1261,10 @@ llvm::Value* IrGenerator::pow(llvm::Value* v, llvm::Value* u)
   auto& b = _builder;
   llvm::Type* t = v->getType();
 
-  std::vector<llvm::Type*> args{world_type(), world_type()};
+  std::vector<llvm::Type*> args{float_type(), float_type()};
   auto pow_ptr = get_native_function(
       "pow", (yang::void_fp)&::pow,
-      llvm::FunctionType::get(world_type(), args, false));
+      llvm::FunctionType::get(float_type(), args, false));
 
   if (t->isIntOrIntVectorTy()) {
     v = i2w(v);
@@ -1278,7 +1278,7 @@ llvm::Value* IrGenerator::pow(llvm::Value* v, llvm::Value* u)
   }
 
   llvm::Value* result =
-      constant_vector(constant_world(0), t->getVectorNumElements());
+      constant_vector(constant_float(0), t->getVectorNumElements());
   for (std::size_t i = 0; i < t->getVectorNumElements(); ++i) {
     llvm::Value* x = b.CreateExtractElement(v, constant_int(i), "pow");
     llvm::Value* y = b.CreateExtractElement(u, constant_int(i), "pow");
@@ -1372,7 +1372,7 @@ llvm::Value* IrGenerator::binary(
     }
   }
   else {
-    v = constant_vector(constant_world(0), size);
+    v = constant_vector(constant_float(0), size);
   }
 
   for (std::size_t i = 0; i < size; ++i) {
@@ -1448,14 +1448,14 @@ llvm::Type* IrGenerator::get_llvm_type(
   if (t.is_int()) {
     return int_type();
   }
-  if (t.is_world()) {
-    return world_type();
+  if (t.is_float()) {
+    return float_type();
   }
   if (t.is_int_vector()) {
     return vector_type(int_type(), t.get_vector_size());
   }
-  if (t.is_world_vector()) {
-    return vector_type(world_type(), t.get_vector_size());
+  if (t.is_float_vector()) {
+    return vector_type(float_type(), t.get_vector_size());
   }
   if (t.is_user_type()) {
     return void_ptr_type();
@@ -1486,7 +1486,7 @@ yang::Type IrGenerator::get_yang_type(llvm::Type* t) const
     r._base = yang::Type::INT;
   }
   else if (t->isFPOrFPVectorTy()) {
-    r._base = yang::Type::WORLD;
+    r._base = yang::Type::FLOAT;
   }
   r._count = t->isVectorTy() ? t->getVectorNumElements() : 1;
   return r;

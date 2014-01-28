@@ -85,11 +85,11 @@ private:
   llvm::Type* void_ptr_type() const;
   llvm::Type* void_type() const;
   llvm::Type* int_type() const;
-  llvm::Type* world_type() const;
+  llvm::Type* float_type() const;
   llvm::Type* vector_type(llvm::Type* type, std::size_t n) const;
 
   llvm::Constant* constant_int(yang::int_t value) const;
-  llvm::Constant* constant_world(yang::float_t value) const;
+  llvm::Constant* constant_float(yang::float_t value) const;
   llvm::Constant* constant_vector(
       const std::vector<llvm::Constant*>& values) const;
   llvm::Constant* constant_vector(llvm::Constant* value, std::size_t n) const;

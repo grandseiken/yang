@@ -35,8 +35,8 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
     case Node::TYPE_INT:
       return "int" +
           (node.int_value > 1 ? std::to_string(node.int_value) : "") + type_id;
-    case Node::TYPE_WORLD:
-      return "world" +
+    case Node::TYPE_FLOAT:
+      return "float" +
           (node.int_value > 1 ? std::to_string(node.int_value) : "") + type_id;
     case Node::TYPE_FUNCTION:
     {
@@ -107,8 +107,8 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
       return node.string_value;
     case Node::INT_LITERAL:
       return std::to_string(node.int_value);
-    case Node::WORLD_LITERAL:
-      return std::to_string(node.world_value);
+    case Node::FLOAT_LITERAL:
+      return std::to_string(node.float_value);
 
     case Node::TERNARY:
       return "(" + results[0] + " ? " + results[1] + " : " + results[2] + ")";
@@ -180,7 +180,7 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
 
     case Node::INT_CAST:
       return "[" + results[0] + "]";
-    case Node::WORLD_CAST:
+    case Node::FLOAT_CAST:
       return "(" + results[0] + ".)";
 
     case Node::VECTOR_CONSTRUCT:

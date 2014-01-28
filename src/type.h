@@ -27,12 +27,12 @@ public:
   // Singular types.
   bool is_void() const;
   bool is_int() const;
-  bool is_world() const;
+  bool is_float() const;
 
-  // Int and world vector types.
+  // Int and float vector types.
   bool is_vector() const;
   bool is_int_vector() const;
-  bool is_world_vector() const;
+  bool is_float_vector() const;
   std::size_t get_vector_size() const;
 
   // Function types.
@@ -64,7 +64,7 @@ private:
   enum type_base {
     VOID,
     INT,
-    WORLD,
+    FLOAT,
     FUNCTION,
     USER_TYPE,
   };

@@ -17,7 +17,7 @@ struct Node {
     // Types.
     TYPE_VOID,
     TYPE_INT,
-    TYPE_WORLD,
+    TYPE_FLOAT,
     TYPE_FUNCTION,
 
     // Top-level elements.
@@ -40,7 +40,7 @@ struct Node {
     // Expressions.
     IDENTIFIER,
     INT_LITERAL,
-    WORLD_LITERAL,
+    FLOAT_LITERAL,
     TERNARY,
     CALL,
     LOGICAL_OR,
@@ -88,7 +88,7 @@ struct Node {
     ASSIGN_VAR,
     ASSIGN_CONST,
     INT_CAST,
-    WORLD_CAST,
+    FLOAT_CAST,
     VECTOR_CONSTRUCT,
     VECTOR_INDEX,
   };
@@ -119,7 +119,7 @@ struct Node {
 
   // Literal values.
   yang::int_t int_value;
-  yang::float_t world_value;
+  yang::float_t float_value;
   std::string string_value;
 
   // Get the human-readable text of an operator.

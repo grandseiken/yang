@@ -60,7 +60,7 @@ typedef yang::internal::Node Node;
 %token T_GT
 %token T_LT
 %token T_FOLD
-%token T_WORLD_CAST
+%token T_FLOAT_CAST
 %token T_ASSIGN
 %token T_ASSIGN_LOGICAL_OR
 %token T_ASSIGN_LOGICAL_AND
@@ -79,7 +79,7 @@ typedef yang::internal::Node Node;
 %token T_DECREMENT
 %token <node> T_IDENTIFIER
 %token <node> T_INT_LITERAL
-%token <node> T_WORLD_LITERAL
+%token <node> T_FLOAT_LITERAL
 %token <node> T_TYPE_LITERAL
 
   /* Operator precedence. */
@@ -100,7 +100,7 @@ typedef yang::internal::Node Node;
 %left T_MUL T_DIV T_MOD
 %right P_UNARY_L
 %right T_POW
-%left T_WORLD_CAST '[' '('
+%left T_FLOAT_CAST '[' '('
 
   /* Types. */
 
@@ -298,7 +298,7 @@ expr
 {$$ = $1;}
   | T_INT_LITERAL
 {$$ = $1;}
-  | T_WORLD_LITERAL
+  | T_FLOAT_LITERAL
 {$$ = $1;}
 
   /* Binary operators. */
@@ -457,8 +457,8 @@ expr
 
   | '[' expr ']'
 {$$ = new Node(Node::INT_CAST, $2);}
-  | expr T_WORLD_CAST
-{$$ = new Node(Node::WORLD_CAST, $1);}
+  | expr T_FLOAT_CAST
+{$$ = new Node(Node::FLOAT_CAST, $1);}
   | '(' expr ',' expr_list ')'
 {$$ = $4;
  $$->add_front($2);
