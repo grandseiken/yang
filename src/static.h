@@ -16,7 +16,7 @@ class StaticChecker : public ConstAstWalker<Type> {
 public:
 
   typedef std::unordered_map<std::string, yang::Type> symbol_frame;
-  StaticChecker(const symbol_frame& context_functions,
+  StaticChecker(const symbol_frame& context_table,
                 symbol_frame& functions_output, symbol_frame& globals_output);
   ~StaticChecker();
 
@@ -36,6 +36,9 @@ private:
   void enter_function(const Type& return_type);
   const Type& current_return_type() const;
   bool inside_function() const;
+
+  bool is_type_expression(const Node& node) const;
+  bool inside_type_context() const;
 
   bool use_function_immediate_assign_hack(const Node& node) const;
   void add_symbol_checking_collision(
@@ -58,13 +61,14 @@ private:
     EXPORT_GLOBAL,
     LOOP_BODY,
     RETURN_TYPE,
+    TYPE_EXPR_CONTEXT,
   };
   friend std::hash<metadata>;
 
   SymbolTable<metadata, Type> _metadata;
   SymbolTable<std::string, Type> _symbol_table;
 
-  const symbol_frame& _context_functions;
+  const symbol_frame& _context_table;
   symbol_frame& _functions_output;
   symbol_frame& _globals_output;
 

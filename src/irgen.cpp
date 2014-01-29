@@ -232,6 +232,10 @@ void IrGenerator::preorder(const Node& node)
       break;
     }
 
+    case Node::FUNCTION:
+      _metadata.push();
+      _metadata.add(TYPE_EXPR_CONTEXT, nullptr);
+      break;
     case Node::GLOBAL_ASSIGN:
     case Node::ASSIGN_VAR:
     case Node::ASSIGN_CONST:
@@ -296,6 +300,7 @@ void IrGenerator::infix(const Node& node, const result_list& results)
   switch (node.type) {
     case Node::FUNCTION:
     {
+      _metadata.pop();
       create_function(node, (llvm::FunctionType*)results[0].type);
       break;
     }
@@ -489,6 +494,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
           vector_type(float_type(), node.int_value) : float_type();
     case Node::TYPE_FUNCTION:
     {
+      type_function:
       // When passing functions as arguments and returning them from functions,
       // we need to take use the pointer-type, as the bare type is not
       // equivalent (and is not first-class in LLVM).
@@ -548,6 +554,9 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       }
       return parent;
     }
+    case Node::NAMED_EXPRESSION:
+      return results[0];
+      break;
 
     case Node::BLOCK:
     {
@@ -614,6 +623,10 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     }
 
     case Node::IDENTIFIER:
+      // In type context, we just want to return a user type.
+      if (_metadata.has(TYPE_EXPR_CONTEXT)) {
+        return void_ptr_type();
+      }
       // Load the local variable, if it's there.
       if (_symbol_table.has(node.string_value) &&
           _symbol_table.index(node.string_value)) {
@@ -659,6 +672,10 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     }
     case Node::CALL:
     {
+      if (_metadata.has(TYPE_EXPR_CONTEXT)) {
+        goto type_function;
+      }
+
       std::vector<llvm::Value*> args;
       args.push_back(_metadata[GLOBAL_DATA_PTR]);
       for (std::size_t i = 1; i < results.size(); ++i) {

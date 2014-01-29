@@ -59,6 +59,7 @@ private:
   template<typename>
   friend struct internal::TypeInfo;
   friend struct internal::GenericNativeFunction;
+  friend class Program;
   Type();
 
   enum type_base {

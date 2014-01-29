@@ -142,6 +142,7 @@ private:
     LOGICAL_OP_RHS_BLOCK,
 
     MERGE_BLOCK,
+    TYPE_EXPR_CONTEXT,
   };
 
   // Create block and insert in the metadata table.

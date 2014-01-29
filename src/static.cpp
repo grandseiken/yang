@@ -18,12 +18,12 @@ namespace yang {
 namespace internal {
 
 StaticChecker::StaticChecker(
-    const symbol_frame& context_functions,
+    const symbol_frame& context_table,
     symbol_frame& functions_output, symbol_frame& globals_output)
   : _errors(false)
   , _metadata(Type::VOID)
   , _symbol_table(Type::VOID)
-  , _context_functions(context_functions)
+  , _context_table(context_table)
   , _functions_output(functions_output)
   , _globals_output(globals_output)
 {
@@ -70,6 +70,10 @@ void StaticChecker::preorder(const Node& node)
         _immediate_left_assign = node.string_value;
       }
       break;
+    case Node::FUNCTION:
+      _metadata.push();
+      _metadata.add(TYPE_EXPR_CONTEXT, Type::VOID);
+      break;
     case Node::BLOCK:
     case Node::IF_STMT:
       _symbol_table.push();
@@ -92,6 +96,8 @@ void StaticChecker::infix(const Node& node, const result_list& results)
   switch (node.type) {
     case Node::FUNCTION:
     {
+      // Erase type context.
+      _metadata.pop();
       // Only append a suffix if this isn't a top-level function. Make use of
       // the recursive name hack, if it's there.
       if (inside_function()) {
@@ -103,6 +109,7 @@ void StaticChecker::infix(const Node& node, const result_list& results)
       // values inside the body.
       t.set_const(true);
       if (!t.function()) {
+        // Grammar no longer allows this, but leave it in for future-proofing.
         error(node, "function defined with non-function type " + t.string());
         t = Type::ERROR;
       }
@@ -138,13 +145,15 @@ void StaticChecker::infix(const Node& node, const result_list& results)
             ++elem;
             continue;
           }
-          const std::string& name = ptr->string_value;
-          if (!name.length()) {
-            error(node, "function with unnamed argument");
+          if (ptr->type != Node::NAMED_EXPRESSION) {
+            // Should this really be an error? It could also be the way to avoid
+            // "unused argument" warnings, once they exist.
+            error(*ptr, "unnamed argument in function definition");
             continue;
           }
+          const std::string& name = ptr->string_value;
           if (arg_names.find(name) != arg_names.end()) {
-            error(node, "duplicate argument name `" + name + "`");
+            error(*ptr, "duplicate argument name `" + name + "`");
           }
           _symbol_table.add(name, t.elements(elem));
           arg_names.insert(name);
@@ -167,8 +176,36 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
 {
   std::string s = "`" + Node::op_string(node.type) + "`";
   std::vector<std::string> rs;
-  for (Type t : results) {
+  bool child_error = false;
+  for (const Type& t : results) {
     rs.push_back(t.string());
+    if (t.is_error()) {
+      child_error = true;
+    }
+  }
+
+  // IDENTIFIER, NAMED_EXPRESSION, and CALL are currently the only things that
+  // make sense in both contexts.
+  bool valid_everywhere =
+      node.type == Node::IDENTIFIER || node.type == Node::NAMED_EXPRESSION ||
+      node.type == Node::CALL;
+  if (inside_type_context() && !is_type_expression(node) && !valid_everywhere) {
+    // Attempt to avoid tons of error messages by looking at the children. It
+    // still produces an error message for each unexpected leaf-node in the
+    // tree: we could probably handle this in a more clever way (like adding
+    // an EXPR_CONTEXT metadata that overrides TYPE_EXPR_CONTEXT) preorder
+    // on the first mismatched node.
+    if (!child_error) {
+      error(node, "type expected in this context");
+    }
+    return Type::ERROR;
+  }
+  if (!inside_type_context() && is_type_expression(node)) {
+    // Likewise.
+    if (!child_error) {
+      error(node, "type unexpected in this context");
+    }
+    return Type::ERROR;
   }
 
   // To make the error messages useful, the general idea here is to fall back to
@@ -187,14 +224,19 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       return Type(Type::FLOAT, node.int_value);
     case Node::TYPE_FUNCTION:
     {
+      type_function:
+      bool err = results[0].is_error();
       Type t(Type::FUNCTION, results[0]);
       for (std::size_t i = 1; i < results.size(); ++i) {
         if (!results[i].not_void()) {
           error(node, "function type with `void` argument type");
         }
+        if (results[i].is_error()) {
+          err = true;
+        }
         t.add_element(results[i]);
       }
-      return t;
+      return err ? Type::ERROR : t;
     }
 
     case Node::PROGRAM:
@@ -238,6 +280,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       // a function type.
       return results[0].function() ? results[0] : Type::ERROR;
     }
+    case Node::NAMED_EXPRESSION:
+      return results[0];
 
     case Node::BLOCK:
     {
@@ -302,10 +346,28 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
 
     case Node::IDENTIFIER:
     {
+      auto context_it = _context_table.find(node.string_value);
+      // Look up user types in a type context.
+      if (inside_type_context()) {
+        if (context_it == _context_table.end()) {
+          error(node, "undeclared type `" + node.string_value + "`");
+          return Type::ERROR;
+        }
+        if (!context_it->second.is_user_type()) {
+          error(node, "`" + node.string_value + "` is not a type");
+          return Type::ERROR;
+        }
+        return Type(Type::USER_TYPE, node.string_value);
+      }
+
       // Check Context if symbol isn't present in the Program table.
-      auto context_it = _context_functions.find(node.string_value);
       bool has = _symbol_table.has(node.string_value);
-      if (!has && context_it != _context_functions.end()) {
+      if (!has && context_it != _context_table.end()) {
+        if (context_it->second.is_user_type()) {
+          error(node, "type `" + node.string_value +
+                      "` unexpected in this context");
+          return Type::ERROR;
+        }
         return context_it->second;
       }
 
@@ -356,6 +418,17 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       return results[1].unify(results[2]);
     }
     case Node::CALL:
+      // The grammar doesn't distinguish function-type construction from
+      // call-expressions in all contexts, so we need to check here.
+      if (inside_type_context()) {
+        goto type_function;
+      }
+
+      for (std::size_t i = 1; i < results.size(); ++i) {
+        if (node.children[i]->type == Node::NAMED_EXPRESSION) {
+          error(*node.children[i], s + ": named argument in function call");
+        }
+      }
       if (!results[0].function()) {
         error(node, s + " applied to " + rs[0]);
         return Type::ERROR;
@@ -367,8 +440,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       else {
         for (std::size_t i = 1; i < results.size(); ++i) {
           if (!results[0].element_is(i, results[i])) {
-            error(node, rs[0] + " called with " + rs[i] +
-                        " in position " + std::to_string(i - 1));
+            error(*node.children[i], rs[0] + " called with " + rs[i] +
+                                     " in position " + std::to_string(i - 1));
           }
         }
       }
@@ -480,7 +553,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     case Node::ASSIGN:
     {
       if (!_symbol_table.has(node.string_value)) {
-        if (_context_functions.count(node.string_value)) {
+        if (_context_table.count(node.string_value)) {
           error(node, "cannot assign to context function `" +
                       node.string_value + "`");
         }
@@ -570,8 +643,13 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       std::string ts;
       bool unify_error = false;
       for (std::size_t i = 0; i < results.size(); ++i) {
+        if (node.children[i]->type == Node::NAMED_EXPRESSION) {
+          error(*node.children[i],
+                s + ": named argument in vector construction");
+        }
         if (!results[i].primitive()) {
-          error(node, s + " element with non-primitive type " + rs[i]);
+          error(*node.children[i], s + ": element with non-primitive type " +
+                                   rs[i] + " in vector construction");
           t = Type::ERROR;
         }
         if (i) {
@@ -615,6 +693,18 @@ const Type& StaticChecker::current_return_type() const
 bool StaticChecker::inside_function() const
 {
   return _metadata.has(RETURN_TYPE);
+}
+
+bool StaticChecker::is_type_expression(const Node& node) const
+{
+  return
+      node.type == Node::TYPE_VOID || node.type == Node::TYPE_INT ||
+      node.type == Node::TYPE_FLOAT || node.type == Node::TYPE_FUNCTION;
+}
+
+bool StaticChecker::inside_type_context() const
+{
+  return _metadata.has(TYPE_EXPR_CONTEXT);
 }
 
 bool StaticChecker::use_function_immediate_assign_hack(const Node& node) const

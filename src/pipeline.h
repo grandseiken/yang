@@ -78,7 +78,7 @@ private:
       std::string, internal::GenericNativeFunction> function_map;
 
   friend class Program;
-  const type_map& get_types();
+  const type_map& get_types() const;
   const function_map& get_functions() const;
 
   type_map _types;

@@ -104,8 +104,6 @@ typedef yang::internal::Node Node;
 
   /* Types. */
 
-%type <node> type
-%type <node> type_list
 %type <node> opt_identifier
 %type <node> program
 %type <node> elem_list
@@ -114,82 +112,15 @@ typedef yang::internal::Node Node;
 %type <node> stmt_list
 %type <node> stmt
 %type <node> opt_expr
+%type <node> expr_named
 %type <node> expr_list
+%type <node> expr_functional
 %type <node> expr
 %start program
 
 %%
 
   /* Language grammar. */
-
-  /* TODO: Precedence for fold doesn't work quite right. For example,
-
-         $(1, 1) == (1, 1)&&
-
-     parses, but doesn't with bitwise & on the right.
-
-     Behaviour depends on relative precedence of infix operator with fold
-     operator. Doubtful that this is fixable, but maybe some clever alternate
-     syntax is possible? */
-
-  /* TODO: with current syntax, a bare-statement function call requires a double
-     semi-colon terminator, as in
-
-         void() 0;;
-
-     (one to terminate the statement, and one to terminate the function-call
-     expression). It makes perfect sense, and is unavoidable if we want to allow
-     bare statements (e.g. consider
-
-         var i = int() return 0;();
-
-     ...but it's somewhat ugly). Should investigate making terminating semicolon
-     optional in a statement consisting entirely of an assignment of a function-
-     -expression. It does go against the design goal of having no special-cases,
-     though. */
-
-  /* TODO: relatedly, we should be able to add a rule for type parentheses like
-
-         '(' type ')'
-
-     but there are parses (which would be disambiguated by forced function-body
-     blocks) like
-
-         var f = int (int) return 0;
-
-     which could otherwise be interpreted as either a function taking and
-     returning int, or two nested function-expressions with invalid non-function
-     types.
-     For this example the precedence should not matter too much, as it's wrong
-     either way (no name for the argument), but in case we allow unnamed
-     arguments in future, the type-construction should have higher precedence.
-
-     Unfortunately, precedence rules don't seem to fix the conflict.
-     I'm not sure why.
-
-     Requiring function-types in function expressions would also work, but isn't
-     ideal. */
-
-type
-  : T_TYPE_LITERAL
-{$$ = $1;}
-  | type '(' ')'
-{$$ = new Node(Node::TYPE_FUNCTION, $1);}
-  | type '(' type_list ')'
-{$$ = $3;
- $$->type = Node::TYPE_FUNCTION;
- $$->add_front($1);}
-  ;
-
-type_list
-  : type opt_identifier
-{$$ = new Node(Node::ERROR, $1);
- $1->string_value = $2->string_value;}
-  | type_list ',' type opt_identifier
-{$$ = $1;
- $$->add($3);
- $3->string_value = $4->string_value;}
-  ;
 
 opt_identifier
   : T_IDENTIFIER
@@ -272,30 +203,50 @@ opt_expr
 {$$ = new Node(Node::INT_LITERAL, 1);}
   ;
 
+expr_named
+  : expr opt_identifier
+{$$ = $1;
+ if (!$2->string_value.empty()) {
+   $$ = new Node(Node::NAMED_EXPRESSION, $$);
+   $$->string_value = $2->string_value;
+ }}
+  ;
+
 expr_list
-  : expr
+  : expr_named
 {$$ = new Node(Node::ERROR, $1);}
-  | expr_list ',' expr
+  | expr_list ',' expr opt_identifier
 {$$ = $1;
  $$->add($3);}
   ;
 
-expr
-  /* Miscellaeneous. */
-  : '(' expr ')'
-{$$ = $2;}
-  | type stmt
-{$$ = new Node(Node::FUNCTION, $1, $2);}
-  | expr T_TERNARY_L expr T_TERNARY_R expr
-{$$ = new Node(Node::TERNARY, $1, $3, $5);}
-  | expr '(' ')'
-{$$ = new Node(Node::CALL, $1);}
+expr_functional
+  : expr '(' ')'
+{$$ = new Node(Node::ERROR, $1);}
   | expr '(' expr_list ')'
 {$$ = $3;
- $$->add_front($1);
- $$->type = Node::CALL;}
+ $$->add_front($1);}
+  ;
+
+expr
+  /* Complicated type-expression interaction. */
+  : T_TYPE_LITERAL
+{$$ = $1;}
   | T_IDENTIFIER
 {$$ = $1;}
+  | expr_functional '{' stmt_list '}'
+{$1->type = Node::TYPE_FUNCTION;
+ $3->type = Node::BLOCK;
+ $$ = new Node(Node::FUNCTION, $1, $3);}
+  | expr_functional
+{$$ = $1;
+ $$->type = Node::CALL;}
+
+  /* Miscellaeneous. */
+  | '(' expr ')'
+{$$ = $2;}
+  | expr T_TERNARY_L expr T_TERNARY_R expr
+{$$ = new Node(Node::TERNARY, $1, $3, $5);}
   | T_INT_LITERAL
 {$$ = $1;}
   | T_FLOAT_LITERAL
@@ -344,44 +295,44 @@ expr
 
   /* Fold operators. */
 
-  | T_FOLD expr T_LOGICAL_OR
-{$$ = new Node(Node::FOLD_LOGICAL_OR, $2);}
-  | T_FOLD expr T_LOGICAL_AND
-{$$ = new Node(Node::FOLD_LOGICAL_AND, $2);}
-  | T_FOLD expr T_BITWISE_OR
-{$$ = new Node(Node::FOLD_BITWISE_OR, $2);}
-  | T_FOLD expr T_BITWISE_AND
-{$$ = new Node(Node::FOLD_BITWISE_AND, $2);}
-  | T_FOLD expr T_BITWISE_XOR
-{$$ = new Node(Node::FOLD_BITWISE_XOR, $2);}
-  | T_FOLD expr T_BITWISE_LSHIFT
-{$$ = new Node(Node::FOLD_BITWISE_LSHIFT, $2);}
-  | T_FOLD expr T_BITWISE_RSHIFT
-{$$ = new Node(Node::FOLD_BITWISE_RSHIFT, $2);}
-  | T_FOLD expr T_POW
-{$$ = new Node(Node::FOLD_POW, $2);}
-  | T_FOLD expr T_MOD
-{$$ = new Node(Node::FOLD_MOD, $2);}
-  | T_FOLD expr T_ADD
-{$$ = new Node(Node::FOLD_ADD, $2);}
-  | T_FOLD expr T_SUB
-{$$ = new Node(Node::FOLD_SUB, $2);}
-  | T_FOLD expr T_MUL
-{$$ = new Node(Node::FOLD_MUL, $2);}
-  | T_FOLD expr T_DIV
-{$$ = new Node(Node::FOLD_DIV, $2);}
-  | T_FOLD expr T_EQ
-{$$ = new Node(Node::FOLD_EQ, $2);}
-  | T_FOLD expr T_NE
-{$$ = new Node(Node::FOLD_NE, $2);}
-  | T_FOLD expr T_GE
-{$$ = new Node(Node::FOLD_GE, $2);}
-  | T_FOLD expr T_LE
-{$$ = new Node(Node::FOLD_LE, $2);}
-  | T_FOLD expr T_GT
-{$$ = new Node(Node::FOLD_GT, $2);}
-  | T_FOLD expr T_LT
-{$$ = new Node(Node::FOLD_LT, $2);}
+  | T_FOLD T_LOGICAL_OR expr
+{$$ = new Node(Node::FOLD_LOGICAL_OR, $3);}
+  | T_FOLD T_LOGICAL_AND expr
+{$$ = new Node(Node::FOLD_LOGICAL_AND, $3);}
+  | T_FOLD T_BITWISE_OR expr
+{$$ = new Node(Node::FOLD_BITWISE_OR, $3);}
+  | T_FOLD T_BITWISE_AND expr
+{$$ = new Node(Node::FOLD_BITWISE_AND, $3);}
+  | T_FOLD T_BITWISE_XOR expr
+{$$ = new Node(Node::FOLD_BITWISE_XOR, $3);}
+  | T_FOLD T_BITWISE_LSHIFT expr
+{$$ = new Node(Node::FOLD_BITWISE_LSHIFT, $3);}
+  | T_FOLD T_BITWISE_RSHIFT expr
+{$$ = new Node(Node::FOLD_BITWISE_RSHIFT, $3);}
+  | T_FOLD T_POW expr
+{$$ = new Node(Node::FOLD_POW, $3);}
+  | T_FOLD T_MOD expr
+{$$ = new Node(Node::FOLD_MOD, $3);}
+  | T_FOLD T_ADD expr
+{$$ = new Node(Node::FOLD_ADD, $3);}
+  | T_FOLD T_SUB expr
+{$$ = new Node(Node::FOLD_SUB, $3);}
+  | T_FOLD T_MUL expr
+{$$ = new Node(Node::FOLD_MUL, $3);}
+  | T_FOLD T_DIV expr
+{$$ = new Node(Node::FOLD_DIV, $3);}
+  | T_FOLD T_EQ expr
+{$$ = new Node(Node::FOLD_EQ, $3);}
+  | T_FOLD T_NE expr
+{$$ = new Node(Node::FOLD_NE, $3);}
+  | T_FOLD T_GE expr
+{$$ = new Node(Node::FOLD_GE, $3);}
+  | T_FOLD T_LE expr
+{$$ = new Node(Node::FOLD_LE, $3);}
+  | T_FOLD T_GT expr
+{$$ = new Node(Node::FOLD_GT, $3);}
+  | T_FOLD T_LT expr
+{$$ = new Node(Node::FOLD_LT, $3);}
 
   /* Prefix unary operators. */
 
@@ -459,7 +410,7 @@ expr
 {$$ = new Node(Node::INT_CAST, $2);}
   | expr T_FLOAT_CAST
 {$$ = new Node(Node::FLOAT_CAST, $1);}
-  | '(' expr ',' expr_list ')'
+  | '(' expr_named ',' expr_list ')'
 {$$ = $4;
  $$->add_front($2);
  $$->type = Node::VECTOR_CONSTRUCT;}

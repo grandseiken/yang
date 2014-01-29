@@ -25,6 +25,7 @@ struct Node {
     GLOBAL,
     GLOBAL_ASSIGN,
     FUNCTION,
+    NAMED_EXPRESSION,
 
     // Statements.
     BLOCK,
