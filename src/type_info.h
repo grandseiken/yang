@@ -363,6 +363,10 @@ struct Functions<R, List<Args...>> {
 
 // Standard bind function requires explicit placeholders for all elements, which
 // makes it unusable in the variadic setting.
+// TODO: the recursive approach we're using for argument passing means we wrap a
+// function in as many lambdas (and std::functions) as there are arguments,
+// before finally invoking it. It's probably possible to construct a tuple of
+// the arguments and bind everything at once.
 template<typename, typename, typename>
 struct BindFirstHelperInternal {};
 template<typename R, typename... Args, typename... Brgs>

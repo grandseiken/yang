@@ -147,7 +147,6 @@ float{vector_size} {
 ">" {return T_GT;}
 "<" {return T_LT;}
 "$" {return T_FOLD;}
-"." {return T_FLOAT_CAST;}
 
   /* Assignment operators. */
 

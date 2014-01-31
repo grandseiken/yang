@@ -66,6 +66,8 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
           node.string_value + " = " + results[0];
     case Node::FUNCTION:
       return results[0] + "\n" + results[1];
+    case Node::NAMED_EXPRESSION:
+      return results[0] + " " + node.string_value;
 
     case Node::BLOCK:
     {
@@ -103,6 +105,8 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
     case Node::CONTINUE_STMT:
       return indent() + "continue;\n";
 
+    case Node::MEMBER_SELECTION:
+      return "(" + results[0] + "." + results[1] + ")";
     case Node::IDENTIFIER:
       return node.string_value;
     case Node::INT_LITERAL:

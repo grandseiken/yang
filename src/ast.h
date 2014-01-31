@@ -39,6 +39,7 @@ struct Node {
     CONTINUE_STMT,
 
     // Expressions.
+    MEMBER_SELECTION,
     IDENTIFIER,
     INT_LITERAL,
     FLOAT_LITERAL,
@@ -122,6 +123,11 @@ struct Node {
   yang::int_t int_value;
   yang::float_t float_value;
   std::string string_value;
+
+  // We almost always don't need to pass any type information between the type
+  // checker and the IR generator, except when dealing with user types (whose
+  // names are erased in LLVM). We can store them here when necessary.
+  mutable std::string user_type_name;
 
   // Get the human-readable text of an operator.
   static std::string op_string(node_type t);

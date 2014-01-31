@@ -60,7 +60,6 @@ typedef yang::internal::Node Node;
 %token T_GT
 %token T_LT
 %token T_FOLD
-%token T_FLOAT_CAST
 %token T_ASSIGN
 %token T_ASSIGN_LOGICAL_OR
 %token T_ASSIGN_LOGICAL_AND
@@ -100,11 +99,18 @@ typedef yang::internal::Node Node;
 %left T_MUL T_DIV T_MOD
 %right P_UNARY_L
 %right T_POW
-%left T_FLOAT_CAST '[' '('
+%left '.' '[' '('
+  /* Precedence of '.' for member selection.
+     TODO: the grammar allows any expression on the right-hand side of a member
+     select, but due to precedence it's not really possible to ever use it,
+     except in assignment: `v.x = 0` is interpreted as `v.(x = 0)`. This
+     seems like a bug and we should probably only allow identifiers. Allows
+     us to simplify AST and remove some error-checking (no need for identifier
+     node). */
+%left T_IDENTIFIER
 
   /* Types. */
 
-%type <node> opt_identifier
 %type <node> program
 %type <node> elem_list
 %type <node> elem
@@ -112,6 +118,7 @@ typedef yang::internal::Node Node;
 %type <node> stmt_list
 %type <node> stmt
 %type <node> opt_expr
+%type <node> opt_identifier
 %type <node> expr_named
 %type <node> expr_list
 %type <node> expr_functional
@@ -121,13 +128,6 @@ typedef yang::internal::Node Node;
 %%
 
   /* Language grammar. */
-
-opt_identifier
-  : T_IDENTIFIER
-{$$ = $1;}
-  |
-{$$ = new Node(Node::IDENTIFIER, "");}
-  ;
 
 program
   : elem_list T_EOF
@@ -203,6 +203,13 @@ opt_expr
 {$$ = new Node(Node::INT_LITERAL, 1);}
   ;
 
+opt_identifier
+  : T_IDENTIFIER
+{$$ = $1;}
+  |
+{$$ = new Node(Node::IDENTIFIER, "");}
+  ;
+
 expr_named
   : expr opt_identifier
 {$$ = $1;
@@ -245,6 +252,8 @@ expr
   /* Miscellaeneous. */
   | '(' expr ')'
 {$$ = $2;}
+  | expr '.' expr
+{$$ = new Node(Node::MEMBER_SELECTION, $1, $3);}
   | expr T_TERNARY_L expr T_TERNARY_R expr
 {$$ = new Node(Node::TERNARY, $1, $3, $5);}
   | T_INT_LITERAL
@@ -408,7 +417,7 @@ expr
 
   | '[' expr ']'
 {$$ = new Node(Node::INT_CAST, $2);}
-  | expr T_FLOAT_CAST
+  | expr '.'
 {$$ = new Node(Node::FLOAT_CAST, $1);}
   | '(' expr_named ',' expr_list ')'
 {$$ = $4;

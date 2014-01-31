@@ -22,16 +22,6 @@ int yang_parse();
 
 namespace yang {
 
-const Context::type_map& Context::get_types() const
-{
-  return _types;
-}
-
-const Context::function_map& Context::get_functions() const
-{
-  return _functions;
-}
-
 Program::Program(const Context& context, const std::string& name,
                  const std::string& contents, bool optimise)
   : _context(context)
@@ -60,19 +50,7 @@ Program::Program(const Context& context, const std::string& name,
     return;
   }
 
-  // Set up the symbol table for the built-in context.
-  symbol_table context_table;
-  for (const auto& pair : context.get_functions()) {
-    context_table.emplace(pair.first, pair.second.type);
-  }
-  for (const auto& pair : context.get_types()) {
-    Type type;
-    type._base = Type::USER_TYPE;
-    type._user_type_name = pair.first;
-    context_table.emplace(pair.first, type);
-  }
-
-  internal::StaticChecker checker(context_table, _functions, _globals);
+  internal::StaticChecker checker(_context, _functions, _globals);
   checker.walk(*output);
   if (checker.errors()) {
     _functions.clear();
@@ -155,8 +133,7 @@ void Program::generate_ir()
   // functions.
   _engine->DisableSymbolSearching();
 
-  internal::IrGenerator irgen(*_module, *_engine, _globals,
-                              _context.get_functions());
+  internal::IrGenerator irgen(*_module, *_engine, _globals, _context);
   irgen.walk(*_ast);
   irgen.emit_global_functions();
 

@@ -2,6 +2,7 @@
 #include <fstream>
 
 #include "log.h"
+#include "context.h"
 #include "pipeline.h"
 
 template<typename T>
@@ -44,6 +45,13 @@ int main(int argc, char** argv)
   };
   context.register_type<Test>("Test");
   context.register_function("get_test", std::function<Test*()>(get_test));
+  auto test_foo = [&](Test* t, yang::int_t a)
+  {
+    log_info("in Test:foo, self is ", t, ", a is ", a);
+    return 2 * a;
+  };
+  context.register_member_function<Test>(
+      "foo", std::function<yang::int_t(Test*, yang::int_t)>(test_foo));
 
   yang::Program program(context, path, contents);
   if (!program.success()) {
@@ -65,5 +73,6 @@ int main(int argc, char** argv)
   yang::Instance instance(program);
   auto t = instance.get_global<Test*>("test");
   log_info("global test is ", t);
+  log_info("f(): ", instance.call<yang::int_t>("f", 11));
   return 0;
 }

@@ -2,6 +2,7 @@
 
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/Module.h>
+#include "context.h"
 #include "log.h"
 
 namespace llvm {
@@ -44,8 +45,7 @@ IrGeneratorUnion::operator llvm::Value*() const
 }
 
 IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
-                         symbol_frame& globals,
-                         const context_frame& context_functions)
+                         symbol_frame& globals, const Context& context)
   : _module(module)
   , _engine(engine)
   , _builder(module.getContext())
@@ -98,9 +98,16 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   //   type must have the opposite kind of trampoline generated.
   //
   // These are the most general trampoline-generation rules.
-  for (const auto& pair : context_functions) {
+  for (const auto& pair : context.get_functions()) {
     _context_functions[pair.first] =
         create_reverse_trampoline_function(pair.first, pair.second);
+  }
+  for (const auto& pair : context.get_types()) {
+    for (const auto& qair : pair.second.members) {
+      std::string s = pair.first + "::" + qair.first;
+      _context_functions[s] =
+          create_reverse_trampoline_function(s, qair.second);
+    }
   }
 }
 
@@ -353,6 +360,11 @@ void IrGenerator::infix(const Node& node, const result_list& results)
       b.SetInsertPoint(cond_block);
       break;
     }
+
+    case Node::MEMBER_SELECTION:
+      _metadata.push();
+      _metadata.add(MEMBER_SELECTION_CONTEXT, nullptr);
+      break;
 
     case Node::TERNARY:
     {
@@ -622,8 +634,19 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       return v;
     }
 
+    case Node::MEMBER_SELECTION:
+      _metadata.pop();
+      // Just return the object directly; the call site has special logic to
+      // deal with member functions.
+      return results[0];
+
     case Node::IDENTIFIER:
-      // In type context, we just want to return a user type.
+      // In member-selection context, do nothing.
+      if (_metadata.has(MEMBER_SELECTION_CONTEXT)) {
+        return (llvm::Value*)nullptr;
+      }
+
+      // In type-context, we just want to return a user type.
       if (_metadata.has(TYPE_EXPR_CONTEXT)) {
         return void_ptr_type();
       }
@@ -675,9 +698,21 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       if (_metadata.has(TYPE_EXPR_CONTEXT)) {
         goto type_function;
       }
-
       std::vector<llvm::Value*> args;
       args.push_back(_metadata[GLOBAL_DATA_PTR]);
+
+      // Special odd logic for member-function calling.
+      if (node.children[0]->type == Node::MEMBER_SELECTION) {
+        std::string s = node.children[0]->user_type_name +
+            "::" + node.children[0]->children[1]->string_value;
+
+        args.push_back(results[0]);
+        for (std::size_t i = 1; i < results.size(); ++i) {
+          args.push_back(results[i]);
+        }
+        return b.CreateCall(_context_functions[s], args);
+      }
+
       for (std::size_t i = 1; i < results.size(); ++i) {
         args.push_back(results[i]);
       }

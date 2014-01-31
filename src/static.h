@@ -10,13 +10,15 @@
 #include "walker.h"
 
 namespace yang {
+class Context;
+
 namespace internal {
 
 class StaticChecker : public ConstAstWalker<Type> {
 public:
 
   typedef std::unordered_map<std::string, yang::Type> symbol_frame;
-  StaticChecker(const symbol_frame& context_table,
+  StaticChecker(const yang::Context& context,
                 symbol_frame& functions_output, symbol_frame& globals_output);
   ~StaticChecker();
 
@@ -62,13 +64,15 @@ private:
     LOOP_BODY,
     RETURN_TYPE,
     TYPE_EXPR_CONTEXT,
+    CALLEE_CONTEXT,
+    MEMBER_SELECTION_CONTEXT,
   };
   friend std::hash<metadata>;
 
   SymbolTable<metadata, Type> _metadata;
   SymbolTable<std::string, Type> _symbol_table;
 
-  const symbol_frame& _context_table;
+  const yang::Context& _context;
   symbol_frame& _functions_output;
   symbol_frame& _globals_output;
 

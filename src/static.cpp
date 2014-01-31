@@ -2,6 +2,7 @@
 
 #include <unordered_set>
 #include <vector>
+#include "context.h"
 #include "log.h"
 
 namespace std {
@@ -18,12 +19,12 @@ namespace yang {
 namespace internal {
 
 StaticChecker::StaticChecker(
-    const symbol_frame& context_table,
+    const yang::Context& context,
     symbol_frame& functions_output, symbol_frame& globals_output)
   : _errors(false)
   , _metadata(Type::VOID)
   , _symbol_table(Type::VOID)
-  , _context_table(context_table)
+  , _context(context)
   , _functions_output(functions_output)
   , _globals_output(globals_output)
 {
@@ -85,6 +86,10 @@ void StaticChecker::preorder(const Node& node)
       // Insert a marker into the symbol table that break and continue
       // statements can check for.
       _metadata.add(LOOP_BODY, Type::VOID);
+      break;
+    case Node::CALL:
+      _metadata.push();
+      _metadata.add(CALLEE_CONTEXT, Type::VOID);
       break;
 
     default: {}
@@ -168,6 +173,16 @@ void StaticChecker::infix(const Node& node, const result_list& results)
       break;
     }
 
+    case Node::MEMBER_SELECTION:
+      _metadata.push();
+      _metadata.add(MEMBER_SELECTION_CONTEXT, Type::VOID);
+      break;
+    case Node::CALL:
+      if (results.size() == 1) {
+        _metadata.pop();
+      }
+      break;
+
     default: {}
   }
 }
@@ -192,9 +207,10 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
   if (inside_type_context() && !is_type_expression(node) && !valid_everywhere) {
     // Attempt to avoid tons of error messages by looking at the children. It
     // still produces an error message for each unexpected leaf-node in the
-    // tree: we could probably handle this in a more clever way (like adding
-    // an EXPR_CONTEXT metadata that overrides TYPE_EXPR_CONTEXT) preorder
-    // on the first mismatched node.
+    // tree.
+    // TODO: we could probably handle this in a more clever way (like adding an
+    // EXPR_CONTEXT metadata that overrides TYPE_EXPR_CONTEXT) preorder on the
+    // first mismatched node.
     if (!child_error) {
       error(node, "type expected in this context");
     }
@@ -344,17 +360,60 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
       return Type::VOID;
 
+    case Node::MEMBER_SELECTION:
+    {
+      _metadata.pop();
+      // Without something like closures (to store the user object), it's not
+      // possible to do much with a member function access other than call it
+      // immediately.
+      // TODO: we really want to have some closures and fix that. There's a
+      // whole bunch of weird special-casing.
+      if (!results[0].user_type()) {
+        error(node, "member function access on " + rs[0]);
+        return Type::ERROR;
+      }
+      if (node.children[1]->type != Node::IDENTIFIER) {
+        error(*node.children[1], "member accessed via expression");
+        return Type::ERROR;
+      }
+      if (!_metadata.has(CALLEE_CONTEXT)) {
+        error(node, "member function access outside of call context");
+        return Type::ERROR;
+      }
+      if (results[0].is_error()) {
+        return Type::ERROR;
+      }
+
+      node.user_type_name = results[0].user_type_name();
+      auto it = _context.get_types().find(node.user_type_name);
+      auto jt = it->second.members.find(node.children[1]->string_value);
+      if (jt == it->second.members.end()) {
+        error(node, "undeclared member function `" + node.user_type_name +
+                     "::" + node.children[1]->string_value + "`");
+        return Type::ERROR;
+      }
+      // Omit the first argument (self). Unfortunately, the indirection here
+      // makes errors when calling the returned function somewhat vague.
+      const yang::Type& t = jt->second.type;
+      Type member = Type(Type::FUNCTION, t.get_function_return_type());
+      for (std::size_t i = 1; i < t.get_function_num_args(); ++i) {
+        member.add_element(t.get_function_arg_type(i));
+      }
+      return member;
+    }
+
     case Node::IDENTIFIER:
     {
-      auto context_it = _context_table.find(node.string_value);
-      // Look up user types in a type context.
+      // In member-selection context, don't do any checking.
+      if (_metadata.has(MEMBER_SELECTION_CONTEXT)) {
+        return Type::ERROR;
+      }
+
+      // Look up user types in a type-context.
       if (inside_type_context()) {
-        if (context_it == _context_table.end()) {
+        auto context_it = _context.get_types().find(node.string_value);
+        if (context_it == _context.get_types().end()) {
           error(node, "undeclared type `" + node.string_value + "`");
-          return Type::ERROR;
-        }
-        if (!context_it->second.is_user_type()) {
-          error(node, "`" + node.string_value + "` is not a type");
           return Type::ERROR;
         }
         return Type(Type::USER_TYPE, node.string_value);
@@ -362,13 +421,9 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
 
       // Check Context if symbol isn't present in the Program table.
       bool has = _symbol_table.has(node.string_value);
-      if (!has && context_it != _context_table.end()) {
-        if (context_it->second.is_user_type()) {
-          error(node, "type `" + node.string_value +
-                      "` unexpected in this context");
-          return Type::ERROR;
-        }
-        return context_it->second;
+      auto context_it = _context.get_functions().find(node.string_value);
+      if (!has && context_it != _context.get_functions().end()) {
+        return context_it->second.type;
       }
 
       // Regular program symbols.
@@ -553,8 +608,12 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     case Node::ASSIGN:
     {
       if (!_symbol_table.has(node.string_value)) {
-        if (_context_table.count(node.string_value)) {
+        if (_context.get_functions().count(node.string_value)) {
           error(node, "cannot assign to context function `" +
+                      node.string_value + "`");
+        }
+        else if (_context.get_types().count(node.string_value)) {
+          error(node, "cannot assign to context type `" +
                       node.string_value + "`");
         }
         else {

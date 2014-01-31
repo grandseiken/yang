@@ -22,6 +22,8 @@ namespace llvm {
 }
 
 namespace yang {
+class Context;
+
 namespace internal {
 
 struct IrGeneratorUnion {
@@ -42,7 +44,7 @@ public:
   typedef std::unordered_map<std::string, GenericNativeFunction> context_frame;
 
   IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
-              symbol_frame& globals, const context_frame& context_functions);
+              symbol_frame& globals, const Context& context);
   ~IrGenerator();
 
   // Emit functions for allocating, freeing, reading and writing to instances
@@ -128,6 +130,9 @@ private:
     GLOBAL_INIT_FUNCTION,
     FUNCTION,
 
+    TYPE_EXPR_CONTEXT,
+    MEMBER_SELECTION_CONTEXT,
+
     IF_THEN_BLOCK,
     IF_ELSE_BLOCK,
 
@@ -142,7 +147,6 @@ private:
     LOGICAL_OP_RHS_BLOCK,
 
     MERGE_BLOCK,
-    TYPE_EXPR_CONTEXT,
   };
 
   // Create block and insert in the metadata table.
@@ -155,7 +159,7 @@ private:
   // Type of the global structure.
   llvm::Type* _global_data;
 
-  // Data for the global context (a backup symbol table frame, essentially).
+  // Global context: backup symbol table for reverse trampoline functions.
   std::unordered_map<std::string, llvm::Value*> _context_functions;
 
   // Generated trampolines (map from type of function to corresponding
