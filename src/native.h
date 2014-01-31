@@ -36,10 +36,6 @@ public:
 struct GenericNativeFunction {
   GenericNativeFunction()
     : ptr(nullptr) {}
-  ~GenericNativeFunction() {}
-
-  GenericNativeFunction(GenericNativeFunction&&) = default;
-  GenericNativeFunction& operator=(GenericNativeFunction&&) = default;
 
   yang::Type type;
   std::unique_ptr<NativeFunction<void>> ptr;
@@ -86,10 +82,6 @@ protected:
 struct GenericNativeType {
   GenericNativeType()
     : obj(nullptr) {}
-  ~GenericNativeType() {}
-
-  GenericNativeType(GenericNativeType&&) = default;
-  GenericNativeType& operator=(GenericNativeType&&) = default;
 
   std::unique_ptr<NativeType<void>> obj;
   std::unordered_map<std::string, GenericNativeFunction> members;

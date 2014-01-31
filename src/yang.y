@@ -85,7 +85,12 @@ typedef yang::internal::Node Node;
 
 %nonassoc T_IF
 %nonassoc T_ELSE
-%right T_TERNARY_L T_TERNARY_R T_ASSIGN
+%right T_TERNARY_L T_TERNARY_R 
+    T_ASSIGN T_ASSIGN_LOGICAL_OR T_ASSIGN_LOGICAL_AND
+    T_ASSIGN_BITWISE_OR T_ASSIGN_BITWISE_AND T_ASSIGN_BITWISE_XOR
+    T_ASSIGN_BITWISE_LSHIFT T_ASSIGN_BITWISE_RSHIFT
+    T_ASSIGN_POW T_ASSIGN_MOD
+    T_ASSIGN_ADD T_ASSIGN_SUB T_ASSIGN_MUL T_ASSIGN_DIV
 %left T_FOLD
 %left T_LOGICAL_OR
 %left T_LOGICAL_AND
@@ -100,13 +105,7 @@ typedef yang::internal::Node Node;
 %right P_UNARY_L
 %right T_POW
 %left '.' '[' '('
-  /* Precedence of '.' for member selection.
-     TODO: the grammar allows any expression on the right-hand side of a member
-     select, but due to precedence it's not really possible to ever use it,
-     except in assignment: `v.x = 0` is interpreted as `v.(x = 0)`. This
-     seems like a bug and we should probably only allow identifiers. Allows
-     us to simplify AST and remove some error-checking (no need for identifier
-     node). */
+  /* Precedence of '.' for member selection. */
 %left T_IDENTIFIER
 
   /* Types. */
@@ -146,9 +145,8 @@ elem
   : opt_export T_GLOBAL stmt
 {$$ = new Node(Node::GLOBAL, $3);
  $$->int_value = $1->int_value;}
-  | opt_export T_IDENTIFIER T_ASSIGN expr ';'
-{$$ = new Node(Node::GLOBAL_ASSIGN, $4);
- $$->string_value = $2->string_value;
+  | opt_export expr T_ASSIGN expr ';'
+{$$ = new Node(Node::GLOBAL_ASSIGN, $2, $4);
  $$->int_value = $1->int_value;}
   | ';'
 {$$ = new Node(Node::EMPTY_STMT);}
@@ -222,7 +220,7 @@ expr_named
 expr_list
   : expr_named
 {$$ = new Node(Node::ERROR, $1);}
-  | expr_list ',' expr opt_identifier
+  | expr_list ',' expr_named
 {$$ = $1;
  $$->add($3);}
   ;
@@ -252,8 +250,9 @@ expr
   /* Miscellaeneous. */
   | '(' expr ')'
 {$$ = $2;}
-  | expr '.' expr
-{$$ = new Node(Node::MEMBER_SELECTION, $1, $3);}
+  | expr '.' T_IDENTIFIER
+{$$ = new Node(Node::MEMBER_SELECTION, $1);
+ $$->string_value = $3->string_value;}
   | expr T_TERNARY_L expr T_TERNARY_R expr
 {$$ = new Node(Node::TERNARY, $1, $3, $5);}
   | T_INT_LITERAL
@@ -356,54 +355,51 @@ expr
 
   /* Assignment operators. */
 
-  | T_VAR T_IDENTIFIER T_ASSIGN expr
-{$$ = new Node(Node::ASSIGN_VAR, $4);
- $$->string_value = $2->string_value;}
-  | T_CONST T_IDENTIFIER T_ASSIGN expr
-{$$ = new Node(Node::ASSIGN_CONST, $4);
- $$->string_value = $2->string_value;}
-  | T_IDENTIFIER T_ASSIGN expr
-{$$ = new Node(Node::ASSIGN, $3);
- $$->string_value = $1->string_value;}
-  | T_IDENTIFIER T_ASSIGN_LOGICAL_OR expr %prec T_ASSIGN
-{$$ = new Node(Node::ASSIGN, new Node(Node::LOGICAL_OR, $1, $3));
- $$->string_value = $1->string_value;}
-  | T_IDENTIFIER T_ASSIGN_LOGICAL_AND expr %prec T_ASSIGN
-{$$ = new Node(Node::ASSIGN, new Node(Node::LOGICAL_AND, $1, $3));
- $$->string_value = $1->string_value;}
-  | T_IDENTIFIER T_ASSIGN_BITWISE_OR expr %prec T_ASSIGN
-{$$ = new Node(Node::ASSIGN, new Node(Node::BITWISE_OR, $1, $3));
- $$->string_value = $1->string_value;}
-  | T_IDENTIFIER T_ASSIGN_BITWISE_AND expr %prec T_ASSIGN
-{$$ = new Node(Node::ASSIGN, new Node(Node::BITWISE_AND, $1, $3));
- $$->string_value = $1->string_value;}
-  | T_IDENTIFIER T_ASSIGN_BITWISE_XOR expr %prec T_ASSIGN
-{$$ = new Node(Node::ASSIGN, new Node(Node::BITWISE_XOR, $1, $3));
- $$->string_value = $1->string_value;}
-  | T_IDENTIFIER T_ASSIGN_BITWISE_LSHIFT expr %prec T_ASSIGN
-{$$ = new Node(Node::ASSIGN, new Node(Node::BITWISE_LSHIFT, $1, $3));
- $$->string_value = $1->string_value;}
-  | T_IDENTIFIER T_ASSIGN_BITWISE_RSHIFT expr %prec T_ASSIGN
-{$$ = new Node(Node::ASSIGN, new Node(Node::BITWISE_RSHIFT, $1, $3));
- $$->string_value = $1->string_value;}
-  | T_IDENTIFIER T_ASSIGN_POW expr %prec T_ASSIGN
-{$$ = new Node(Node::ASSIGN, new Node(Node::POW, $1, $3));
- $$->string_value = $1->string_value;}
-  | T_IDENTIFIER T_ASSIGN_MOD expr %prec T_ASSIGN
-{$$ = new Node(Node::ASSIGN, new Node(Node::MOD, $1, $3));
- $$->string_value = $1->string_value;}
-  | T_IDENTIFIER T_ASSIGN_ADD expr %prec T_ASSIGN
-{$$ = new Node(Node::ASSIGN, new Node(Node::ADD, $1, $3));
- $$->string_value = $1->string_value;}
-  | T_IDENTIFIER T_ASSIGN_SUB expr %prec T_ASSIGN
-{$$ = new Node(Node::ASSIGN, new Node(Node::SUB, $1, $3));
- $$->string_value = $1->string_value;}
-  | T_IDENTIFIER T_ASSIGN_MUL expr %prec T_ASSIGN
-{$$ = new Node(Node::ASSIGN, new Node(Node::MUL, $1, $3));
- $$->string_value = $1->string_value;}
-  | T_IDENTIFIER T_ASSIGN_DIV expr %prec T_ASSIGN
-{$$ = new Node(Node::ASSIGN, new Node(Node::DIV, $1, $3));
- $$->string_value = $1->string_value;}
+  | T_VAR expr T_ASSIGN expr
+{$$ = new Node(Node::ASSIGN_VAR, $2, $4);}
+  | T_CONST expr T_ASSIGN expr
+{$$ = new Node(Node::ASSIGN_CONST, $2, $4);}
+  | expr T_ASSIGN expr
+{$$ = new Node(Node::ASSIGN, $1, $3);}
+  | expr T_ASSIGN_LOGICAL_OR expr
+{$$ = new Node(Node::ASSIGN, $1,
+               new Node(Node::LOGICAL_OR, $1, $3));}
+  | expr T_ASSIGN_LOGICAL_AND expr
+{$$ = new Node(Node::ASSIGN, $1->clone(),
+               new Node(Node::LOGICAL_AND, $1, $3));}
+  | expr T_ASSIGN_BITWISE_OR expr
+{$$ = new Node(Node::ASSIGN, $1->clone(),
+               new Node(Node::BITWISE_OR, $1, $3));}
+  | expr T_ASSIGN_BITWISE_AND expr
+{$$ = new Node(Node::ASSIGN, $1->clone(),
+               new Node(Node::BITWISE_AND, $1, $3));}
+  | expr T_ASSIGN_BITWISE_XOR expr
+{$$ = new Node(Node::ASSIGN, $1->clone(),
+               new Node(Node::BITWISE_XOR, $1, $3));}
+  | expr T_ASSIGN_BITWISE_LSHIFT expr
+{$$ = new Node(Node::ASSIGN, $1->clone(),
+               new Node(Node::BITWISE_LSHIFT, $1, $3));}
+  | expr T_ASSIGN_BITWISE_RSHIFT expr
+{$$ = new Node(Node::ASSIGN, $1->clone(),
+               new Node(Node::BITWISE_RSHIFT, $1, $3));}
+  | expr T_ASSIGN_POW expr
+{$$ = new Node(Node::ASSIGN, $1->clone(),
+               new Node(Node::POW, $1, $3));}
+  | expr T_ASSIGN_MOD expr
+{$$ = new Node(Node::ASSIGN, $1->clone(),
+               new Node(Node::MOD, $1, $3));}
+  | expr T_ASSIGN_ADD expr
+{$$ = new Node(Node::ASSIGN, $1->clone(),
+               new Node(Node::ADD, $1, $3));}
+  | expr T_ASSIGN_SUB expr
+{$$ = new Node(Node::ASSIGN, $1->clone(),
+               new Node(Node::SUB, $1, $3));}
+  | expr T_ASSIGN_MUL expr
+{$$ = new Node(Node::ASSIGN, $1->clone(),
+               new Node(Node::MUL, $1, $3));}
+  | expr T_ASSIGN_DIV expr
+{$$ = new Node(Node::ASSIGN, $1->clone(),
+               new Node(Node::DIV, $1, $3));}
   | T_INCREMENT T_IDENTIFIER %prec P_UNARY_L
 {$$ = new Node(Node::ASSIGN,
                new Node(Node::ADD, $2, new Node(Node::INT_LITERAL, 1)));

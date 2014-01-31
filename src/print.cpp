@@ -63,7 +63,7 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
           std::string("global\n") + results[0];
     case Node::GLOBAL_ASSIGN:
       return (node.int_value ? "export " : "") +
-          node.string_value + " = " + results[0];
+          results[0] + " = " + results[1];
     case Node::FUNCTION:
       return results[0] + "\n" + results[1];
     case Node::NAMED_EXPRESSION:
@@ -106,7 +106,7 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
       return indent() + "continue;\n";
 
     case Node::MEMBER_SELECTION:
-      return "(" + results[0] + "." + results[1] + ")";
+      return "(" + results[0] + "." + node.string_value + ")";
     case Node::IDENTIFIER:
       return node.string_value;
     case Node::INT_LITERAL:
@@ -176,11 +176,11 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
       return "(" + s + results[0] + ")";
 
     case Node::ASSIGN:
-      return "(" + node.string_value + " = " + results[0] + ")";
+      return "(" + results[0] + " = " + results[1] + ")";
     case Node::ASSIGN_VAR:
-      return "(var " + node.string_value + " = " + results[0] + ")";
+      return "(var " + results[0] + " = " + results[1] + ")";
     case Node::ASSIGN_CONST:
-      return "(const " + node.string_value + " = " + results[0] + ")";
+      return "(const " + results[0] + " = " + results[1] + ")";
 
     case Node::INT_CAST:
       return "[" + results[0] + "]";

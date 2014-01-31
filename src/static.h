@@ -65,7 +65,6 @@ private:
     RETURN_TYPE,
     TYPE_EXPR_CONTEXT,
     CALLEE_CONTEXT,
-    MEMBER_SELECTION_CONTEXT,
   };
   friend std::hash<metadata>;
 

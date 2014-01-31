@@ -53,7 +53,9 @@ void StaticChecker::preorder(const Node& node)
       break;
     case Node::GLOBAL_ASSIGN:
       // Set current top-level function name.
-      _current_function = node.string_value;
+      if (node.children[0]->type == Node::IDENTIFIER) {
+        _current_function = node.children[0]->string_value;
+      }
       // Fall-through to recursion handler.
     case Node::ASSIGN_VAR:
     case Node::ASSIGN_CONST:
@@ -68,7 +70,13 @@ void StaticChecker::preorder(const Node& node)
       // important and can be achieved for any particular pair of functions by
       // nesting, anyway.
       if (use_function_immediate_assign_hack(node)) {
-        _immediate_left_assign = node.string_value;
+        _immediate_left_assign = node.children[0]->string_value;
+      }
+      // Add the identifier to the table temporarily to avoid lookup errors on
+      // the name.
+      _symbol_table.push();
+      if (node.children[0]->type == Node::IDENTIFIER) {
+        _symbol_table.add(node.children[0]->string_value, Type::VOID);
       }
       break;
     case Node::FUNCTION:
@@ -173,10 +181,13 @@ void StaticChecker::infix(const Node& node, const result_list& results)
       break;
     }
 
-    case Node::MEMBER_SELECTION:
-      _metadata.push();
-      _metadata.add(MEMBER_SELECTION_CONTEXT, Type::VOID);
+    case Node::GLOBAL_ASSIGN:
+    case Node::ASSIGN_VAR:
+    case Node::ASSIGN_CONST:
+      // Remove temporary reference to identifier on the left.
+      _symbol_table.pop();
       break;
+
     case Node::CALL:
       if (results.size() == 1) {
         _metadata.pop();
@@ -199,6 +210,11 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     }
   }
 
+  // To reject type-expressions in non-type contexts and expressions in type-
+  // -contexts without duplicating code everywhere, it's done here. But it does
+  // mean we have to do a bit of awkward logic to make sure the correct tables
+  // are popped on error.
+  bool err = false;
   // IDENTIFIER, NAMED_EXPRESSION, and CALL are currently the only things that
   // make sense in both contexts.
   bool valid_everywhere =
@@ -214,13 +230,40 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     if (!child_error) {
       error(node, "type expected in this context");
     }
-    return Type::ERROR;
+    err = true;
   }
   if (!inside_type_context() && is_type_expression(node)) {
     // Likewise.
     if (!child_error) {
       error(node, "type unexpected in this context");
     }
+    err = true;
+  }
+
+  // Pop the tables before returning an error.
+  if (node.type == Node::GLOBAL ||
+      node.type == Node::DO_WHILE_STMT || node.type == Node::FOR_STMT) {
+    _metadata.pop();
+    _symbol_table.pop();
+  }
+  else if (node.type == Node::FUNCTION) {
+    // FUNCTION needs to do some logic before popping the tables.
+    if (!current_return_type().is_void() && !results[1].not_void()) {
+      error(node, "not all code paths return a value");
+    }
+    _symbol_table.pop();
+    _symbol_table.pop();
+    _symbol_table.pop();
+    _metadata.pop();
+  }
+  else if (node.type == Node::BLOCK || node.type == Node::IF_STMT) {
+    _symbol_table.pop();
+  }
+  // Make sure to pop callee context on nullary calls.
+  else if (node.type == Node::CALL && results.size() == 1) { 
+    _metadata.pop();
+  }
+  if (err) {
     return Type::ERROR;
   }
 
@@ -258,41 +301,36 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     case Node::PROGRAM:
       return Type::VOID;
     case Node::GLOBAL:
-      _metadata.pop();
-      _symbol_table.pop();
       _current_function = "";
       return Type::VOID;
     case Node::GLOBAL_ASSIGN:
     {
-      if (!results[0].function()) {
-        error(node, "global assignment of type " + rs[0]);
-        add_symbol_checking_collision(node, node.string_value, results[0]);
+      if (node.children[0]->type != Node::IDENTIFIER) {
+        error(node, "assignments must be directly to an identifier");
+        return Type::VOID;
+      }
+      const std::string& s = node.children[0]->string_value;
+      if (!results[1].function()) {
+        error(node, "global assignment of type " + rs[1]);
+        add_symbol_checking_collision(node, s, results[1]);
       }
       // Otherwise, the symbol already exists by the immediate-name-assign
       // recursion hack.
-      const Type& t = _symbol_table.get(node.string_value, 0);
+      const Type& t = _symbol_table.get(s, 0);
       // Only export functions get added to the function table.
       if (!t.is_error() && node.int_value) {
-        _functions_output.emplace(node.string_value, t.external(true));
+        _functions_output.emplace(s, t.external(true));
       }
       _current_function = "";
       return Type::VOID;
     }
     case Node::FUNCTION:
     {
-      if (!current_return_type().is_void() && !results[1].not_void()) {
-        error(node, "not all code paths return a value");
-      }
-      // Pop all the various symbol table frames a function uses.
-      _symbol_table.pop();
-      _symbol_table.pop();
-      _symbol_table.pop();
-      _metadata.pop();
       if (inside_function()) {
         _current_function =
             _current_function.substr(0, _current_function.find_last_of('.'));
       }
-      // We've already reported an error in infix() is the first type is not
+      // We've already reported an error in infix() if the first type is not
       // a function type.
       return results[0].function() ? results[0] : Type::ERROR;
     }
@@ -301,7 +339,6 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
 
     case Node::BLOCK:
     {
-      _symbol_table.pop();
       // The code for RETURN_STMT checks return values against the function's
       // return type. We don't really care what types might be here, just any
       // non-void as a marker for ensuring all code paths return a value.
@@ -331,7 +368,6 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       return results[0];
     case Node::IF_STMT:
     {
-      _symbol_table.pop();
       if (!results[0].is(Type::INT)) {
         error(node, "branching on " + rs[0]);
       }
@@ -343,8 +379,6 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     }
     case Node::DO_WHILE_STMT:
     case Node::FOR_STMT:
-      _symbol_table.pop();
-      _metadata.pop();
       if (!results[1].is(Type::INT)) {
         error(node, "branching on " + rs[1]);
       }
@@ -362,7 +396,6 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
 
     case Node::MEMBER_SELECTION:
     {
-      _metadata.pop();
       // Without something like closures (to store the user object), it's not
       // possible to do much with a member function access other than call it
       // immediately.
@@ -370,10 +403,6 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       // whole bunch of weird special-casing.
       if (!results[0].user_type()) {
         error(node, "member function access on " + rs[0]);
-        return Type::ERROR;
-      }
-      if (node.children[1]->type != Node::IDENTIFIER) {
-        error(*node.children[1], "member accessed via expression");
         return Type::ERROR;
       }
       if (!_metadata.has(CALLEE_CONTEXT)) {
@@ -386,10 +415,10 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
 
       node.user_type_name = results[0].user_type_name();
       auto it = _context.get_types().find(node.user_type_name);
-      auto jt = it->second.members.find(node.children[1]->string_value);
+      auto jt = it->second.members.find(node.string_value);
       if (jt == it->second.members.end()) {
         error(node, "undeclared member function `" + node.user_type_name +
-                     "::" + node.children[1]->string_value + "`");
+                     "::" + node.string_value + "`");
         return Type::ERROR;
       }
       // Omit the first argument (self). Unfortunately, the indirection here
@@ -404,11 +433,6 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
 
     case Node::IDENTIFIER:
     {
-      // In member-selection context, don't do any checking.
-      if (_metadata.has(MEMBER_SELECTION_CONTEXT)) {
-        return Type::ERROR;
-      }
-
       // Look up user types in a type-context.
       if (inside_type_context()) {
         auto context_it = _context.get_types().find(node.string_value);
@@ -607,52 +631,57 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
 
     case Node::ASSIGN:
     {
-      if (!_symbol_table.has(node.string_value)) {
-        if (_context.get_functions().count(node.string_value)) {
-          error(node, "cannot assign to context function `" +
-                      node.string_value + "`");
+      if (node.children[0]->type != Node::IDENTIFIER) {
+        error(node, "assignments must be directly to an identifier");
+        return results[1];
+      }
+      const std::string& s = node.children[0]->string_value;
+      if (!_symbol_table.has(s)) {
+        if (_context.get_functions().count(s)) {
+          error(node, "cannot assign to context function `" + s + "`");
         }
-        else if (_context.get_types().count(node.string_value)) {
-          error(node, "cannot assign to context type `" +
-                      node.string_value + "`");
+        else if (_context.get_types().count(s)) {
+          error(node, "cannot assign to context type `" + s + "`");
         }
         else {
-          error(node, "undeclared identifier `" + node.string_value + "`");
+          error(node, "undeclared identifier `" + s + "`");
         }
-        _symbol_table.add(node.string_value, results[0]);
-        return results[0];
+        _symbol_table.add(s, results[1]);
+        return results[1];
       }
-      Type& t = _symbol_table[node.string_value];
+      Type& t = _symbol_table[s];
       if (t == Type::ENCLOSING_FUNCTION) {
-        error(node, "reference to `" + node.string_value +
-                    "` in enclosing function");
+        error(node, "reference to `" + s + "` in enclosing function");
         return Type::ERROR;
       }
       if (t.is_const()) {
-        error(node, "assignment to `" + node.string_value +
-                    "` of type " + t.string());
+        error(node, "assignment to `" + s + "` of type " + t.string());
       }
-      if (!t.is(results[0])) {
-        error(node, rs[0] + " assigned to `" + node.string_value +
-                    "` of type " + t.string());
+      if (!t.is(results[1])) {
+        error(node, rs[1] + " assigned to `" + s + "` of type " + t.string());
       }
-      t = results[0];
-      return results[0];
+      t = results[1];
+      return results[1];
     }
 
     case Node::ASSIGN_VAR:
     case Node::ASSIGN_CONST:
     {
-      if (!results[0].not_void()) {
-        error(node, "assignment of type " + rs[0]);
+      if (!results[1].not_void()) {
+        error(node, "assignment of type " + rs[1]);
       }
+      if (node.children[0]->type != Node::IDENTIFIER) {
+        error(node, "assignments must be directly to an identifier");
+        return results[1];
+      }
+      const std::string& s = node.children[0]->string_value;
 
       auto add_global = [&]()
       {
-        const Type& t = _symbol_table.get(node.string_value, 0);
+        const Type& t = _symbol_table.get(s, 0);
         if (!t.is_error()) {
           bool exported = _metadata.has(EXPORT_GLOBAL);
-          _globals_output.emplace(node.string_value, t.external(exported));
+          _globals_output.emplace(s, t.external(exported));
         }
       };
 
@@ -661,27 +690,26 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         // hack. But, we may need to make it non-const and enter it in the
         // global symbol table.
         std::size_t index = inside_function() * (_symbol_table.size() - 1);
-        _symbol_table.get(node.string_value, index).set_const(
-            node.type == Node::ASSIGN_CONST);
+        _symbol_table.get(s, index).set_const(node.type == Node::ASSIGN_CONST);
         if (!inside_function()) {
           add_global();
         }
-        return results[0];
+        return results[1];
       }
 
-      Type t = results[0];
+      Type t = results[1];
       t.set_const(node.type == Node::ASSIGN_CONST);
 
       // Within global blocks, use the top-level symbol table frame.
       if (!inside_function()) {
-        add_symbol_checking_collision(node, node.string_value, 0, t);
+        add_symbol_checking_collision(node, s, 0, t);
         // Store global in the global map for future use.
         add_global();
-        return results[0];
+        return results[1];
       }
 
-      add_symbol_checking_collision(node, node.string_value, t);
-      return results[0];
+      add_symbol_checking_collision(node, s, t);
+      return results[1];
     }
 
     case Node::INT_CAST:
@@ -769,7 +797,8 @@ bool StaticChecker::inside_type_context() const
 bool StaticChecker::use_function_immediate_assign_hack(const Node& node) const
 {
   // Node should be type GLOBAL_ASSIGN, ASSIGN_VAR or ASSIGN_CONST.
-  return node.children[0]->type == Node::FUNCTION;
+  return node.children[0]->type == Node::IDENTIFIER &&
+      node.children[1]->type == Node::FUNCTION;
 }
 
 void StaticChecker::add_symbol_checking_collision(

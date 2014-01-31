@@ -68,6 +68,22 @@ Node::Node(node_type type, const std::string& value)
   orphans.insert(this);
 }
 
+Node* Node::clone() const
+{
+  Node* node = new Node(type);
+  node->line = line;
+  node->text = text;
+  node->int_value = int_value;
+  node->float_value = float_value;
+  node->string_value = string_value;
+  node->user_type_name = user_type_name;
+
+  for (const auto& m : children) {
+    node->add(m->clone());
+  }
+  return node;
+}
+
 void Node::add_front(Node* node)
 {
   orphans.erase(node);

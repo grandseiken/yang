@@ -107,6 +107,9 @@ struct Node {
   Node(node_type type, yang::float_t value);
   Node(node_type type, const std::string& value);
 
+  // Clone an entire tree.
+  Node* clone() const;
+
   void add_front(Node* node);
   void add(Node* node);
 

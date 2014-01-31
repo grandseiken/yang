@@ -246,9 +246,9 @@ void IrGenerator::preorder(const Node& node)
     case Node::GLOBAL_ASSIGN:
     case Node::ASSIGN_VAR:
     case Node::ASSIGN_CONST:
-      // See static.cpp for details.
-      if (node.children[0]->type == Node::FUNCTION) {
-        _immediate_left_assign = node.string_value;
+      // See static.cpp for details on the immediate left assign hack.
+      if (node.children[1]->type == Node::FUNCTION) {
+        _immediate_left_assign = node.children[0]->string_value;
       }
       break;
 
@@ -360,11 +360,6 @@ void IrGenerator::infix(const Node& node, const result_list& results)
       b.SetInsertPoint(cond_block);
       break;
     }
-
-    case Node::MEMBER_SELECTION:
-      _metadata.push();
-      _metadata.add(MEMBER_SELECTION_CONTEXT, nullptr);
-      break;
 
     case Node::TERNARY:
     {
@@ -539,9 +534,9 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       if (node.int_value) {
         function->setLinkage(llvm::Function::ExternalLinkage);
       }
-      function->setName(node.string_value);
-      _symbol_table.add(node.string_value, results[0]);
-      return results[0];
+      function->setName(node.children[0]->string_value);
+      _symbol_table.add(node.children[0]->string_value, results[1]);
+      return results[1];
     }
     case Node::FUNCTION:
     {
@@ -635,17 +630,11 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     }
 
     case Node::MEMBER_SELECTION:
-      _metadata.pop();
       // Just return the object directly; the call site has special logic to
       // deal with member functions.
       return results[0];
 
     case Node::IDENTIFIER:
-      // In member-selection context, do nothing.
-      if (_metadata.has(MEMBER_SELECTION_CONTEXT)) {
-        return (llvm::Value*)nullptr;
-      }
-
       // In type-context, we just want to return a user type.
       if (_metadata.has(TYPE_EXPR_CONTEXT)) {
         return void_ptr_type();
@@ -667,6 +656,11 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
         }
         // Otherwise it's a global, so look up in the global structure.
         return b.CreateLoad(global_ptr(node.string_value), "load");
+      }
+      // It's possible that nothing matches, when this is the identifier on the
+      // left of a variable declaration.
+      if (!_context_functions.count(node.string_value)) {
+        return (llvm::Value*)nullptr;
       }
       // It must be a context function.
       return _context_functions[node.string_value];
@@ -704,7 +698,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // Special odd logic for member-function calling.
       if (node.children[0]->type == Node::MEMBER_SELECTION) {
         std::string s = node.children[0]->user_type_name +
-            "::" + node.children[0]->children[1]->string_value;
+            "::" + node.children[0]->string_value;
 
         args.push_back(results[0]);
         for (std::size_t i = 1; i < results.size(); ++i) {
@@ -832,27 +826,31 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     }
 
     case Node::ASSIGN:
+    {
       // See Node::IDENTIFIER.
-      if (_symbol_table[node.string_value]) {
-        b.CreateStore(results[0], _symbol_table[node.string_value]);
+      const std::string& s = node.children[0]->string_value;
+      if (_symbol_table[s]) {
+        b.CreateStore(results[1], _symbol_table[s]);
       }
       // We can't store values for globals in the symbol table since the lookup
       // depends on the current function's global data argument.
       else {
-        b.CreateStore(results[0], global_ptr(node.string_value));
+        b.CreateStore(results[1], global_ptr(s));
       }
-      return results[0];
+      return results[1];
+    }
 
     case Node::ASSIGN_VAR:
     case Node::ASSIGN_CONST:
     {
+      const std::string& s = node.children[0]->string_value;
       // In a global block, rather than allocating anything we simply store into
       // the prepared fields of the global structure. Also enter the symbol now
       // with a null value so we can distinguish it from top-level functions.
       if (_metadata.has(GLOBAL_INIT_FUNCTION)) {
-        _symbol_table.add(node.string_value, 0, nullptr);
-        b.CreateStore(results[0], global_ptr(node.string_value));
-        return results[0];
+        _symbol_table.add(s, 0, nullptr);
+        b.CreateStore(results[1], global_ptr(s));
+        return results[1];
       }
 
       // Optimisation passes such as mem2reg work much better when memory
@@ -861,10 +859,10 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       auto& entry_block =
           ((llvm::Function*)b.GetInsertPoint()->getParent())->getEntryBlock();
       llvm::IRBuilder<> entry(&entry_block, entry_block.begin());
-      llvm::Value* v = entry.CreateAlloca(types[0], nullptr, node.string_value);
-      b.CreateStore(results[0], v);
-      _symbol_table.add(node.string_value, v);
-      return results[0];
+      llvm::Value* v = entry.CreateAlloca(types[1], nullptr, s);
+      b.CreateStore(results[1], v);
+      _symbol_table.add(s, v);
+      return results[1];
     }
 
     case Node::INT_CAST:
