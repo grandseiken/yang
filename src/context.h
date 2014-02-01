@@ -10,25 +10,74 @@
 #include "type.h"
 #include "type_info.h"
 
-// General directions:
-// TODO: Context composition; the standard libraries should be kinds of Context;
-// and user types should be possible. As alternative to textual include, allow
-// code-sharing by way of treating a Program as a Context (using LLVM modules to
-// avoid the need for complicated trampolining back and forth).
-// TODO: there should be a type corresponding to Instance, with built-in
-// functionality. Possible some sort of duck-typing interface for Instances. The
-// same typing mechanism should apply to user types.
-// TODO: add some kind of built-in data structures, including at least a generic
-// map<K, V> type. May require garbage-collection, unless we place tight
-// restrictions on their usage (e.g. only global variables).
-// TODO: add a LuaValue-like generic value class.
-// TODO: possibly implement closures, if it seems feasible.
+// Big features:
+// TODO: closures and generally more useful functions. To make this work,
+// function values will need to be represented in IR as (vectors of) three
+// pointers:
+//
+// - first: to the actual C++ or Yang compiled function.
+// - second: to the reverse trampoline (for C++ functions); for Yang functions,
+//   it will be null.
+// - third: to a structure containing the closed-over environment. For C++
+//   functions, this will be null.
+//
+// Any variables in a function referenced by an inner function will be allocated
+// in a new structure instead of on the stack. Inner function-expressions (ones
+// that refernce an enclosing variable, anyway) will then create a value with
+// the third pointer pointing to that structure.
+//
+// This will necessitate some kind of garbage-collection or reference-counting;
+// particular care must be taken if the values can be passed or returned to C++
+// and stored.
+//
+// There are many advantages over the current setup. It essentially unifies all
+// the various kinds of function so that there aren't any special rules:
+//
+// - Rather than std::functions being part of the context only, they'll be able
+//   to be passed in to any Yang function.
+// - User-type member functions can be implemented in a much more simple and
+//   useful way; member access creates an implicit inner function which closes
+//   over the value on the left. These can then be invoked or passed around like
+//   any other value.
+// - C++ yang::Function objects, rather than explicitly storing a pointer to the
+//   program instance, can be implemented as closures over the global data
+//   pointer. This means Yang functions can be passed to *other scripts* while
+//   still targeting the script they were retrieved from.
+//
+// TODO: interfaces. For example, it should be possible to define somehow an
+// interface type like:
+//
+//   interface T {
+//     int() foo;
+//     void(int x) bar;
+//   };
+//
+// The following things are then convertible to a value of type T:
+//
+// - pointers to a user-type having member functions matching the interface;
+// - Instances of Yang programs having functions matching the interface.
+//
+// Mostly, these can only be passed from C++; perhaps a special "self" keyword
+// can exist as well to get the current program instance as an interface value.
+//
+// Misc stuff:
+// TODO: as alternative to textual include, allow code-sharing by way of
+// treating a Program as a Context (using LLVM modules to avoid the need for
+// complicated trampolining back and forth).
 // TODO: vectorised assignment, or pattern-matching assignment? Also, indexed
 // assignment.
 // TODO: warnings: for example, unused variables.
 // TODO: many calls to log_err should probably actually be thrown exceptions.
 // TODO: code hot-swapping. Careful with pointer values (e.g. functions) in
 // global data struct which probably need to be left as default values.
+//
+// Further off (helpful stuff that can be emulated without needing to be built-
+// -in right away):
+// TODO: a standard library (as a Context).
+// TODO: add a LuaValue-like generic value class.
+// TODO: add some kind of built-in data structures, including at least a generic
+// map<K, V> type. May require garbage-collection, unless we place tight
+// restrictions on their usage (e.g. only global variables).
 namespace yang {
 namespace internal {
   class StaticChecker;
@@ -71,15 +120,15 @@ private:
   typedef std::unordered_map<
       std::string, internal::GenericNativeFunction> function_map;
 
+  friend class internal::StaticChecker;
+  friend class internal::IrGenerator; 
+  const type_map& get_types() const;
+  const function_map& get_functions() const;
+
   template<typename R, typename... Args>
   void register_function_raw(
       function_map& map,
       const std::string& name, const std::function<R(Args...)>& f) const;
-
-  friend class internal::StaticChecker;
-  friend class internal::IrGenerator;
-  const type_map& get_types() const;
-  const function_map& get_functions() const;
 
   type_map _types;
   function_map _functions;

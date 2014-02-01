@@ -40,6 +40,7 @@ private:
   bool inside_function() const;
 
   bool is_type_expression(const Node& node) const;
+  bool valid_all_contexts(const Node& node) const;
   bool inside_type_context() const;
 
   bool use_function_immediate_assign_hack(const Node& node) const;
@@ -64,6 +65,7 @@ private:
     LOOP_BODY,
     RETURN_TYPE,
     TYPE_EXPR_CONTEXT,
+    ERR_EXPR_CONTEXT,
     CALLEE_CONTEXT,
   };
   friend std::hash<metadata>;

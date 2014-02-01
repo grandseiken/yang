@@ -42,6 +42,26 @@ bool StaticChecker::errors() const
 
 void StaticChecker::preorder(const Node& node)
 {
+  // To reject type-expressions in non-type contexts and expressions in type-
+  // -contexts without duplicating code everywhere, it's done here. But it does
+  // mean we have to do a bit of awkward logic to make sure the correct tables
+  // are popped on error.
+  bool context_err = !valid_all_contexts(node) &&
+      inside_type_context() != is_type_expression(node);
+  if (context_err) {
+    if (!_metadata.has(ERR_EXPR_CONTEXT)) {
+      if (inside_type_context()) {
+        error(node, "expected type in this context");
+      }
+      else {
+        error(node, "unexpected type in this context");
+      }
+    }
+    // Avoid duplicated errors by adding an override context.
+    _metadata.push();
+    _metadata.add(ERR_EXPR_CONTEXT, Type::VOID);
+  }
+
   switch (node.type) {
     case Node::GLOBAL:
       _current_function = ".global";
@@ -210,37 +230,9 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     }
   }
 
-  // To reject type-expressions in non-type contexts and expressions in type-
-  // -contexts without duplicating code everywhere, it's done here. But it does
-  // mean we have to do a bit of awkward logic to make sure the correct tables
-  // are popped on error.
-  bool err = false;
-  // IDENTIFIER, NAMED_EXPRESSION, and CALL are currently the only things that
-  // make sense in both contexts.
-  bool valid_everywhere =
-      node.type == Node::IDENTIFIER || node.type == Node::NAMED_EXPRESSION ||
-      node.type == Node::CALL;
-  if (inside_type_context() && !is_type_expression(node) && !valid_everywhere) {
-    // Attempt to avoid tons of error messages by looking at the children. It
-    // still produces an error message for each unexpected leaf-node in the
-    // tree.
-    // TODO: we could probably handle this in a more clever way (like adding an
-    // EXPR_CONTEXT metadata that overrides TYPE_EXPR_CONTEXT) preorder on the
-    // first mismatched node.
-    if (!child_error) {
-      error(node, "type expected in this context");
-    }
-    err = true;
-  }
-  if (!inside_type_context() && is_type_expression(node)) {
-    // Likewise.
-    if (!child_error) {
-      error(node, "type unexpected in this context");
-    }
-    err = true;
-  }
-
-  // Pop the tables before returning an error.
+  bool context_err = !valid_all_contexts(node) &&
+      inside_type_context() != is_type_expression(node);
+  // Pop the correct tables before returning an error.
   if (node.type == Node::GLOBAL ||
       node.type == Node::DO_WHILE_STMT || node.type == Node::FOR_STMT) {
     _metadata.pop();
@@ -263,7 +255,9 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
   else if (node.type == Node::CALL && results.size() == 1) { 
     _metadata.pop();
   }
-  if (err) {
+  if (context_err) {
+    // And make sure to pop the override context.
+    _metadata.pop();
     return Type::ERROR;
   }
 
@@ -399,8 +393,6 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       // Without something like closures (to store the user object), it's not
       // possible to do much with a member function access other than call it
       // immediately.
-      // TODO: we really want to have some closures and fix that. There's a
-      // whole bunch of weird special-casing.
       if (!results[0].user_type()) {
         error(node, "member function access on " + rs[0]);
         return Type::ERROR;
@@ -787,6 +779,15 @@ bool StaticChecker::is_type_expression(const Node& node) const
   return
       node.type == Node::TYPE_VOID || node.type == Node::TYPE_INT ||
       node.type == Node::TYPE_FLOAT || node.type == Node::TYPE_FUNCTION;
+}
+
+bool StaticChecker::valid_all_contexts(const Node& node) const
+{
+  // IDENTIFIER, NAMED_EXPRESSION, and CALL are currently the only things that
+  // make sense in both contexts.
+  return
+      node.type == Node::IDENTIFIER || node.type == Node::NAMED_EXPRESSION ||
+      node.type == Node::CALL;
 }
 
 bool StaticChecker::inside_type_context() const
