@@ -105,6 +105,8 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
     case Node::CONTINUE_STMT:
       return indent() + "continue;\n";
 
+    case Node::SCOPE_RESOLUTION:
+      return "(" + results[0] + "::" + node.string_value + ")";
     case Node::MEMBER_SELECTION:
       return "(" + results[0] + "." + node.string_value + ")";
     case Node::IDENTIFIER:

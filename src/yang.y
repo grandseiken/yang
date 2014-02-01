@@ -60,6 +60,7 @@ typedef yang::internal::Node Node;
 %token T_GT
 %token T_LT
 %token T_FOLD
+%token T_SCOPE_RESOLUTION
 %token T_ASSIGN
 %token T_ASSIGN_LOGICAL_OR
 %token T_ASSIGN_LOGICAL_AND
@@ -106,7 +107,7 @@ typedef yang::internal::Node Node;
 %right T_POW
 %left '.' '[' '('
   /* Precedence of '.' for member selection. */
-%left T_IDENTIFIER
+%left T_IDENTIFIER T_SCOPE_RESOLUTION
 
   /* Types. */
 
@@ -239,6 +240,9 @@ expr
 {$$ = $1;}
   | T_IDENTIFIER
 {$$ = $1;}
+  | expr T_SCOPE_RESOLUTION T_IDENTIFIER
+{$$ = new Node(Node::SCOPE_RESOLUTION, $1);
+ $$->string_value = $3->string_value;}
   | expr_functional '{' stmt_list '}'
 {$1->type = Node::TYPE_FUNCTION;
  $3->type = Node::BLOCK;

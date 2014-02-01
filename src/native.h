@@ -3,7 +3,6 @@
 
 #include <functional>
 #include <memory>
-#include <unordered_map>
 #include "typedefs.h"
 #include "type.h"
 
@@ -84,7 +83,6 @@ struct GenericNativeType {
     : obj(nullptr) {}
 
   std::unique_ptr<NativeType<void>> obj;
-  std::unordered_map<std::string, GenericNativeFunction> members;
 };
 
 template<typename T>

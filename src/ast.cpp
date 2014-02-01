@@ -146,6 +146,8 @@ std::string Node::op_string(node_type t)
       t == Node::FLOAT_CAST ? "." :
       t == Node::VECTOR_CONSTRUCT ? "()" :
       t == Node::VECTOR_INDEX ? "[]" :
+      t == Node::MEMBER_SELECTION ? "." :
+      t == Node::SCOPE_RESOLUTION ? "::" :
       "unknown operator";
 }
 

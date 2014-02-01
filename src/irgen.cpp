@@ -99,15 +99,10 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   //
   // These are the most general trampoline-generation rules.
   for (const auto& pair : context.get_functions()) {
+    // User type member functions are present in the context function map as
+    // well.
     _context_functions[pair.first] =
         create_reverse_trampoline_function(pair.first, pair.second);
-  }
-  for (const auto& pair : context.get_types()) {
-    for (const auto& qair : pair.second.members) {
-      std::string s = pair.first + "::" + qair.first;
-      _context_functions[s] =
-          create_reverse_trampoline_function(s, qair.second);
-    }
   }
 }
 
@@ -629,6 +624,8 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       return v;
     }
 
+    case Node::SCOPE_RESOLUTION:
+      return _context_functions[node.user_type_name + "::" + node.string_value];
     case Node::MEMBER_SELECTION:
       // Just return the object directly; the call site has special logic to
       // deal with member functions.

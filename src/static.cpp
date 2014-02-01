@@ -100,6 +100,7 @@ void StaticChecker::preorder(const Node& node)
       }
       break;
     case Node::FUNCTION:
+    case Node::SCOPE_RESOLUTION:
       _metadata.push();
       _metadata.add(TYPE_EXPR_CONTEXT, Type::VOID);
       break;
@@ -230,9 +231,9 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     }
   }
 
-  bool context_err = !valid_all_contexts(node) &&
-      inside_type_context() != is_type_expression(node);
-  // Pop the correct tables before returning an error.
+  // Pop the correct tables before returning an error. Make sure to do this
+  // before checking for context error; otherwise we might still think we're
+  // in a type-context when we aren't.
   if (node.type == Node::GLOBAL ||
       node.type == Node::DO_WHILE_STMT || node.type == Node::FOR_STMT) {
     _metadata.pop();
@@ -252,9 +253,13 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     _symbol_table.pop();
   }
   // Make sure to pop callee context on nullary calls.
-  else if (node.type == Node::CALL && results.size() == 1) { 
+  else if (node.type == Node::SCOPE_RESOLUTION ||
+           (node.type == Node::CALL && results.size() == 1)) {
     _metadata.pop();
   }
+
+  bool context_err = !valid_all_contexts(node) &&
+      inside_type_context() != is_type_expression(node);
   if (context_err) {
     // And make sure to pop the override context.
     _metadata.pop();
@@ -388,6 +393,27 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
       return Type::VOID;
 
+    case Node::SCOPE_RESOLUTION:
+    {
+      log_err("scope res");
+      if (!results[0].user_type()) {
+        error(node, s + " applied to " + rs[0]);
+        return Type::ERROR;
+      }
+      if (results[0].is_error()) {
+        log_err("scope res err");
+        return Type::ERROR;
+      }
+      node.user_type_name = results[0].user_type_name();
+      std::string s = node.user_type_name + "::" + node.string_value;
+      auto context_it = _context.get_functions().find(s);
+      if (context_it == _context.get_functions().end()) {
+        error(node, "undeclared member function `" + s + "`");
+        return Type::ERROR;
+      }
+      return context_it->second.type;
+    }
+
     case Node::MEMBER_SELECTION:
     {
       // Without something like closures (to store the user object), it's not
@@ -406,16 +432,15 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
 
       node.user_type_name = results[0].user_type_name();
-      auto it = _context.get_types().find(node.user_type_name);
-      auto jt = it->second.members.find(node.string_value);
-      if (jt == it->second.members.end()) {
-        error(node, "undeclared member function `" + node.user_type_name +
-                     "::" + node.string_value + "`");
+      std::string s = node.user_type_name + "::" + node.string_value;
+      auto it = _context.get_functions().find(s);
+      if (it == _context.get_functions().end()) {
+        error(node, "undeclared member function `" + s + "`");
         return Type::ERROR;
       }
       // Omit the first argument (self). Unfortunately, the indirection here
       // makes errors when calling the returned function somewhat vague.
-      const yang::Type& t = jt->second.type;
+      const yang::Type& t = it->second.type;
       Type member = Type(Type::FUNCTION, t.get_function_return_type());
       for (std::size_t i = 1; i < t.get_function_num_args(); ++i) {
         member.add_element(t.get_function_arg_type(i));

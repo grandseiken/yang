@@ -39,6 +39,7 @@ struct Node {
     CONTINUE_STMT,
 
     // Expressions.
+    SCOPE_RESOLUTION,
     MEMBER_SELECTION,
     IDENTIFIER,
     INT_LITERAL,

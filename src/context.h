@@ -73,6 +73,7 @@
 //
 // Further off (helpful stuff that can be emulated without needing to be built-
 // -in right away):
+// TODO: Context combination and scopes.
 // TODO: a standard library (as a Context).
 // TODO: add a LuaValue-like generic value class.
 // TODO: add some kind of built-in data structures, including at least a generic
@@ -124,11 +125,6 @@ private:
   friend class internal::IrGenerator; 
   const type_map& get_types() const;
   const function_map& get_functions() const;
-
-  template<typename R, typename... Args>
-  void register_function_raw(
-      function_map& map,
-      const std::string& name, const std::function<R(Args...)>& f) const;
 
   type_map _types;
   function_map _functions;
@@ -187,13 +183,7 @@ void Context::register_member_function(
   }
   std::string type_name = get_type_name<T>();
   internal::GenericNativeType& type = _types[type_name];
-
-  auto it = type.members.find(name);
-  if (it != type.members.end()) {
-    log_err("duplicate member `", name,
-            "` registered on type `", type_name, "`");
-  }
-  register_function_raw(type.members, name, f);
+  register_function(type_name + "::" + name, f);
 }
 
 template<typename R, typename... Args>
@@ -205,7 +195,17 @@ void Context::register_function(
     log_err("duplicate function `", name, "` registered in context");
     return;
   }
-  register_function_raw(_functions, name, f);
+
+  internal::TypeInfo<Function<R(Args...)>> info;
+  internal::GenericNativeFunction& symbol = _functions[name];
+  symbol.type = info(*this);
+  symbol.ptr = std::unique_ptr<internal::NativeFunction<R(Args...)>>(
+      new internal::NativeFunction<R(Args...)>(f));
+
+  symbol.trampoline_ptr = (yang::void_fp)&internal::ReverseTrampolineCall<
+      R(Args...),
+      typename internal::TrampolineReturn<R>::type,
+      typename internal::TrampolineArgs<Args...>::type>::call;
 }
 
 template<typename T>
@@ -228,23 +228,6 @@ std::string Context::get_type_name() const
     }
   }
   return "";
-}
-
-template<typename R, typename... Args>
-void Context::register_function_raw(
-    function_map& map,
-    const std::string& name, const std::function<R(Args...)>& f) const
-{
-  internal::TypeInfo<Function<R(Args...)>> info;
-  internal::GenericNativeFunction& symbol = map[name];
-  symbol.type = info(*this);
-  symbol.ptr = std::unique_ptr<internal::NativeFunction<R(Args...)>>(
-      new internal::NativeFunction<R(Args...)>(f));
-
-  symbol.trampoline_ptr = (yang::void_fp)&internal::ReverseTrampolineCall<
-      R(Args...),
-      typename internal::TrampolineReturn<R>::type,
-      typename internal::TrampolineArgs<Args...>::type>::call;
 }
 
 // End namepsace yang.
