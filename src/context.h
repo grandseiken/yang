@@ -23,12 +23,35 @@
 //
 // Any variables in a function referenced by an inner function will be allocated
 // in a new structure instead of on the stack. Inner function-expressions (ones
-// that refernce an enclosing variable, anyway) will then create a value with
+// that reference an enclosing variable, anyway) will then create a value with
 // the third pointer pointing to that structure.
 //
-// This will necessitate some kind of garbage-collection or reference-counting;
-// particular care must be taken if the values can be passed or returned to C++
-// and stored.
+// Nested closures will need to store a pointer to the parent closure in the
+// structure. For example, consider:
+//
+// export f = int()()()
+// {
+//   var v = 0;
+//   return int()()
+//   {
+//     ++v;
+//     var u = 0;
+//     return int()
+//     {
+//       ++v;
+//       ++u;
+//       return v + u;
+//     };
+//   };
+// };
+//
+// Each call f() creates a closure with a slot for v. However, if we take a
+// single invocation g = f(), then each call g() creates a closure with a slot
+// for u and a pointer to the same closure containing v.
+//
+// This will almost certainly necessitate some kind of garbage-collection or
+// reference-counting; particular care must be taken if the values can be passed
+// or returned to C++ and stored.
 //
 // There are many advantages over the current setup. It essentially unifies all
 // the various kinds of function so that there aren't any special rules:
@@ -61,6 +84,7 @@
 // can exist as well to get the current program instance as an interface value.
 //
 // Misc stuff:
+// TODO: context combination and scopes.
 // TODO: as alternative to textual include, allow code-sharing by way of
 // treating a Program as a Context (using LLVM modules to avoid the need for
 // complicated trampolining back and forth).
@@ -73,7 +97,6 @@
 //
 // Further off (helpful stuff that can be emulated without needing to be built-
 // -in right away):
-// TODO: Context combination and scopes.
 // TODO: a standard library (as a Context).
 // TODO: add a LuaValue-like generic value class.
 // TODO: add some kind of built-in data structures, including at least a generic
@@ -182,7 +205,6 @@ void Context::register_member_function(
     return;
   }
   std::string type_name = get_type_name<T>();
-  internal::GenericNativeType& type = _types[type_name];
   register_function(type_name + "::" + name, f);
 }
 

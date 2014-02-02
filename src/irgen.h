@@ -96,6 +96,16 @@ private:
       const std::vector<llvm::Constant*>& values) const;
   llvm::Constant* constant_vector(llvm::Constant* value, std::size_t n) const;
 
+  llvm::Type* generic_function_type(llvm::Type* function_type) const;
+  llvm::Type* generic_function_type(
+      llvm::Type* return_type, const std::vector<llvm::Type*>& arg_types) const;
+  llvm::FunctionType* function_type_from_generic(
+      llvm::Type* generic_function_type) const;
+  llvm::Value* generic_function_value(
+      llvm::Value* function_ptr,
+      llvm::Value* trampoline_ptr = nullptr,
+      llvm::Value* closure_ptr = nullptr);
+
   llvm::Value* i2b(llvm::Value* v);
   llvm::Value* b2i(llvm::Value* v);
   llvm::Value* i2w(llvm::Value* v);
@@ -120,8 +130,7 @@ private:
 
   // Convert back and forth between equivalent Yang and LLVM types.
   // bare_functions = false wraps functions in pointers for passing around.
-  llvm::Type* get_llvm_type(const yang::Type& t,
-                            bool bare_functions = false) const;
+  llvm::Type* get_llvm_type(const yang::Type& t) const;
   yang::Type get_yang_type(llvm::Type* t) const;
 
   // Metadata symbols.

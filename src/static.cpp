@@ -223,12 +223,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
 {
   std::string s = "`" + Node::op_string(node.type) + "`";
   std::vector<std::string> rs;
-  bool child_error = false;
   for (const Type& t : results) {
     rs.push_back(t.string());
-    if (t.is_error()) {
-      child_error = true;
-    }
   }
 
   // Pop the correct tables before returning an error. Make sure to do this

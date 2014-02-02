@@ -87,6 +87,10 @@ private:
     , _instance(&instance) {}
 
   yang::void_fp _function;
+  void* _trampoline;
+  // Not used for anything yet. Should be able to get rid of instance pointer
+  // eventually.
+  void* _closure;
   Instance* _instance;
 
 };
@@ -191,11 +195,9 @@ template<typename R>
 struct TypeInfo<Function<R()>> {
   yang::Type operator()(const Context& context) const
   {
-    TypeInfo<R> return_type;
-
     yang::Type t;
     t._base = yang::Type::FUNCTION;
-    t._elements.push_back(return_type(context));
+    t._elements.push_back(TypeInfo<R>()(context));
     return t;
   }
 };
@@ -204,11 +206,8 @@ template<typename R, typename A, typename... Args>
 struct TypeInfo<Function<R(A, Args...)>> {
   yang::Type operator()(const Context& context) const
   {
-    TypeInfo<Function<R(Args...)>> first;
-    TypeInfo<A> arg_type;
-
-    yang::Type t = first(context);
-    t._elements.insert(++t._elements.begin(), arg_type(context));
+    yang::Type t = TypeInfo<Function<R(Args...)>>()(context);
+    t._elements.insert(++t._elements.begin(), TypeInfo<A>()(context));
     return t;
   }
 };
@@ -367,6 +366,8 @@ struct Functions<R, List<Args...>> {
 // function in as many lambdas (and std::functions) as there are arguments,
 // before finally invoking it. It's probably possible to construct a tuple of
 // the arguments and bind everything at once.
+// TODO: allow const references in context functions; probably needs the above
+// done to work.
 template<typename, typename, typename>
 struct BindFirstHelperInternal {};
 template<typename R, typename... Args, typename... Brgs>
@@ -430,7 +431,7 @@ struct TrampolineReturn<vec<T, N>> {
 };
 template<typename R, typename... Args>
 struct TrampolineReturn<Function<R(Args...)>> {
-  typedef List<yang::void_fp*> type;
+  typedef List<yang::void_fp*, void**, void**> type;
 };
 
 template<typename... Args>
@@ -452,7 +453,8 @@ struct TrampolineArgs<vec<T, N>, Args...> {
 template<typename R, typename... Args, typename... Brgs>
 struct TrampolineArgs<Function<R(Args...)>, Brgs...> {
   typedef typename Join<
-      List<yang::void_fp>, typename TrampolineArgs<Brgs...>::type>::type type;
+      List<yang::void_fp, void*, void*>,
+      typename TrampolineArgs<Brgs...>::type>::type type;
 };
 
 template<typename R, typename... Args>
@@ -524,7 +526,9 @@ struct TrampolineCallArgs<Function<R(Args...)>, Brgs...> {
       const f_type& function, const Function<R(Args...)>& arg,
       const Brgs&... args) const
   {
-    TrampolineCallArgs<Brgs...>()(bind_first(function, arg._function), args...);
+    TrampolineCallArgs<Brgs...>()(
+        bind_first(function, arg._function, arg._trampoline, arg._closure),
+        args...);
   }
 };
 
@@ -569,7 +573,8 @@ struct TrampolineCallReturn<Function<R(Args...)>, Brgs...> {
   bound_f_type operator()(
       const f_type& function, Function<R(Args...)>& result) const
   {
-    return bind_first(function, &result._function);
+    return bind_first(
+        function, &result._function, &result._trampoline, &result._closure);
   }
 };
 
@@ -670,8 +675,10 @@ struct ReverseTrampolineCallArgs<
     // pointer.
     Function<S(Crgs...)> fn_object(instance);
     fn_object._function = std::get<0>(args);
+    fn_object._trampoline = std::get<1>(args);
+    fn_object._closure = std::get<2>(args);
 
-    typedef Sublist<typename IndexRange<1, sizeof...(Brgs) - 1>::type,
+    typedef Sublist<typename IndexRange<3, sizeof...(Brgs) - 3>::type,
                     List<Brgs...>> sublist;
     return ReverseTrampolineCallArgs<
         R, List<Args...>, typename sublist::type>()(
@@ -704,10 +711,14 @@ struct ReverseTrampolineCallReturn<vec<T, N>, Args...> {
   }
 };
 template<typename R, typename... Args>
-struct ReverseTrampolineCallReturn<Function<R(Args...)>, yang::void_fp*> {
-  void operator()(const Function<R(Args...)>& result, yang::void_fp* ptr) const
+struct ReverseTrampolineCallReturn<Function<R(Args...)>,
+                                   yang::void_fp*, void**, void**> {
+  void operator()(const Function<R(Args...)>& result,
+                  yang::void_fp* fptr, void** tptr, void** cptr) const
   {
-    *ptr = result._function;
+    *fptr = result._function;
+    *tptr = result._trampoline;
+    *cptr = result._closure;
   }
 };
 
