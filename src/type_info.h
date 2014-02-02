@@ -3,6 +3,7 @@
 
 #include <functional>
 #include <tuple>
+#include <unordered_map>
 
 #include "log.h"
 #include "native.h"
@@ -87,7 +88,7 @@ private:
     , _instance(&instance) {}
 
   yang::void_fp _function;
-  void* _trampoline;
+  yang::void_fp _target;
   // Not used for anything yet. Should be able to get rid of instance pointer
   // eventually.
   void* _closure;
@@ -120,10 +121,14 @@ template<typename T>
 struct TypeInfo {
   static_assert(sizeof(T) != sizeof(T), "use of unsupported type");
 
+  // Avoid extra unnecessary error messages (beyond static assert above).
   yang::Type operator()(const Context&) const
   {
-    // This function exists to avoid extra unnecessary error messages (beyond
-    // static assert above).
+    return {};
+  }
+
+  yang::Type operator()() const
+  {
     return {};
   }
 };
@@ -134,11 +139,21 @@ struct TypeInfo<void> {
   {
     return {};
   }
+
+  yang::Type operator()() const
+  {
+    return {};
+  }
 };
 
 template<>
 struct TypeInfo<yang::int_t> {
   yang::Type operator()(const Context&) const
+  {
+    return operator()();
+  }
+
+  yang::Type operator()() const
   {
     yang::Type t;
     t._base = yang::Type::INT;
@@ -150,6 +165,11 @@ template<>
 struct TypeInfo<yang::float_t> {
   yang::Type operator()(const Context&) const
   {
+    return operator()();
+  }
+
+  yang::Type operator()() const
+  {
     yang::Type t;
     t._base = yang::Type::FLOAT;
     return t;
@@ -159,6 +179,11 @@ struct TypeInfo<yang::float_t> {
 template<std::size_t N>
 struct TypeInfo<ivec_t<N>> {
   yang::Type operator()(const Context&) const
+  {
+    return operator()();
+  }
+
+  yang::Type operator()() const
   {
     yang::Type t;
     t._base = yang::Type::INT;
@@ -170,6 +195,11 @@ struct TypeInfo<ivec_t<N>> {
 template<std::size_t N>
 struct TypeInfo<fvec_t<N>> {
   yang::Type operator()(const Context&) const
+  {
+    return operator()();
+  }
+
+  yang::Type operator()() const
   {
     yang::Type t;
     t._base = yang::Type::FLOAT;
@@ -200,6 +230,14 @@ struct TypeInfo<Function<R()>> {
     t._elements.push_back(TypeInfo<R>()(context));
     return t;
   }
+
+  yang::Type operator()() const
+  {
+    yang::Type t;
+    t._base = yang::Type::FUNCTION;
+    t._elements.push_back(TypeInfo<R>()());
+    return t;
+  }
 };
 
 template<typename R, typename A, typename... Args>
@@ -208,6 +246,13 @@ struct TypeInfo<Function<R(A, Args...)>> {
   {
     yang::Type t = TypeInfo<Function<R(Args...)>>()(context);
     t._elements.insert(++t._elements.begin(), TypeInfo<A>()(context));
+    return t;
+  }
+
+  yang::Type operator()() const
+  {
+    yang::Type t = TypeInfo<Function<R(Args...)>>()();
+    t._elements.insert(++t._elements.begin(), TypeInfo<A>()());
     return t;
   }
 };
@@ -431,7 +476,7 @@ struct TrampolineReturn<vec<T, N>> {
 };
 template<typename R, typename... Args>
 struct TrampolineReturn<Function<R(Args...)>> {
-  typedef List<yang::void_fp*, void**, void**> type;
+  typedef List<yang::void_fp*, yang::void_fp*, void**> type;
 };
 
 template<typename... Args>
@@ -453,7 +498,7 @@ struct TrampolineArgs<vec<T, N>, Args...> {
 template<typename R, typename... Args, typename... Brgs>
 struct TrampolineArgs<Function<R(Args...)>, Brgs...> {
   typedef typename Join<
-      List<yang::void_fp, void*, void*>,
+      List<yang::void_fp, yang::void_fp, void*>,
       typename TrampolineArgs<Brgs...>::type>::type type;
 };
 
@@ -527,7 +572,7 @@ struct TrampolineCallArgs<Function<R(Args...)>, Brgs...> {
       const Brgs&... args) const
   {
     TrampolineCallArgs<Brgs...>()(
-        bind_first(function, arg._function, arg._trampoline, arg._closure),
+        bind_first(function, arg._function, arg._target, arg._closure),
         args...);
   }
 };
@@ -574,7 +619,7 @@ struct TrampolineCallReturn<Function<R(Args...)>, Brgs...> {
       const f_type& function, Function<R(Args...)>& result) const
   {
     return bind_first(
-        function, &result._function, &result._trampoline, &result._closure);
+        function, &result._function, &result._target, &result._closure);
   }
 };
 
@@ -675,7 +720,7 @@ struct ReverseTrampolineCallArgs<
     // pointer.
     Function<S(Crgs...)> fn_object(instance);
     fn_object._function = std::get<0>(args);
-    fn_object._trampoline = std::get<1>(args);
+    fn_object._target = std::get<1>(args);
     fn_object._closure = std::get<2>(args);
 
     typedef Sublist<typename IndexRange<3, sizeof...(Brgs) - 3>::type,
@@ -712,12 +757,12 @@ struct ReverseTrampolineCallReturn<vec<T, N>, Args...> {
 };
 template<typename R, typename... Args>
 struct ReverseTrampolineCallReturn<Function<R(Args...)>,
-                                   yang::void_fp*, void**, void**> {
+                                   yang::void_fp*, yang::void_fp*, void**> {
   void operator()(const Function<R(Args...)>& result,
-                  yang::void_fp* fptr, void** tptr, void** cptr) const
+                  yang::void_fp* fptr, yang::void_fp* tptr, void** cptr) const
   {
     *fptr = result._function;
-    *tptr = result._trampoline;
+    *tptr = result._target;
     *cptr = result._closure;
   }
 };
@@ -772,6 +817,105 @@ struct ReverseTrampolineCall<void(Args...), List<>, List<Brgs...>> {
 
     auto f = (const NativeFunction<void>*)target;
     args_type()(List<Brgs...>(args...), instance, f->get<void, Args...>());
+  }
+};
+
+// Reverse trampolines on the C++ side must be instatiated at C++ compile-time,
+// but which ones we need depends on information not available until we compile
+// Yang at run-time. Solution: figure out which ones might be necessary at
+// compile-time by inspecting template arguments to Context::register_function,
+// Instance::get_function, and so on. Generate these and use static
+// initialisation trickery to generate a lookup table from Yang type.
+typedef std::unordered_map<yang::Type, yang::void_fp> cpp_trampoline_lookup_map;
+inline cpp_trampoline_lookup_map& get_cpp_trampoline_lookup_map()
+{
+  static cpp_trampoline_lookup_map map;
+  return map;
+}
+
+template<typename R, typename... Args>
+struct ReverseTrampolineLookupGenerator {
+  ReverseTrampolineLookupGenerator()
+  {
+    auto& map = get_cpp_trampoline_lookup_map();
+    yang::Type t = TypeInfo<Function<R(Args...)>>()();
+    yang::void_fp ptr = (yang::void_fp)&internal::ReverseTrampolineCall<
+        R(Args...),
+        typename internal::TrampolineReturn<R>::type,
+        typename internal::TrampolineArgs<Args...>::type>::call;
+    map.emplace(t, ptr);
+  }
+
+  void operator()() const
+  {
+    // Make sure everything is instantiated. Plain typedefs doesn't seem to be
+    // enough to do it.
+  }
+};
+
+template<typename T>
+struct GenerateForwardTrampolineLookupTable {
+  void operator()() const {}
+};
+template<typename T>
+struct GenerateReverseTrampolineLookupTable {
+  void operator()() const {}
+};
+template<typename T>
+struct GenerateReverseTrampolineLookupTableInner {
+  void operator()() const {}
+};
+
+template<typename R>
+struct GenerateForwardTrampolineLookupTable<Function<R()>> {
+  typedef GenerateForwardTrampolineLookupTable<R> r;
+  void operator()() const
+  {
+    r()();
+  }
+};
+template<typename R, typename A, typename... Args>
+struct GenerateForwardTrampolineLookupTable<Function<R(A, Args...)>> {
+  typedef GenerateReverseTrampolineLookupTable<A> a;
+  typedef GenerateForwardTrampolineLookupTable<Function<R(Args...)>> next;
+  void operator()() const
+  {
+    a()();
+    next()();
+  }
+};
+
+template<typename R, typename... Args>
+struct GenerateReverseTrampolineLookupTable<Function<R(Args...)>> {
+  typedef
+      GenerateReverseTrampolineLookupTableInner<Function<R(Args...)>> inner;
+  static ReverseTrampolineLookupGenerator<R, Args...> generator;
+  void operator()() const
+  {
+    inner()();
+    generator();
+  }
+};
+template<typename R, typename... Args>
+ReverseTrampolineLookupGenerator<R, Args...>
+    GenerateReverseTrampolineLookupTable<Function<R(Args...)>>::generator;
+
+template<typename R, typename A, typename... Args>
+struct GenerateReverseTrampolineLookupTableInner<Function<R(A, Args...)>> {
+  typedef GenerateForwardTrampolineLookupTable<A> a;
+  typedef GenerateReverseTrampolineLookupTableInner<Function<R(Args...)>> next;
+  void operator()() const
+  {
+    a()();
+    next()();
+  }
+};
+template<typename R>
+struct GenerateReverseTrampolineLookupTableInner<Function<R()>> {
+  typedef GenerateReverseTrampolineLookupTable<R> r;
+  void operator()() const
+  {
+    r()();
   }
 };
 

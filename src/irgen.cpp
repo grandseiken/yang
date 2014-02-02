@@ -46,7 +46,8 @@ IrGeneratorUnion::operator llvm::Value*() const
 
 IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
                          symbol_frame& globals, const Context& context)
-  : _module(module)
+  : _context(context)
+  , _module(module)
   , _engine(engine)
   , _builder(module.getContext())
   , _symbol_table(nullptr)
@@ -79,30 +80,10 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   global_struct->setBody(type_list, false);
 
   // We need to generate a reverse trampoline function for each function in the
-  // Context. Since (in Yang) a function is represented just by a pointer, we
-  // need a trampoline per Context *function* and not per Context function
-  // *type*.
-  //
-  // This is somewhat of a limitation, but maybe not a big one in practice.
-  // Feasibly, we could represent a function value in Yang with *two* pointers:
-  // one to the function itself, and one to the trampoline (which would be null
-  // for trampoline-less Yang functions). This would allow std::functions to be
-  // passed arbitrarily to Yang code.
-  //
-  // We'd then need to extend the trampoline generation rules such that,
-  // transitively:
-  //
-  // - if a function type has some generated trampoline, its return function
-  //   type must have the same kind of trampoline generated
-  // - if a function type has some generated trampoline, each argument function
-  //   type must have the opposite kind of trampoline generated.
-  //
-  // These are the most general trampoline-generation rules.
+  // Context. User type member functions are present in the context function map
+  // as well as free functions.
   for (const auto& pair : context.get_functions()) {
-    // User type member functions are present in the context function map as
-    // well.
-    _context_functions[pair.first] =
-        create_reverse_trampoline_function(pair.first, pair.second);
+    create_reverse_trampoline_function(pair.second.type);
   }
 }
 
@@ -618,17 +599,24 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     }
 
     case Node::SCOPE_RESOLUTION:
-      return _context_functions[node.user_type_name + "::" + node.string_value];
+    {
+      // Scope resolution always refers to a context function.
+      std::string s = node.user_type_name + "::" + node.string_value;
+      auto it = _context.get_functions().find(s);
+      return generic_function_value(it->second);
+    }
     case Node::MEMBER_SELECTION:
       // Just return the object directly; the call site has special logic to
       // deal with member functions.
       return results[0];
 
     case Node::IDENTIFIER:
+    {
       // In type-context, we just want to return a user type.
       if (_metadata.has(TYPE_EXPR_CONTEXT)) {
         return void_ptr_type();
       }
+
       // Load the local variable, if it's there.
       if (_symbol_table.has(node.string_value) &&
           _symbol_table.index(node.string_value)) {
@@ -647,13 +635,17 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
         // Otherwise it's a global, so look up in the global structure.
         return b.CreateLoad(global_ptr(node.string_value), "load");
       }
+
       // It's possible that nothing matches, when this is the identifier on the
       // left of a variable declaration.
-      if (!_context_functions.count(node.string_value)) {
+      auto it = _context.get_functions().find(node.string_value);
+      if (it == _context.get_functions().end()) {
         return (llvm::Value*)nullptr;
       }
+
       // It must be a context function.
-      return generic_function_value(_context_functions[node.string_value]);
+      return generic_function_value(it->second);
+    }
 
     case Node::INT_LITERAL:
       return constant_int(node.int_value);
@@ -694,15 +686,65 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
         for (std::size_t i = 1; i < results.size(); ++i) {
           args.push_back(results[i]);
         }
-        return b.CreateCall(_context_functions[s], args);
+        auto it = _context.get_functions().find(s);
+        args.push_back(constant_ptr(it->second.ptr.get()));
+        return b.CreateCall(
+            _reverse_trampoline_map[it->second.type.erase_user_types()], args);
       }
 
       for (std::size_t i = 1; i < results.size(); ++i) {
         args.push_back(results[i]);
       }
-      // Extract function from the structure.
-      llvm::Value* f = b.CreateExtractValue(results[0], 0, "fptr");
-      return b.CreateCall(f, args);
+
+      // Construct the function type which includes an extra target type at
+      // the end. This is kind of weird. We could make every function have an
+      // unused target parameter at the end to avoid this weird casting and
+      // switching. Not sure whether that's a better idea.
+      auto f_type = function_type_from_generic(types[0]);
+      std::vector<llvm::Type*> ft_args;
+      for (auto it = f_type->param_begin(); it != f_type->param_end(); ++it) {
+        ft_args.push_back(*it);
+      }
+      ft_args.push_back(void_ptr_type());
+      auto ft_type = llvm::PointerType::get(
+          llvm::FunctionType::get(f_type->getReturnType(), ft_args, false), 0);
+
+      // Extract pointers from the struct.
+      llvm::Value* fptr = b.CreateExtractValue(results[0], 0, "fptr");
+      llvm::Value* tptr = b.CreateExtractValue(results[0], 1, "tptr");
+
+      // Switch on the presence of a trampoline function pointer.
+      auto parent = b.GetInsertBlock()->getParent();
+      auto cpp_block =
+          llvm::BasicBlock::Create(b.getContext(), "cpp", parent);
+      auto yang_block =
+          llvm::BasicBlock::Create(b.getContext(), "yang", parent);
+      auto merge_block =
+          llvm::BasicBlock::Create(b.getContext(), "merge", parent);
+
+      llvm::Value* cmp = b.CreateICmpNE(
+          tptr,
+          llvm::ConstantPointerNull::get((llvm::PointerType*)void_ptr_type()));
+      b.CreateCondBr(cmp, cpp_block, yang_block);
+
+      b.SetInsertPoint(yang_block);
+      llvm::Value* yang_val = b.CreateCall(fptr, args);
+      b.CreateBr(merge_block);
+
+      args.push_back(tptr);
+      b.SetInsertPoint(cpp_block);
+      llvm::Value* cpp_val = b.CreateCall(
+          b.CreateBitCast(fptr, ft_type, "cast"), args);
+      b.CreateBr(merge_block);
+
+      b.SetInsertPoint(merge_block);
+      if (!f_type->getReturnType()->isVoidTy()) {
+        auto phi = b.CreatePHI(f_type->getReturnType(), 2, "call");
+        phi->addIncoming(cpp_val, cpp_block);
+        phi->addIncoming(yang_val, yang_block);
+        return phi;
+      }
+      return (llvm::Value*)nullptr;
     }
 
     case Node::LOGICAL_OR:
@@ -960,10 +1002,17 @@ llvm::Function* IrGenerator::create_trampoline_function(
     llvm::FunctionType* function_type)
 {
   // Trampoline functions must be generated for every function type that might
-  // be called externally or referenced by valid Function objects. This
-  // includes:
-  // - types of top-level functions;
-  // - types of generated global accessor functions;
+  // be called externally or referenced by valid Function objects; reverse
+  // trampolines must be generated for every function type which might be a
+  // C++ function. This means:
+  //
+  // - trampolines for types of top-level functions;
+  // - trampolines for types of generated global accessor functions;
+  // - reverse trampolines for types of context functions;
+  // - if a function type has some generated trampoline, its return function
+  //   type must have the same kind of trampoline generated;
+  // - if a function type has some generated trampoline, each argument function
+  //   type must have the opposite kind of trampoline generated.
   // - the return type of any function type whose return type is also a function
   //   type, and for which a trampoline has been generated (transitively). This
   //   includes types of globals that have function type.
@@ -991,6 +1040,13 @@ llvm::Function* IrGenerator::create_trampoline_function(
   // Handle the transitive closure.
   if (get_yang_type(return_type).is_function()) {
     create_trampoline_function(function_type_from_generic(return_type));
+  }
+  for (auto it = function_type->param_begin();
+       it != function_type->param_end(); ++it) {
+    yang::Type t = get_yang_type(*it);
+    if (t.is_function()) {
+      create_reverse_trampoline_function(t);
+    }
   }
   auto ext_function_type = get_trampoline_type(function_type, false);
 
@@ -1072,18 +1128,41 @@ llvm::Function* IrGenerator::create_trampoline_function(
 }
 
 llvm::Function* IrGenerator::create_reverse_trampoline_function(
-    const std::string& name, const GenericNativeFunction& native_function)
+    const yang::Type& function_type)
 {
-  // Careful! Reverse trampolines aren't uniqued. See comment in
-  // IrGenerator constructor.
   auto& b = _builder;
+  auto it = _reverse_trampoline_map.find(function_type.erase_user_types());
+  if (it != _reverse_trampoline_map.end()) {
+    return it->second;  
+  }
+  // Handle transitive closure.
+  if (function_type.get_function_return_type().is_function()) {
+    create_reverse_trampoline_function(
+        function_type.get_function_return_type());
+  }
+  for (std::size_t i = 0; i < function_type.get_function_num_args(); ++i) {
+    yang::Type t = function_type.get_function_arg_type(i);
+    if (t.is_function()) {
+      create_trampoline_function(function_type_from_generic(get_llvm_type(t)));
+    }
+  }
 
-  // Keep the function type bare so that we can create it.
-  auto internal_type =
-      function_type_from_generic(get_llvm_type(native_function.type));
+  // Construct the type of the trampoline function.
+  auto yang_function_type =
+      function_type_from_generic(get_llvm_type(function_type));
+  std::vector<llvm::Type*> ft_args;
+  for (auto it = yang_function_type->param_begin();
+       it != yang_function_type->param_end(); ++it) {
+    ft_args.push_back(*it);
+  }
+  ft_args.push_back(void_ptr_type());
+  auto internal_type = llvm::FunctionType::get(
+      yang_function_type->getReturnType(), ft_args, false);
+
+  // Generate it.
   auto function = llvm::Function::Create(
       internal_type, llvm::Function::InternalLinkage,
-      "!reverse_trampoline_" + name, &_module);
+      "!reverse_trampoline", &_module);
   auto block = llvm::BasicBlock::Create(b.getContext(), "entry", function);
   b.SetInsertPoint(block);
 
@@ -1104,7 +1183,12 @@ llvm::Function* IrGenerator::create_reverse_trampoline_function(
   }
 
   std::size_t i = 0;
-  for (auto it = function->arg_begin(); it != function->arg_end(); ++it) {
+  for (auto it = function->arg_begin();; ++it) {
+    auto jt = it;
+    if (++jt == function->arg_end()) {
+      break;
+    }
+
     // Global data is first argument.
     if (i) {
       it->setName("a" + std::to_string(i - 1));
@@ -1132,20 +1216,18 @@ llvm::Function* IrGenerator::create_reverse_trampoline_function(
     args.push_back(it);
   }
 
-  // The final argument is a pointer to the NativeFunction<void> storing the
-  // actual std::function we want to call. To construct a pointer to it, we need
-  // to do a bit of machine-dependent stuff.
-  llvm::Type* int_ptr = llvm::IntegerType::get(
-      b.getContext(), 8 * sizeof(native_function.ptr.get()));
-  llvm::Constant* const_int =
-      llvm::ConstantInt::get(int_ptr, (std::size_t)native_function.ptr.get());
-  llvm::Value* const_ptr =
-      llvm::ConstantExpr::getIntToPtr(const_int, void_ptr_type());
-  args.push_back(const_ptr);
+  // Target is the last argument.
+  auto callee = --function->arg_end();
+  callee->setName("target");
+  args.push_back(callee);
 
+  // Trampolines on the C++ side have been populated by template instantiations.
+  yang::void_fp external_trampoline_ptr =
+      get_cpp_trampoline_lookup_map()[function_type.erase_user_types()];
+  log_err("looking up ", function_type.erase_user_types().string(), " = ", external_trampoline_ptr);
   auto external_type = get_trampoline_type(internal_type, true);
   auto external_trampoline = get_native_function(
-      "trampoline!" + name, native_function.trampoline_ptr, external_type);
+      "external_trampoline", external_trampoline_ptr, external_type);
   b.CreateCall(external_trampoline, args);
 
   if (return_type->isVoidTy()) {
@@ -1170,6 +1252,7 @@ llvm::Function* IrGenerator::create_reverse_trampoline_function(
   else {
     b.CreateRet(b.CreateLoad(return_allocs[0], "ret"));
   }
+  _reverse_trampoline_map.emplace(function_type.erase_user_types(), function);
   return function;
 }
 
@@ -1205,11 +1288,7 @@ llvm::FunctionType* IrGenerator::get_trampoline_type(
     add_type(*it, false);
   }
 
-  if (reverse) {
-    // Argument is pointer to C++ NativeFunction.
-    args.push_back(void_ptr_type());
-  }
-  else {
+  if (!reverse) {
     // Argument is pointer to Yang code function.
     args.push_back(llvm::PointerType::get(function_type, 0));
   }
@@ -1256,9 +1335,9 @@ llvm::Type* IrGenerator::vector_type(llvm::Type* type, std::size_t n) const
 llvm::Type* IrGenerator::generic_function_type(llvm::Type* type) const
 {
   std::vector<llvm::Type*> types;
-  // Function pointer.
+  // Yang function pointer or trampoline pointer.
   types.push_back(type);
-  // Trampoline pointer.
+  // C++ native target pointer.
   types.push_back(void_ptr_type());
   // Closed environment pointer.
   types.push_back(void_ptr_type());
@@ -1283,13 +1362,13 @@ llvm::FunctionType* IrGenerator::function_type_from_generic(
 
 llvm::Value* IrGenerator::generic_function_value(
     llvm::Value* function_ptr,
-    llvm::Value* trampoline_ptr, llvm::Value* closure_ptr)
+    llvm::Value* target_ptr, llvm::Value* closure_ptr)
 {
   auto type = (llvm::StructType*)generic_function_type(function_ptr->getType());
 
   std::vector<llvm::Constant*> values;
   values.push_back(llvm::ConstantPointerNull::get(
-      (llvm::PointerType*)function_ptr->getType()));
+      (llvm::PointerType*)type->getElementType(0)));
   values.push_back(llvm::ConstantPointerNull::get(
       (llvm::PointerType*)void_ptr_type()));
   values.push_back(llvm::ConstantPointerNull::get(
@@ -1297,13 +1376,32 @@ llvm::Value* IrGenerator::generic_function_value(
 
   llvm::Value* v = llvm::ConstantStruct::get(type, values);
   v = _builder.CreateInsertValue(v, function_ptr, 0, "fptr");
-  if (trampoline_ptr) {
-    v = _builder.CreateInsertValue(v, trampoline_ptr, 1, "tptr");
+  if (target_ptr) {
+    v = _builder.CreateInsertValue(v, target_ptr, 1, "tptr");
   }
   if (closure_ptr) {
     v = _builder.CreateInsertValue(v, closure_ptr, 2, "cptr");
   }
   return v;
+}
+
+llvm::Value* IrGenerator::generic_function_value(
+    const GenericNativeFunction& function)
+{
+  llvm::Value* f = _reverse_trampoline_map[function.type.erase_user_types()];
+
+  // Chop off the last argument so that this behaves like a regular function
+  // of the type.
+  std::vector<llvm::Type*> args;
+  auto ft = (llvm::FunctionType*)f->getType()->getPointerElementType();
+  for (std::size_t i = 0; i < ft->getNumParams() - 1; ++i) {
+    args.push_back(ft->getParamType(i));
+  }
+
+  auto corrected_ft = llvm::PointerType::get(
+      llvm::FunctionType::get(ft->getReturnType(), args, false), 0);
+  f = _builder.CreateBitCast(f, corrected_ft, "fun");
+  return generic_function_value(f, constant_ptr(function.ptr.get()));
 }
 
 llvm::Constant* IrGenerator::constant_int(yang::int_t value) const
@@ -1320,6 +1418,19 @@ llvm::Constant* IrGenerator::constant_vector(
     const std::vector<llvm::Constant*>& values) const
 {
   return llvm::ConstantVector::get(values);
+}
+
+llvm::Value* IrGenerator::constant_ptr(void* ptr)
+{
+  // To construct a constant pointer, we need to do a bit of machine-dependent
+  // stuff.
+  llvm::Type* int_ptr =
+      llvm::IntegerType::get(_builder.getContext(), 8 * sizeof(ptr));
+  llvm::Constant* const_int =
+      llvm::ConstantInt::get(int_ptr, (std::size_t)ptr);
+  llvm::Value* const_ptr =
+      llvm::ConstantExpr::getIntToPtr(const_int, void_ptr_type());
+  return const_ptr;
 }
 
 llvm::Constant* IrGenerator::constant_vector(

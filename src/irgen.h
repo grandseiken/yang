@@ -71,13 +71,10 @@ private:
   // Tools for functions and calling conventions.
   void create_function(
       const Node& node, llvm::FunctionType* function_type);
-  // Generate trampoline function for converting C calling convention to LLVM
-  // calling convention.
+  // Generate trampoline functions for converting between calling conventions.
   llvm::Function* create_trampoline_function(llvm::FunctionType* function_type);
-  // Generate trampoline function for converting LLVM calling convention to C
-  // calling convention.
   llvm::Function* create_reverse_trampoline_function(
-      const std::string& name, const GenericNativeFunction& native_function);
+      const yang::Type& function_type);
   // Get the trampoline type used either way.
   llvm::FunctionType* get_trampoline_type(
       llvm::FunctionType* function_type, bool reverse) const;
@@ -95,6 +92,7 @@ private:
   llvm::Constant* constant_vector(
       const std::vector<llvm::Constant*>& values) const;
   llvm::Constant* constant_vector(llvm::Constant* value, std::size_t n) const;
+  llvm::Value* constant_ptr(void* ptr);
 
   llvm::Type* generic_function_type(llvm::Type* function_type) const;
   llvm::Type* generic_function_type(
@@ -103,8 +101,9 @@ private:
       llvm::Type* generic_function_type) const;
   llvm::Value* generic_function_value(
       llvm::Value* function_ptr,
-      llvm::Value* trampoline_ptr = nullptr,
+      llvm::Value* target_ptr = nullptr,
       llvm::Value* closure_ptr = nullptr);
+  llvm::Value* generic_function_value(const GenericNativeFunction& function);
 
   llvm::Value* i2b(llvm::Value* v);
   llvm::Value* b2i(llvm::Value* v);
@@ -159,6 +158,8 @@ private:
   // Create block and insert in the metadata table.
   llvm::BasicBlock* create_block(metadata meta, const std::string& name);
 
+  const Context& _context;
+
   // List of static initialisation functions.
   std::vector<llvm::Function*> _global_inits;
   // Map from global name to index in the global structure.
@@ -166,12 +167,10 @@ private:
   // Type of the global structure.
   llvm::Type* _global_data;
 
-  // Global context: backup symbol table for reverse trampoline functions.
-  std::unordered_map<std::string, llvm::Value*> _context_functions;
-
   // Generated trampolines (map from type of function to corresponding
   // trampoline function).
   trampoline_map _trampoline_map;
+  trampoline_map _reverse_trampoline_map;
 
   llvm::Module& _module;
   llvm::ExecutionEngine& _engine;

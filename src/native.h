@@ -38,7 +38,6 @@ struct GenericNativeFunction {
 
   yang::Type type;
   std::unique_ptr<NativeFunction<void>> ptr;
-  yang::void_fp trampoline_ptr;
 };
 
 template<typename R, typename... Args>

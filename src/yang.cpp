@@ -44,12 +44,12 @@ int main(int argc, char** argv)
     log_info("in test, returning ", &test);
     return &test;
   };
+  context.register_type<Test>("Test");
+  context.register_function("get_test", std::function<Test*()>(get_test));
   auto id_fn = [&](Fn<int_t(int_t)> f)
   {
     return f;
   };
-  context.register_type<Test>("Test");
-  context.register_function("get_test", std::function<Test*()>(get_test));
   context.register_function(
       "id_fn", std::function<Fn<int_t(int_t)>(Fn<int_t(int_t)>)>(id_fn));
   auto test_foo = [&](Test* t, int_t a)

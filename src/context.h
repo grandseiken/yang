@@ -170,6 +170,14 @@ namespace internal {
       t._user_type_name = context.get_type_name<T>();
       return t;
     }
+
+    // Without passing a context, we just construct erased user-types.
+    yang::Type operator()() const
+    {
+      yang::Type t;
+      t._base = yang::Type::USER_TYPE;
+      return t;
+    }
   };
 }
 
@@ -223,11 +231,7 @@ void Context::register_function(
   symbol.type = info(*this);
   symbol.ptr = std::unique_ptr<internal::NativeFunction<R(Args...)>>(
       new internal::NativeFunction<R(Args...)>(f));
-
-  symbol.trampoline_ptr = (yang::void_fp)&internal::ReverseTrampolineCall<
-      R(Args...),
-      typename internal::TrampolineReturn<R>::type,
-      typename internal::TrampolineArgs<Args...>::type>::call;
+  internal::GenerateReverseTrampolineLookupTable<Function<R(Args...)>>()();
 }
 
 template<typename T>

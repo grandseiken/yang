@@ -141,6 +141,7 @@ T Instance::get_global(const std::string& name) const
   if (!check_global(name, info(_program.get_context()), false)) {
     return T();
   }
+  internal::GenerateForwardTrampolineLookupTable<Function<T()>>()();
   return call_via_trampoline<T>("!global_get_" + name);
 }
 
@@ -151,6 +152,7 @@ void Instance::set_global(const std::string& name, const T& value)
   if (!check_global(name, info(_program.get_context()), true)) {
     return;
   }
+  internal::GenerateForwardTrampolineLookupTable<Function<T()>>()();
   call_via_trampoline<void>("!global_set_" + name, value);
 }
 
@@ -202,6 +204,7 @@ R Instance::call_via_trampoline(yang::void_fp target, const Args&... args) const
   // types, since they're all the same for the purposes of calling convention.
   auto it = _program._trampoline_map.find(type.erase_user_types());
   yang::void_fp trampoline = get_native_fp(it->second);
+  internal::GenerateForwardTrampolineLookupTable<Function<R(Args...)>>()();
 
   typedef internal::TrampolineCall<R, void*, Args..., yang::void_fp> call_type;
   typename call_type::fp_type trampoline_expanded =
