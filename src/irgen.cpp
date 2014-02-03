@@ -1019,6 +1019,9 @@ llvm::Function* IrGenerator::create_trampoline_function(
   //
   // Careful! User types have been erased by this point. Clients must erase
   // user types before looking up trampoline functions.
+  //
+  // It might be possible to further erase function pointers to minimise the
+  // number of functions needed.
   yang::Type yang_type = get_yang_type(function_type);
   auto it = _trampoline_map.find(yang_type);
   if (it != _trampoline_map.end()) {
@@ -1222,9 +1225,12 @@ llvm::Function* IrGenerator::create_reverse_trampoline_function(
   args.push_back(callee);
 
   // Trampolines on the C++ side have been populated by template instantiations.
+  // We may be providing a null pointer here, if C++ never uses this type. The
+  // great thing is: LLVM doesn't care until this code is JIT-compiled, and
+  // by construction all compilations are triggered by a mechanism which causes
+  // the correct instantiations.
   yang::void_fp external_trampoline_ptr =
       get_cpp_trampoline_lookup_map()[function_type.erase_user_types()];
-  log_err("looking up ", function_type.erase_user_types().string(), " = ", external_trampoline_ptr);
   auto external_type = get_trampoline_type(internal_type, true);
   auto external_trampoline = get_native_function(
       "external_trampoline", external_trampoline_ptr, external_type);
