@@ -57,7 +57,7 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // multiple independent instances running simultaeneously, the idea is to
   // define a structure type with a field for each global variable. Each
   // function will take a pointer to the global data structure as an implicit
-  // first parameter.
+  // final parameter.
   std::vector<llvm::Type*> type_list;
   std::size_t number = 0;
   // The first element in the global data structure is always a pointer to the
@@ -67,7 +67,7 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // Since the global data structure may contain pointers to functions which
   // themselves take said implicit argument, we need to use an opaque named
   // struct create the potentially-recursive type.
-  auto global_struct = 
+  auto global_struct =
       llvm::StructType::create(module.getContext(), "global_data");
   _global_data = llvm::PointerType::get(global_struct, 0);
   for (const auto& pair : globals) {
@@ -347,8 +347,8 @@ void IrGenerator::infix(const Node& node, const result_list& results)
       if (results.size() == 1) {
         _metadata.push();
 
-        // Blocks and branching are necessary (as opposed to a select instruction)
-        // to short-circuit and avoiding evaluating the other path.
+        // Blocks and branching are necessary (as opposed to a select
+        // instruction) to short-circuit and avoiding evaluating the other path.
         auto then_block = create_block(IF_THEN_BLOCK, "then");
         auto else_block = create_block(IF_ELSE_BLOCK, "else");
         create_block(MERGE_BLOCK, "merge");
@@ -479,10 +479,10 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     {
       type_function:
       std::vector<llvm::Type*> args;
-      args.push_back(_global_data);
       for (std::size_t i = 1; i < results.size(); ++i) {
         args.push_back(results[i]);
       }
+      args.push_back(_global_data);
       return generic_function_type(results[0], args);
     }
 
@@ -630,7 +630,8 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
         // If the symbol table entry is non-null it's a function (constant
         // global), just get the value.
         if (_symbol_table.get(node.string_value, 0)) {
-          return generic_function_value(_symbol_table.get(node.string_value, 0));
+          return generic_function_value(
+              _symbol_table.get(node.string_value, 0));
         }
         // Otherwise it's a global, so look up in the global structure.
         return b.CreateLoad(global_ptr(node.string_value), "load");
@@ -674,27 +675,29 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       if (_metadata.has(TYPE_EXPR_CONTEXT)) {
         goto type_function;
       }
-      std::vector<llvm::Value*> args;
-      args.push_back(_metadata[GLOBAL_DATA_PTR]);
 
       // Special odd logic for member-function calling.
       if (node.children[0]->type == Node::MEMBER_SELECTION) {
         std::string s = node.children[0]->user_type_name +
             "::" + node.children[0]->string_value;
 
+        std::vector<llvm::Value*> args;
         args.push_back(results[0]);
         for (std::size_t i = 1; i < results.size(); ++i) {
           args.push_back(results[i]);
         }
+        args.push_back(_metadata[GLOBAL_DATA_PTR]);
         auto it = _context.get_functions().find(s);
         args.push_back(constant_ptr(it->second.ptr.get()));
         return b.CreateCall(
             _reverse_trampoline_map[it->second.type.erase_user_types()], args);
       }
 
+      std::vector<llvm::Value*> args;
       for (std::size_t i = 1; i < results.size(); ++i) {
         args.push_back(results[i]);
       }
+      args.push_back(_metadata[GLOBAL_DATA_PTR]);
 
       // Construct the function type which includes an extra target type at
       // the end. This is kind of weird. We could make every function have an
@@ -711,7 +714,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
 
       // Extract pointers from the struct.
       llvm::Value* fptr = b.CreateExtractValue(results[0], 0, "fptr");
-      llvm::Value* tptr = b.CreateExtractValue(results[0], 1, "tptr");
+      llvm::Value* tptr = b.CreateExtractValue(results[0], 2, "tptr");
 
       // Switch on the presence of a trampoline function pointer.
       auto parent = b.GetInsertBlock()->getParent();
@@ -974,14 +977,9 @@ void IrGenerator::create_function(
   }
   _symbol_table.push();
 
-  // The code for Node::TYPE_FUNCTION in visit() ensures it takes a global
-  // data structure pointer.
-  auto it = function->arg_begin();
-  it->setName("global");
-  _metadata.add(GLOBAL_DATA_PTR, it);
   // Set up the arguments.
   std::size_t arg_num = 0;
-  for (++it; it != function->arg_end(); ++it) {
+  for (auto it = function->arg_begin(); it != --function->arg_end(); ++it) {
     const std::string& name =
         node.children[0]->children[1 + arg_num]->string_value;
 
@@ -990,11 +988,16 @@ void IrGenerator::create_function(
     // can emit the same IR code when referencing local variables or
     // function arguments.
     llvm::Value* alloc = b.CreateAlloca(
-        function_type->getParamType(1 + arg_num), nullptr, name);
+        function_type->getParamType(arg_num), nullptr, name);
     b.CreateStore(it, alloc);
     _symbol_table.add(name, alloc);
     ++arg_num;
   }
+  // The code for Node::TYPE_FUNCTION in visit() ensures it takes a global
+  // data structure pointer.
+  auto global = --function->arg_end();
+  global->setName("global");
+  _metadata.add(GLOBAL_DATA_PTR, global);
   _metadata.add(FUNCTION, function);
 }
 
@@ -1025,7 +1028,7 @@ llvm::Function* IrGenerator::create_trampoline_function(
   yang::Type yang_type = get_yang_type(function_type);
   auto it = _trampoline_map.find(yang_type);
   if (it != _trampoline_map.end()) {
-    return it->second;  
+    return it->second;
   }
 
   auto& b = _builder;
@@ -1091,15 +1094,19 @@ llvm::Function* IrGenerator::create_trampoline_function(
     if ((*it)->isStructTy()) {
       jt->setName("a" + std::to_string(i) + "_fptr");
       llvm::Value* fptr = jt++;
+      jt->setName("a" + std::to_string(i) + "_eptr");
+      llvm::Value* eptr = jt++;
       jt->setName("a" + std::to_string(i) + "_tptr");
       llvm::Value* tptr = jt++;
-      jt->setName("a" + std::to_string(i) + "_cptr");
-      llvm::Value* cptr = jt++;
 
-      call_args.push_back(generic_function_value(fptr, tptr, cptr));
+      call_args.push_back(generic_function_value(fptr, eptr, tptr));
       continue;
     }
-    jt->setName("a" + std::to_string(i));
+    // Global data is last parameter.
+    auto kt = it;
+    jt->setName(
+        ++kt == function_type->param_end() ?
+            "global_data" : "a" + std::to_string(i));
     call_args.push_back(jt++);
   }
 
@@ -1114,13 +1121,13 @@ llvm::Function* IrGenerator::create_trampoline_function(
   }
   else if (return_type->isStructTy()) {
     llvm::Value* fptr = b.CreateExtractValue(result, 0, "fptr");
-    llvm::Value* tptr = b.CreateExtractValue(result, 1, "tptr");
-    llvm::Value* cptr = b.CreateExtractValue(result, 2, "cptr");
+    llvm::Value* eptr = b.CreateExtractValue(result, 1, "eptr");
+    llvm::Value* tptr = b.CreateExtractValue(result, 2, "tptr");
 
     auto it = function->arg_begin();
     b.CreateStore(fptr, it++);
+    b.CreateStore(eptr, it++);
     b.CreateStore(tptr, it++);
-    b.CreateStore(cptr, it++);
   }
   else if (!return_type->isVoidTy()) {
     b.CreateStore(result, function->arg_begin());
@@ -1136,7 +1143,7 @@ llvm::Function* IrGenerator::create_reverse_trampoline_function(
   auto& b = _builder;
   auto it = _reverse_trampoline_map.find(function_type.erase_user_types());
   if (it != _reverse_trampoline_map.end()) {
-    return it->second;  
+    return it->second;
   }
   // Handle transitive closure.
   if (function_type.get_function_return_type().is_function()) {
@@ -1150,7 +1157,8 @@ llvm::Function* IrGenerator::create_reverse_trampoline_function(
     }
   }
 
-  // Construct the type of the trampoline function.
+  // Construct the type of the trampoline function (with extra argument for
+  // target pointer).
   auto yang_function_type =
       function_type_from_generic(get_llvm_type(function_type));
   std::vector<llvm::Type*> ft_args;
@@ -1186,18 +1194,18 @@ llvm::Function* IrGenerator::create_reverse_trampoline_function(
   }
 
   std::size_t i = 0;
-  for (auto it = function->arg_begin();; ++it) {
+  for (auto it = function->arg_begin(); it != function->arg_end(); ++it, ++i) {
     auto jt = it;
     if (++jt == function->arg_end()) {
-      break;
+      // Target is the last argument.
+      it->setName("target");
     }
-
-    // Global data is first argument.
-    if (i) {
-      it->setName("a" + std::to_string(i - 1));
+    else if (++jt == function->arg_end()) {
+      // Global data is second-last argument.
+      it->setName("global_data");
     }
     else {
-      it->setName("global_data");
+      it->setName("a" + std::to_string(i));
     }
 
     if (it->getType()->isVectorTy()) {
@@ -1209,20 +1217,15 @@ llvm::Function* IrGenerator::create_reverse_trampoline_function(
     }
     if (it->getType()->isStructTy()) {
       llvm::Value* fptr = b.CreateExtractValue(it, 0, "fptr");
-      llvm::Value* tptr = b.CreateExtractValue(it, 1, "tptr");
-      llvm::Value* cptr = b.CreateExtractValue(it, 2, "cptr");
+      llvm::Value* eptr = b.CreateExtractValue(it, 1, "eptr");
+      llvm::Value* tptr = b.CreateExtractValue(it, 2, "tptr");
       args.push_back(fptr);
+      args.push_back(eptr);
       args.push_back(tptr);
-      args.push_back(cptr);
       continue;
     }
     args.push_back(it);
   }
-
-  // Target is the last argument.
-  auto callee = --function->arg_end();
-  callee->setName("target");
-  args.push_back(callee);
 
   // Trampolines on the C++ side have been populated by template instantiations.
   // We may be providing a null pointer here, if C++ never uses this type. The
@@ -1252,8 +1255,8 @@ llvm::Function* IrGenerator::create_reverse_trampoline_function(
   else if (return_type->isStructTy()) {
     b.CreateRet(generic_function_value(
         b.CreateLoad(return_allocs[0], "fptr"),
-        b.CreateLoad(return_allocs[1], "tptr"),
-        b.CreateLoad(return_allocs[2], "cptr")));
+        b.CreateLoad(return_allocs[1], "eptr"),
+        b.CreateLoad(return_allocs[2], "tptr")));
   }
   else {
     b.CreateRet(b.CreateLoad(return_allocs[0], "ret"));
@@ -1343,12 +1346,12 @@ llvm::Type* IrGenerator::generic_function_type(llvm::Type* type) const
   std::vector<llvm::Type*> types;
   // Yang function pointer or trampoline pointer.
   types.push_back(type);
+  // Pointer to environment (global data structure or closure structure).
+  types.push_back(void_ptr_type());
   // C++ native target pointer.
   types.push_back(void_ptr_type());
-  // Closed environment pointer.
-  types.push_back(void_ptr_type());
 
-  return llvm::StructType::get(_builder.getContext(), types);  
+  return llvm::StructType::get(_builder.getContext(), types);
 }
 
 llvm::Type* IrGenerator::generic_function_type(
@@ -1368,7 +1371,7 @@ llvm::FunctionType* IrGenerator::function_type_from_generic(
 
 llvm::Value* IrGenerator::generic_function_value(
     llvm::Value* function_ptr,
-    llvm::Value* target_ptr, llvm::Value* closure_ptr)
+    llvm::Value* env_ptr, llvm::Value* target_ptr)
 {
   auto type = (llvm::StructType*)generic_function_type(function_ptr->getType());
 
@@ -1382,11 +1385,11 @@ llvm::Value* IrGenerator::generic_function_value(
 
   llvm::Value* v = llvm::ConstantStruct::get(type, values);
   v = _builder.CreateInsertValue(v, function_ptr, 0, "fptr");
-  if (target_ptr) {
-    v = _builder.CreateInsertValue(v, target_ptr, 1, "tptr");
+  if (env_ptr) {
+    v = _builder.CreateInsertValue(v, env_ptr, 1, "eptr");
   }
-  if (closure_ptr) {
-    v = _builder.CreateInsertValue(v, closure_ptr, 2, "cptr");
+  if (target_ptr) {
+    v = _builder.CreateInsertValue(v, target_ptr, 2, "tptr");
   }
   return v;
 }
@@ -1407,7 +1410,7 @@ llvm::Value* IrGenerator::generic_function_value(
   auto corrected_ft = llvm::PointerType::get(
       llvm::FunctionType::get(ft->getReturnType(), args, false), 0);
   f = _builder.CreateBitCast(f, corrected_ft, "fun");
-  return generic_function_value(f, constant_ptr(function.ptr.get()));
+  return generic_function_value(f, nullptr, constant_ptr(function.ptr.get()));
 }
 
 llvm::Constant* IrGenerator::constant_int(yang::int_t value) const
@@ -1686,10 +1689,10 @@ llvm::Type* IrGenerator::get_llvm_type(const yang::Type& t) const
 {
   if (t.is_function()) {
     std::vector<llvm::Type*> args;
-    args.push_back(_global_data);
     for (std::size_t i = 0; i < t.get_function_num_args(); ++i) {
       args.push_back(get_llvm_type(t.get_function_arg_type(i)));
     }
+    args.push_back(_global_data);
 
     return generic_function_type(
         get_llvm_type(t.get_function_return_type()), args);
@@ -1727,7 +1730,7 @@ yang::Type IrGenerator::get_yang_type(llvm::Type* t) const
     r._base = yang::Type::FUNCTION;
     r._elements.push_back(get_yang_type(ft->getReturnType()));
     // Make sure to skip the global data pointer.
-    for (std::size_t i = 1; i < ft->getFunctionNumParams(); ++i) {
+    for (std::size_t i = 0; i < ft->getFunctionNumParams() - 1; ++i) {
       r._elements.push_back(get_yang_type(ft->getFunctionParamType(i)));
     }
   }

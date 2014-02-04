@@ -180,8 +180,7 @@ void StaticChecker::infix(const Node& node, const result_list& results)
             continue;
           }
           if (ptr->type != Node::NAMED_EXPRESSION) {
-            // Should this really be an error? It could also be the way to avoid
-            // "unused argument" warnings, once they exist.
+            // TODO: this shouldn't be an error if the argument isn't used.
             error(*ptr, "unnamed argument in function definition");
             continue;
           }

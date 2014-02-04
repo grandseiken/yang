@@ -128,6 +128,9 @@ typedef yang::internal::Node Node;
 %%
 
   /* Language grammar. */
+  /* TODO: can we make the semicolons on the end of function definitions
+     optional? It's kind of unnatural. The hard part is making it consistent
+     for local function definitions. */
 
 program
   : elem_list T_EOF

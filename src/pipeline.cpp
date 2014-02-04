@@ -249,7 +249,8 @@ bool Instance::check_global(const std::string& name, const Type& type,
             " ", name, "` accessed via incorrect type `", type.string() + "`");
     return false;
   }
-  if (for_modification && (it->second.is_const() || !it->second.is_exported())) {
+  if (for_modification &&
+      (it->second.is_const() || !it->second.is_exported())) {
     log_err(_program._name, ": global `", it->second.string(), " " + name,
             "` cannot be modified externally");
     return false;

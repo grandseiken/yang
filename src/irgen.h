@@ -100,9 +100,8 @@ private:
   llvm::FunctionType* function_type_from_generic(
       llvm::Type* generic_function_type) const;
   llvm::Value* generic_function_value(
-      llvm::Value* function_ptr,
-      llvm::Value* target_ptr = nullptr,
-      llvm::Value* closure_ptr = nullptr);
+      llvm::Value* function_ptr, llvm::Value* env_ptr = nullptr,
+      llvm::Value* target_ptr = nullptr);
   llvm::Value* generic_function_value(const GenericNativeFunction& function);
 
   llvm::Value* i2b(llvm::Value* v);

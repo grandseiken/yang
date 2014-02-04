@@ -88,10 +88,10 @@ private:
     , _instance(&instance) {}
 
   yang::void_fp _function;
-  yang::void_fp _target;
   // Not used for anything yet. Should be able to get rid of instance pointer
   // eventually.
-  void* _closure;
+  void* _env;
+  yang::void_fp _target;
   Instance* _instance;
 
 };
@@ -466,7 +466,7 @@ struct TrampolineReturn<vec<T, N>> {
 };
 template<typename R, typename... Args>
 struct TrampolineReturn<Function<R(Args...)>> {
-  typedef List<yang::void_fp*, yang::void_fp*, void**> type;
+  typedef List<yang::void_fp*, void**, yang::void_fp*> type;
 };
 
 template<typename... Args>
@@ -488,7 +488,7 @@ struct TrampolineArgs<vec<T, N>, Args...> {
 template<typename R, typename... Args, typename... Brgs>
 struct TrampolineArgs<Function<R(Args...)>, Brgs...> {
   typedef typename Join<
-      List<yang::void_fp, yang::void_fp, void*>,
+      List<yang::void_fp, void*, yang::void_fp>,
       typename TrampolineArgs<Brgs...>::type>::type type;
 };
 
@@ -553,7 +553,7 @@ struct TrampolineCallArgs<Function<R(Args...)>, Brgs...> {
 
   type operator()(const Function<R(Args...)>& arg, const Brgs&... brgs) const
   {
-    return join(list(arg._function, arg._target, arg._closure),
+    return join(list(arg._function, arg._env, arg._target),
                 TrampolineCallArgs<Brgs...>()(brgs...));
   }
 };
@@ -593,7 +593,7 @@ struct TrampolineCallReturn<Function<R(Args...)>> {
 
   type operator()(Function<R(Args...)>& result) const
   {
-    return type(&result._function, &result._target, &result._closure);
+    return type(&result._function, &result._env, &result._target);
   }
 };
 
@@ -683,8 +683,8 @@ struct ReverseTrampolineCallArgs<
     // pointer.
     Function<S(Crgs...)> fn_object(instance);
     fn_object._function = std::get<0>(brgs);
-    fn_object._target = std::get<1>(brgs);
-    fn_object._closure = std::get<2>(brgs);
+    fn_object._env = std::get<1>(brgs);
+    fn_object._target = std::get<2>(brgs);
 
     typedef typename IndexRange<3, sizeof...(Brgs) - 3>::type range;
     return join(list(fn_object),
@@ -718,13 +718,13 @@ struct ReverseTrampolineCallReturn<vec<T, N>, Args...> {
 };
 template<typename R, typename... Args>
 struct ReverseTrampolineCallReturn<Function<R(Args...)>,
-                                   yang::void_fp*, yang::void_fp*, void**> {
+                                   yang::void_fp*, void**, yang::void_fp*> {
   void operator()(const Function<R(Args...)>& result,
-                  yang::void_fp* fptr, yang::void_fp* tptr, void** cptr) const
+                  yang::void_fp* fptr, void** eptr, yang::void_fp* tptr) const
   {
     *fptr = result._function;
+    *eptr = result._env;
     *tptr = result._target;
-    *cptr = result._closure;
   }
 };
 
@@ -738,8 +738,8 @@ struct ReverseTrampolineCall {};
 template<typename R, typename... Args, typename... ReturnBrgs, typename... Brgs>
 struct ReverseTrampolineCall<R(Args...), List<ReturnBrgs...>, List<Brgs...>> {
   // No reference args; this is the function directly called from Yang code.
-  static void call(ReturnBrgs... return_brgs, void* global_data, Brgs... brgs,
-                   void* target)
+  static void call(ReturnBrgs... return_brgs, Brgs... brgs,
+                   void* global_data, void* target)
   {
     // Standard guarantees that pointer to structure points to its first member,
     // and the pointer to the program instance is always the first element of
@@ -764,7 +764,7 @@ struct ReverseTrampolineCall<R(Args...), List<ReturnBrgs...>, List<Brgs...>> {
 // Specialisation for void returns.
 template<typename... Args, typename... Brgs>
 struct ReverseTrampolineCall<void(Args...), List<>, List<Brgs...>> {
-  static void call(void* global_data, Brgs... brgs, void* target)
+  static void call(Brgs... brgs, void* global_data, void* target)
   {
     Instance& instance = **(Instance**)global_data;
     auto f = (const NativeFunction<void>*)target;

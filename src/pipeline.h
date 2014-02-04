@@ -204,10 +204,10 @@ R Instance::call_via_trampoline(yang::void_fp target, const Args&... args) const
   yang::void_fp trampoline = get_native_fp(it->second);
   internal::GenerateForwardTrampolineLookupTable<Function<R(Args...)>>()();
 
-  typedef internal::TrampolineCall<R, void*, Args..., yang::void_fp> call_type;
+  typedef internal::TrampolineCall<R, Args..., void*, yang::void_fp> call_type;
   auto trampoline_expanded = (typename call_type::fp_type)trampoline;
   return call_type()(const_cast<Instance&>(*this),
-                     trampoline_expanded, _global_data, args..., target);
+                     trampoline_expanded, args..., _global_data, target);
 }
 
 // End namespace yang.
