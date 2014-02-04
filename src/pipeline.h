@@ -23,8 +23,6 @@ namespace yang {
 class Context;
 namespace internal {
   struct Node;
-  template<typename...>
-  struct InstanceCheck;
 }
 
 class Program {
@@ -122,14 +120,14 @@ private:
 template<typename R, typename... Args>
 R Function<R(Args...)>::operator()(const Args&... args) const
 {
-  // Instance should always be non-null.
-  internal::ValueConstruct<R> construct;
-  if (!*this) {
-    log_err(_instance->get_program().get_name(),
-            ": called null function object");
-    return construct(*_instance);
+  // TODO: not clear how to call non-Yang functions (with no instance) yet.
+  Instance* instance = get_instance();
+  if (!*this || !instance) {
+    log_err((instance ? instance->get_program().get_name() + ": " : ""),
+            "called null function object");
+    return R();
   }
-  return _instance->call_via_trampoline<R>(_function, args...);
+  return instance->call_via_trampoline<R>(_function, args...);
 }
 
 template<typename T>
@@ -158,22 +156,19 @@ template<typename T>
 T Instance::get_function(const std::string& name)
 {
   internal::TypeInfo<T> info;
-  internal::ValueConstruct<T> construct;
-  T result = construct(*this);
   if (!check_function(name, info(_program.get_context()))) {
-    return result;
+    return T();
   }
-  construct.set_void_fp(result, get_native_fp(name));
-  return result;
+  internal::FunctionConstruct<T> construct;
+  return construct(get_native_fp(name), _global_data);
 }
 
 template<typename R, typename... Args>
 R Instance::call(const std::string& name, const Args&... args)
 {
   internal::TypeInfo<Function<R(Args...)>> info;
-  internal::ValueConstruct<R> construct;
   if (!check_function(name, info(_program.get_context()))) {
-    return construct(*this);
+    return R();
   }
   return call_via_trampoline<R>(name, args...);
 }
@@ -188,13 +183,6 @@ R Instance::call_via_trampoline(
 template<typename R, typename... Args>
 R Instance::call_via_trampoline(yang::void_fp target, const Args&... args) const
 {
-  // Make sure only functions referencing this instance are passed in.
-  internal::InstanceCheck<Args...> instance_check;
-  internal::ValueConstruct<R> construct;
-  if (!instance_check(*this, args...)) {
-    return construct(const_cast<Instance&>(*this));
-  }
-
   Type type = Function<R(Args...)>::get_type(_program.get_context());
   // Since we can only obtain a valid Function object referencing a function
   // type for which a trampoline has been generated, there should always be
@@ -206,8 +194,7 @@ R Instance::call_via_trampoline(yang::void_fp target, const Args&... args) const
 
   typedef internal::TrampolineCall<R, Args..., void*, yang::void_fp> call_type;
   auto trampoline_expanded = (typename call_type::fp_type)trampoline;
-  return call_type()(const_cast<Instance&>(*this),
-                     trampoline_expanded, args..., _global_data, target);
+  return call_type()(trampoline_expanded, args..., _global_data, target);
 }
 
 // End namespace yang.

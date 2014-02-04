@@ -92,6 +92,9 @@
 // assignment.
 // TODO: warnings: for example, unused variables.
 // TODO: many calls to log_err should probably actually be thrown exceptions.
+// Currently, passing or returning a null Function object to Yang is undefined
+// behaviour if it's called; we should really throw exceptions so that it isn't
+// even possible to get a null Function object in the first place.
 // TODO: code hot-swapping. Careful with pointer values (e.g. functions) in
 // global data struct which probably need to be left as default values.
 //

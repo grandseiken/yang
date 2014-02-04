@@ -17,14 +17,10 @@ class Program;
 
 namespace internal {
 
-// Some indirection to avoid defining InstanceCheck in a weird place.
-const std::string& get_instance_name(const Instance& instance);
-const Program& get_instance_program(const Instance& instance);
-
+template<typename>
+struct FunctionConstruct;
 template<typename>
 struct TypeInfo;
-template<typename>
-struct ValueConstruct;
 
 template<typename...>
 struct TrampolineCallArgs;
@@ -51,8 +47,6 @@ template<typename R, typename... Args>
 class Function<R(Args...)> {
 public:
 
-  // Get the program instance that this function references.
-  Instance& get_instance() const;
   // Get the type corresponding to this function type as a yang Type object.
   static Type get_type(const Context& context);
 
@@ -64,6 +58,10 @@ public:
   R operator()(const Args&... args) const;
 
 private:
+
+  // If this is a Yang function, get the program instance it references.
+  // Otherwise, return a null pointer.
+  Instance* get_instance() const;
 
   template<typename...>
   friend struct internal::TrampolineCallArgs;
@@ -78,29 +76,21 @@ private:
   friend struct internal::ReverseTrampolineCallReturn;
 
   template<typename>
-  friend struct internal::ValueConstruct;
+  friend struct internal::FunctionConstruct;
   template<typename>
   friend class Function;
   friend class Instance;
 
-  Function(Instance& instance)
+  Function()
     : _function(nullptr)
-    , _instance(&instance) {}
+    , _env(nullptr)
+    , _target(nullptr) {}
 
   yang::void_fp _function;
-  // Not used for anything yet. Should be able to get rid of instance pointer
-  // eventually.
   void* _env;
   yang::void_fp _target;
-  Instance* _instance;
 
 };
-
-template<typename R, typename... Args>
-Instance& Function<R(Args...)>::get_instance() const
-{
-  return *_instance;
-}
 
 template<typename R, typename... Args>
 Type Function<R(Args...)>::get_type(const Context& context)
@@ -115,7 +105,42 @@ Function<R(Args...)>::operator bool() const
   return _function;
 }
 
+template<typename R, typename... Args>
+Instance* Function<R(Args...)>::get_instance() const
+{
+  // Standard guarantees that pointer to structure points to its first member,
+  // and the pointer to the program instance is always the first element of
+  // the global data structure; so, we can just cast it to an instance
+  // pointer.
+  //
+  // This will change when the environment pointer can also point to a closure
+  // structure.
+  if (!_env) {
+    return nullptr;
+  }
+  return *(Instance**)_env;
+}
+
 namespace internal {
+
+template<typename T>
+struct FunctionConstruct {
+  static_assert(sizeof(T) != sizeof(T), "use of non-function type");
+  T operator()(yang::void_fp, void*) const
+  {
+    return {};
+  }
+};
+template<typename R, typename... Args>
+struct FunctionConstruct<Function<R(Args...)>> {
+  Function<R(Args...)> operator()(yang::void_fp function, void* env) const
+  {
+    Function<R(Args...)> f;
+    f._function = function;
+    f._env = env;
+    return f;
+  }
+};
 
 template<typename T>
 struct TypeInfo {
@@ -254,85 +279,6 @@ struct TypeInfo<Function<R(A, Args...)>> {
     yang::Type t = TypeInfo<Function<R(Args...)>>()();
     t._elements.insert(++t._elements.begin(), TypeInfo<A>()());
     return t;
-  }
-};
-
-// Construct a value and (for function types) set the associated instance.
-template<typename T>
-struct ValueConstruct {
-  T operator()(Instance&) const
-  {
-    return T();
-  }
-
-  template<typename U>
-  void set_void_fp(U&, yang::void_fp ptr) const
-  {
-    static_assert(sizeof(U) != sizeof(U), "use of non-function type");
-  }
-};
-
-template<typename R, typename... Args>
-struct ValueConstruct<Function<R(Args...)>> {
-  Function<R(Args...)> operator()(Instance& instance) const
-  {
-    return Function<R(Args...)>(instance);
-  }
-
-  void set_void_fp(Function<R(Args...)>& function, yang::void_fp ptr) const
-  {
-    function._function = ptr;
-  }
-};
-
-// Check that all Functions given in an argument list match some particular
-// program instance.
-template<typename...>
-struct InstanceCheck {};
-template<>
-struct InstanceCheck<> {
-  bool operator()(const Instance&) const
-  {
-    return true;
-  }
-};
-template<typename A, typename... Args>
-struct InstanceCheck<A, Args...> {
-  bool operator()(const Instance& instance,
-                  const A&, const Args&... args) const
-  {
-    InstanceCheck<Args...> next;
-    return next(instance, args...);
-  }
-};
-template<typename FR, typename... FArgs, typename... Args>
-struct InstanceCheck<Function<FR(FArgs...)>, Args...> {
-  bool operator()(const Instance& instance,
-                  const Function<FR(FArgs...)>& arg, const Args&... args) const
-  {
-    bool result = true;
-    InstanceCheck<Args...> next;
-    if (!arg) {
-      log_err(get_instance_name(instance),
-              ": passed null function object");
-      result = false;
-    }
-    else {
-      if (&get_instance_program(arg.get_instance()) !=
-          &get_instance_program(instance)) {
-        log_err(get_instance_name(instance),
-                ": passed function referencing different program ",
-                 get_instance_name(arg.get_instance()));
-        result = false;
-      }
-      if (&arg.get_instance() != &instance) {
-        log_err(get_instance_name(instance),
-                ": passed function referencing different program instance");
-        result = false;
-      }
-    }
-    // Don't short-circuit; want to print the rest of the error messages.
-    return next(instance, args...) && result;
   }
 };
 
@@ -603,10 +549,9 @@ struct TrampolineCall {
   typedef typename TrampolineType<R, Args...>::type type;
   typedef typename TrampolineType<R, Args...>::fp_type fp_type;
 
-  R operator()(Instance& instance,
-               const type& function, const Args&... args) const
+  R operator()(const type& function, const Args&... args) const
   {
-    R result = ValueConstruct<R>()(instance);
+    R result;
     list_call(function, join(TrampolineCallReturn<R>()(result),
                              TrampolineCallArgs<Args...>()(args...)));
     return result;
@@ -620,7 +565,7 @@ struct TrampolineCall<void, Args...> {
   typedef typename TrampolineType<void, Args...>::type type;
   typedef typename TrampolineType<void, Args...>::fp_type fp_type;
 
-  void operator()(Instance&, const type& function, const Args&... args) const
+  void operator()(const type& function, const Args&... args) const
   {
     list_call(function, TrampolineCallArgs<Args...>()(args...));
   }
@@ -632,63 +577,57 @@ struct TrampolineCall<void, Args...> {
 template<typename, typename>
 struct ReverseTrampolineCallArgs {};
 template<typename T, typename U>
-auto rtcall_args(const U& u, Instance& instance)
-  -> decltype(ReverseTrampolineCallArgs<T, U>()(u, instance))
+auto rtcall_args(const U& u)
+  -> decltype(ReverseTrampolineCallArgs<T, U>()(u))
 {
-  return ReverseTrampolineCallArgs<T, U>()(u, instance);
+  return ReverseTrampolineCallArgs<T, U>()(u);
 }
 template<>
 struct ReverseTrampolineCallArgs<List<>, List<>> {
-  List<> operator()(const List<>&, Instance&) const
+  List<> operator()(const List<>&) const
   {
     return {};
   }
 };
 template<typename... Args, typename... Brgs, typename A>
 struct ReverseTrampolineCallArgs<List<A, Args...>, List<Brgs...>> {
-  List<A, Args...> operator()(
-      const List<Brgs...>& brgs, Instance& instance) const
+  List<A, Args...> operator()(const List<Brgs...>& brgs) const
   {
     typedef typename IndexRange<1, sizeof...(Brgs) - 1>::type range;
     return join(list(std::get<0>(brgs)),
-                rtcall_args<List<Args...>>(sublist<range>(brgs), instance));
+                rtcall_args<List<Args...>>(sublist<range>(brgs)));
   }
 };
 template<typename... Args, typename... Brgs, typename T, std::size_t N>
 struct ReverseTrampolineCallArgs<List<vec<T, N>, Args...>, List<Brgs...>> {
   template<std::size_t... I>
-  List<vec<T, N>, Args...> helper(const List<Brgs...>& brgs, Instance& instance,
+  List<vec<T, N>, Args...> helper(const List<Brgs...>& brgs,
                                   const Indices<I...>&) const
   {
     typedef typename IndexRange<N, sizeof...(Brgs) - N>::type range;
     return join(list(vec<T, N>(std::get<I>(brgs)...)),
-                rtcall_args<List<Args...>>(sublist<range>(brgs), instance));
+                rtcall_args<List<Args...>>(sublist<range>(brgs)));
   }
 
-  List<vec<T, N>, Args...> operator()(
-      const List<Brgs...>& brgs, Instance& instance) const
+  List<vec<T, N>, Args...> operator()(const List<Brgs...>& brgs) const
   {
-    return helper(brgs, instance, range<0, N>());
+    return helper(brgs, range<0, N>());
   }
 };
 template<typename... Args, typename... Brgs, typename S, typename... Crgs>
 struct ReverseTrampolineCallArgs<
     List<Function<S(Crgs...)>, Args...>, List<Brgs...>> {
   List<Function<S(Crgs...)>, Args...> operator()(
-      const List<Brgs...>& brgs, Instance& instance) const
+      const List<Brgs...>& brgs) const
   {
-    // Standard guarantees that pointer to structure points to its first member,
-    // and the pointer to the program instance is always the first element of
-    // the global data structure; so, we can just cast it to an instance
-    // pointer.
-    Function<S(Crgs...)> fn_object(instance);
+    Function<S(Crgs...)> fn_object;
     fn_object._function = std::get<0>(brgs);
     fn_object._env = std::get<1>(brgs);
     fn_object._target = std::get<2>(brgs);
 
     typedef typename IndexRange<3, sizeof...(Brgs) - 3>::type range;
     return join(list(fn_object),
-                rtcall_args<List<Args...>>(sublist<range>(brgs), instance));
+                rtcall_args<List<Args...>>(sublist<range>(brgs)));
   }
 };
 
@@ -738,25 +677,12 @@ struct ReverseTrampolineCall {};
 template<typename R, typename... Args, typename... ReturnBrgs, typename... Brgs>
 struct ReverseTrampolineCall<R(Args...), List<ReturnBrgs...>, List<Brgs...>> {
   // No reference args; this is the function directly called from Yang code.
-  static void call(ReturnBrgs... return_brgs, Brgs... brgs,
-                   void* global_data, void* target)
+  // Currently takes an environment pointer, but has no use for it.
+  static void call(ReturnBrgs... return_brgs, Brgs... brgs, void*, void* target)
   {
-    // Standard guarantees that pointer to structure points to its first member,
-    // and the pointer to the program instance is always the first element of
-    // the global data structure; so, we can just cast it to an instance
-    // pointer.
-    Instance& instance = **(Instance**)global_data;
     auto f = (const NativeFunction<void>*)target;
     R result = list_call(f->get<R, Args...>(),
-                         rtcall_args<List<Args...>>(list(brgs...), instance));
-
-    // Check C++ isn't returning a pointer to a function on a different program
-    // instance. If it is, we need to return *something*, so set result to
-    // default (null pointer), so that at least any use will probably fail fast.
-    InstanceCheck<R> instance_check;
-    if (!instance_check(instance, result)) {
-      result = ValueConstruct<R>()(instance);
-    }
+                         rtcall_args<List<Args...>>(list(brgs...)));
     ReverseTrampolineCallReturn<R, ReturnBrgs...>()(result, return_brgs...);
   }
 };
@@ -764,12 +690,11 @@ struct ReverseTrampolineCall<R(Args...), List<ReturnBrgs...>, List<Brgs...>> {
 // Specialisation for void returns.
 template<typename... Args, typename... Brgs>
 struct ReverseTrampolineCall<void(Args...), List<>, List<Brgs...>> {
-  static void call(Brgs... brgs, void* global_data, void* target)
+  static void call(Brgs... brgs, void*, void* target)
   {
-    Instance& instance = **(Instance**)global_data;
     auto f = (const NativeFunction<void>*)target;
     list_call(f->get<void, Args...>(),
-              rtcall_args<List<Args...>>(list(brgs...), instance));
+              rtcall_args<List<Args...>>(list(brgs...)));
   }
 };
 

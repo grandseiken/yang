@@ -210,7 +210,7 @@ void IrGenerator::preorder(const Node& node)
       // structure pointer.
       auto it = function->arg_begin();
       it->setName("global");
-      _metadata.add(GLOBAL_DATA_PTR, it);
+      _metadata.add(ENVIRONMENT_PTR, it);
       _metadata.add(FUNCTION, function);
       break;
     }
@@ -482,7 +482,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       for (std::size_t i = 1; i < results.size(); ++i) {
         args.push_back(results[i]);
       }
-      args.push_back(_global_data);
+      args.push_back(void_ptr_type());
       return generic_function_type(results[0], args);
     }
 
@@ -528,7 +528,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // block in the enclosing function and make the proper expression value.
       auto function = (llvm::Function*)_metadata[FUNCTION];
       b.SetInsertPoint(&*function->getBasicBlockList().rbegin());
-      return generic_function_value(parent);
+      return generic_function_value(parent, _metadata[ENVIRONMENT_PTR]);
     }
     case Node::NAMED_EXPRESSION:
       return results[0];
@@ -627,11 +627,12 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // defined, otherwise it might be a reference to a context function of the
       // same name.
       if (_symbol_table.has(node.string_value)) {
-        // If the symbol table entry is non-null it's a function (constant
-        // global), just get the value.
+        // If the symbol table entry is non-null it's a top-level function; just
+        // get the value.
         if (_symbol_table.get(node.string_value, 0)) {
           return generic_function_value(
-              _symbol_table.get(node.string_value, 0));
+              _symbol_table.get(node.string_value, 0),
+              _metadata[ENVIRONMENT_PTR]);
         }
         // Otherwise it's a global, so look up in the global structure.
         return b.CreateLoad(global_ptr(node.string_value), "load");
@@ -675,46 +676,40 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       if (_metadata.has(TYPE_EXPR_CONTEXT)) {
         goto type_function;
       }
+      bool member_function = node.children[0]->type == Node::MEMBER_SELECTION;
+
+      // TODO: is it true that always either environment or target pointer is
+      // null? If so, can we get rid of get_function_type_with_target and the
+      // branching here, and just call with the final environment/target
+      // pointers ORed together?
+      std::vector<llvm::Value*> args;
+      if (member_function) {
+        args.push_back(results[0]);
+      }
+      for (std::size_t i = 1; i < results.size(); ++i) {
+        args.push_back(results[i]);
+      }
 
       // Special odd logic for member-function calling.
-      if (node.children[0]->type == Node::MEMBER_SELECTION) {
+      if (member_function) {
         std::string s = node.children[0]->user_type_name +
             "::" + node.children[0]->string_value;
 
-        std::vector<llvm::Value*> args;
-        args.push_back(results[0]);
-        for (std::size_t i = 1; i < results.size(); ++i) {
-          args.push_back(results[i]);
-        }
-        args.push_back(_metadata[GLOBAL_DATA_PTR]);
+        // Context functions don't need an environment pointer.
+        args.push_back(llvm::ConstantPointerNull::get(void_ptr_type()));
+
+        // Add the target function pointer.
         auto it = _context.get_functions().find(s);
         args.push_back(constant_ptr(it->second.ptr.get()));
         return b.CreateCall(
             _reverse_trampoline_map[it->second.type.erase_user_types()], args);
       }
 
-      std::vector<llvm::Value*> args;
-      for (std::size_t i = 1; i < results.size(); ++i) {
-        args.push_back(results[i]);
-      }
-      args.push_back(_metadata[GLOBAL_DATA_PTR]);
-
-      // Construct the function type which includes an extra target type at
-      // the end. This is kind of weird. We could make every function have an
-      // unused target parameter at the end to avoid this weird casting and
-      // switching. Not sure whether that's a better idea.
-      auto f_type = function_type_from_generic(types[0]);
-      std::vector<llvm::Type*> ft_args;
-      for (auto it = f_type->param_begin(); it != f_type->param_end(); ++it) {
-        ft_args.push_back(*it);
-      }
-      ft_args.push_back(void_ptr_type());
-      auto ft_type = llvm::PointerType::get(
-          llvm::FunctionType::get(f_type->getReturnType(), ft_args, false), 0);
-
       // Extract pointers from the struct.
       llvm::Value* fptr = b.CreateExtractValue(results[0], 0, "fptr");
+      llvm::Value* eptr = b.CreateExtractValue(results[0], 1, "eptr");
       llvm::Value* tptr = b.CreateExtractValue(results[0], 2, "tptr");
+      args.push_back(eptr);
 
       // Switch on the presence of a trampoline function pointer.
       auto parent = b.GetInsertBlock()->getParent();
@@ -725,9 +720,11 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       auto merge_block =
           llvm::BasicBlock::Create(b.getContext(), "merge", parent);
 
+      auto f_type = get_function_type_with_target(types[0]);
+      auto fp_type = llvm::PointerType::get(f_type, 0);
+
       llvm::Value* cmp = b.CreateICmpNE(
-          tptr,
-          llvm::ConstantPointerNull::get((llvm::PointerType*)void_ptr_type()));
+          tptr, llvm::ConstantPointerNull::get(void_ptr_type()));
       b.CreateCondBr(cmp, cpp_block, yang_block);
 
       b.SetInsertPoint(yang_block);
@@ -736,8 +733,8 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
 
       args.push_back(tptr);
       b.SetInsertPoint(cpp_block);
-      llvm::Value* cpp_val = b.CreateCall(
-          b.CreateBitCast(fptr, ft_type, "cast"), args);
+      llvm::Value* cpp_val =
+          b.CreateCall(b.CreateBitCast(fptr, fp_type, "cast"), args);
       b.CreateBr(merge_block);
 
       b.SetInsertPoint(merge_block);
@@ -869,7 +866,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
         b.CreateStore(results[1], _symbol_table[s]);
       }
       // We can't store values for globals in the symbol table since the lookup
-      // depends on the current function's global data argument.
+      // depends on the current function's environment pointer argument.
       else {
         b.CreateStore(results[1], global_ptr(s));
       }
@@ -993,12 +990,29 @@ void IrGenerator::create_function(
     _symbol_table.add(name, alloc);
     ++arg_num;
   }
-  // The code for Node::TYPE_FUNCTION in visit() ensures it takes a global
-  // data structure pointer.
-  auto global = --function->arg_end();
-  global->setName("global");
-  _metadata.add(GLOBAL_DATA_PTR, global);
+  // The code for Node::TYPE_FUNCTION in visit() ensures it takes an environment
+  // pointer.
+  auto eptr = --function->arg_end();
+  eptr->setName("env");
+  _metadata.add(ENVIRONMENT_PTR, eptr);
   _metadata.add(FUNCTION, function);
+}
+
+llvm::FunctionType* IrGenerator::get_function_type_with_target(
+    llvm::Type* function_type) const
+{
+  // Construct the function type which includes an extra target type at
+  // the end. This is kind of weird. We could make every function have an
+  // unused target parameter at the end to avoid this weird casting and
+  // switching. Not sure whether that's a better idea. It would avoid having
+  // to branch on every function call (in case we want to pass a target).
+  auto f_type = function_type_from_generic(function_type);
+  std::vector<llvm::Type*> ft_args;
+  for (auto it = f_type->param_begin(); it != f_type->param_end(); ++it) {
+    ft_args.push_back(*it);
+  }
+  ft_args.push_back(void_ptr_type());
+  return llvm::FunctionType::get(f_type->getReturnType(), ft_args, false);
 }
 
 llvm::Function* IrGenerator::create_trampoline_function(
@@ -1102,11 +1116,10 @@ llvm::Function* IrGenerator::create_trampoline_function(
       call_args.push_back(generic_function_value(fptr, eptr, tptr));
       continue;
     }
-    // Global data is last parameter.
+    // Environment pointer is last parameter.
     auto kt = it;
     jt->setName(
-        ++kt == function_type->param_end() ?
-            "global_data" : "a" + std::to_string(i));
+        ++kt == function_type->param_end() ? "env" : "a" + std::to_string(i));
     call_args.push_back(jt++);
   }
 
@@ -1159,16 +1172,8 @@ llvm::Function* IrGenerator::create_reverse_trampoline_function(
 
   // Construct the type of the trampoline function (with extra argument for
   // target pointer).
-  auto yang_function_type =
-      function_type_from_generic(get_llvm_type(function_type));
-  std::vector<llvm::Type*> ft_args;
-  for (auto it = yang_function_type->param_begin();
-       it != yang_function_type->param_end(); ++it) {
-    ft_args.push_back(*it);
-  }
-  ft_args.push_back(void_ptr_type());
-  auto internal_type = llvm::FunctionType::get(
-      yang_function_type->getReturnType(), ft_args, false);
+  auto internal_type =
+      get_function_type_with_target(get_llvm_type(function_type));
 
   // Generate it.
   auto function = llvm::Function::Create(
@@ -1201,8 +1206,8 @@ llvm::Function* IrGenerator::create_reverse_trampoline_function(
       it->setName("target");
     }
     else if (++jt == function->arg_end()) {
-      // Global data is second-last argument.
-      it->setName("global_data");
+      // Environment pointer is second-last argument.
+      it->setName("env");
     }
     else {
       it->setName("a" + std::to_string(i));
@@ -1313,7 +1318,7 @@ std::size_t IrGenerator::get_trampoline_num_return_args(
       return_type->isStructTy() ? 3 : 1;
 }
 
-llvm::Type* IrGenerator::void_ptr_type() const
+llvm::PointerType* IrGenerator::void_ptr_type() const
 {
   // LLVM doesn't have a built-in void pointer type, so just use a pointer
   // to whatever.
@@ -1378,10 +1383,8 @@ llvm::Value* IrGenerator::generic_function_value(
   std::vector<llvm::Constant*> values;
   values.push_back(llvm::ConstantPointerNull::get(
       (llvm::PointerType*)type->getElementType(0)));
-  values.push_back(llvm::ConstantPointerNull::get(
-      (llvm::PointerType*)void_ptr_type()));
-  values.push_back(llvm::ConstantPointerNull::get(
-      (llvm::PointerType*)void_ptr_type()));
+  values.push_back(llvm::ConstantPointerNull::get(void_ptr_type()));
+  values.push_back(llvm::ConstantPointerNull::get(void_ptr_type()));
 
   llvm::Value* v = llvm::ConstantStruct::get(type, values);
   v = _builder.CreateInsertValue(v, function_ptr, 0, "fptr");
@@ -1410,6 +1413,7 @@ llvm::Value* IrGenerator::generic_function_value(
   auto corrected_ft = llvm::PointerType::get(
       llvm::FunctionType::get(ft->getReturnType(), args, false), 0);
   f = _builder.CreateBitCast(f, corrected_ft, "fun");
+  // Context functions don't need an environment pointer.
   return generic_function_value(f, nullptr, constant_ptr(function.ptr.get()));
 }
 
@@ -1510,7 +1514,9 @@ llvm::Value* IrGenerator::global_ptr(llvm::Value* ptr, std::size_t index)
 
 llvm::Value* IrGenerator::global_ptr(const std::string& name)
 {
-  return global_ptr(_metadata[GLOBAL_DATA_PTR], _global_numbering[name]);
+  llvm::Value* v =
+      _builder.CreateBitCast(_metadata[ENVIRONMENT_PTR], _global_data);
+  return global_ptr(v, _global_numbering[name]);
 }
 
 llvm::Value* IrGenerator::pow(llvm::Value* v, llvm::Value* u)
@@ -1692,7 +1698,7 @@ llvm::Type* IrGenerator::get_llvm_type(const yang::Type& t) const
     for (std::size_t i = 0; i < t.get_function_num_args(); ++i) {
       args.push_back(get_llvm_type(t.get_function_arg_type(i)));
     }
-    args.push_back(_global_data);
+    args.push_back(void_ptr_type());
 
     return generic_function_type(
         get_llvm_type(t.get_function_return_type()), args);
@@ -1729,7 +1735,7 @@ yang::Type IrGenerator::get_yang_type(llvm::Type* t) const
         function_type_from_generic(t) : (llvm::FunctionType*)t;
     r._base = yang::Type::FUNCTION;
     r._elements.push_back(get_yang_type(ft->getReturnType()));
-    // Make sure to skip the global data pointer.
+    // Make sure to skip the environment pointer.
     for (std::size_t i = 0; i < ft->getFunctionNumParams() - 1; ++i) {
       r._elements.push_back(get_yang_type(ft->getFunctionParamType(i)));
     }

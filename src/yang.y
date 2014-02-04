@@ -408,11 +408,11 @@ expr
 {$$ = new Node(Node::ASSIGN, $1->clone(),
                new Node(Node::DIV, $1, $3));}
   | T_INCREMENT T_IDENTIFIER %prec P_UNARY_L
-{$$ = new Node(Node::ASSIGN,
+{$$ = new Node(Node::ASSIGN, $2->clone(),
                new Node(Node::ADD, $2, new Node(Node::INT_LITERAL, 1)));
  $$->string_value = $2->string_value;}
   | T_DECREMENT T_IDENTIFIER %prec P_UNARY_L
-{$$ = new Node(Node::ASSIGN,
+{$$ = new Node(Node::ASSIGN, $2->clone(),
                new Node(Node::SUB, $2, new Node(Node::INT_LITERAL, 1)));
  $$->string_value = $2->string_value;}
 

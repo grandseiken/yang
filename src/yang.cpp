@@ -58,8 +58,7 @@ int main(int argc, char** argv)
     return 2 * f(a);
   };
   context.register_member_function<Test>(
-      "foo",
-      std::function<yang::int_t(Test*, Fn<int_t(int_t)>, int_t)>(test_foo));
+      "foo", std::function<int_t(Test*, Fn<int_t(int_t)>, int_t)>(test_foo));
 
   yang::Program program(context, path, contents);
   if (!program.success()) {
@@ -84,5 +83,16 @@ int main(int argc, char** argv)
 
   auto h = instance.get_function<Fn<Fn<int_t(int_t)>()>>("h");
   log_info("g(h()): ", instance.call<int_t>("g", h()));
+
+  yang::Instance jnstance(program);
+  auto iinc = instance.get_function<Fn<void()>>("increment");
+  auto jinc = jnstance.get_function<Fn<void()>>("increment");
+  auto icall = instance.get_function<Fn<void(Fn<void()>)>>("call_void");
+
+  iinc();
+  icall(iinc);
+  icall(jinc);
+  log_info("instance i: ", instance.get_global<int_t>("i"));
+  log_info("jnstance i: ", jnstance.get_global<int_t>("i"));
   return 0;
 }

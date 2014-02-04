@@ -71,6 +71,10 @@ private:
   // Tools for functions and calling conventions.
   void create_function(
       const Node& node, llvm::FunctionType* function_type);
+  // Return a function type with extra parameter for the target function when
+  // calling a trampoline.
+  llvm::FunctionType* get_function_type_with_target(
+      llvm::Type* function_type) const;
   // Generate trampoline functions for converting between calling conventions.
   llvm::Function* create_trampoline_function(llvm::FunctionType* function_type);
   llvm::Function* create_reverse_trampoline_function(
@@ -81,7 +85,7 @@ private:
   std::size_t get_trampoline_num_return_args(llvm::Type* return_type) const;
 
   // General helper functions.
-  llvm::Type* void_ptr_type() const;
+  llvm::PointerType* void_ptr_type() const;
   llvm::Type* void_type() const;
   llvm::Type* int_type() const;
   llvm::Type* float_type() const;
@@ -100,7 +104,7 @@ private:
   llvm::FunctionType* function_type_from_generic(
       llvm::Type* generic_function_type) const;
   llvm::Value* generic_function_value(
-      llvm::Value* function_ptr, llvm::Value* env_ptr = nullptr,
+      llvm::Value* function_ptr, llvm::Value* env_ptr,
       llvm::Value* target_ptr = nullptr);
   llvm::Value* generic_function_value(const GenericNativeFunction& function);
 
@@ -133,7 +137,7 @@ private:
 
   // Metadata symbols.
   enum metadata {
-    GLOBAL_DATA_PTR,
+    ENVIRONMENT_PTR,
     GLOBAL_INIT_FUNCTION,
     FUNCTION,
     TYPE_EXPR_CONTEXT,
