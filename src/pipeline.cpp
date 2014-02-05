@@ -1,3 +1,7 @@
+//============================================================================//
+// This file is part of the Yang software project. It is distributed under the
+// MIT License. See LICENSE file for details.
+//============================================================================//
 #include "pipeline.h"
 
 #include <llvm/Analysis/Passes.h>
@@ -229,7 +233,7 @@ yang::void_fp Instance::get_native_fp(llvm::Function* ir_fp) const
   // Unfortunately (due to dependence on dlsym?), there doesn't seem to be any
   // way around this (technically) defined behaviour. I guess it should work
   // in practice since the whole native codegen thing is inherently machine-
-  // -depend anyway. Also occurs in irgen.cpp.
+  // -dependent anyway. Also occurs in irgen.cpp.
   return (yang::void_fp)(std::intptr_t)void_p;
 }
 

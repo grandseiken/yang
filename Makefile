@@ -1,3 +1,7 @@
+#==============================================================================#
+# This file is part of the Yang software project. It is distributed under the
+# MIT License. See LICENSE file for details.
+#==============================================================================#
 # Targets:
 #   yang - the Yang standalone compiler/checker
 #   clean - delete all outputs
@@ -68,7 +72,7 @@ SOURCE_FILES=$(CPP_FILES) $(L_OUTPUTS) $(Y_OUTPUTS)
 DEP_FILES=$(addprefix $(OUTDIR)/,$(addsuffix .deps,$(SOURCE_FILES)))
 OBJECT_FILES=$(addprefix $(OUTDIR)/,$(addsuffix .o,$(SOURCE_FILES)))
 
-MISC_FILES=Makefile Makedeps README.md .gitignore
+MISC_FILES=Makefile Makedeps README.md LICENSE .gitignore
 ALL_FILES=$(CPP_FILES) $(H_FILES) $(L_FILES) $(Y_FILES) $(MISC_FILES)
 
 # Master targets.
