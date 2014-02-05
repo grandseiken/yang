@@ -50,10 +50,6 @@ public:
   // Get the type corresponding to this function type as a yang Type object.
   static Type get_type(const Context& context);
 
-  // True if the object references a non-null function. It is an error to pass
-  // a null function object to a yang program instance, or invoke it.
-  explicit operator bool() const;
-
   // Invoke the function.
   R operator()(const Args&... args) const;
 
@@ -81,6 +77,10 @@ private:
   friend class Function;
   friend class Instance;
 
+  // Invariant: Function objects returned to client code must never be null.
+  // They must reference a genuine Yang function or C++ function, so that they
+  // can be invoked or passed to Yang code. Library code that return Functions
+  // to client code must throw rather than returning something unusable.
   Function()
     : _function(nullptr)
     , _env(nullptr)
@@ -97,12 +97,6 @@ Type Function<R(Args...)>::get_type(const Context& context)
 {
   internal::TypeInfo<Function<R(Args...)>> info;
   return info(context);
-}
-
-template<typename R, typename... Args>
-Function<R(Args...)>::operator bool() const
-{
-  return _function;
 }
 
 template<typename R, typename... Args>

@@ -2,8 +2,7 @@
 #include <fstream>
 
 #include "log.h"
-#include "context.h"
-#include "pipeline.h"
+#include "yang.h"
 
 typedef yang::int_t int_t;
 template<typename T>

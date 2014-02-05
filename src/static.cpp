@@ -390,13 +390,11 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
 
     case Node::SCOPE_RESOLUTION:
     {
-      log_err("scope res");
       if (!results[0].user_type()) {
         error(node, s + " applied to " + rs[0]);
         return Type::ERROR;
       }
       if (results[0].is_error()) {
-        log_err("scope res err");
         return Type::ERROR;
       }
       node.user_type_name = results[0].user_type_name();

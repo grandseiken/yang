@@ -104,11 +104,13 @@ private:
   R call_via_trampoline(yang::void_fp target, const Args&... args) const;
 
   // Runtime check that global exists and has the correct type and, if it is to
-  // be modified, that it is both exported and non-const.
-  bool check_global(const std::string& name, const Type& type,
+  // be modified, that it is both exported and non-const. Otherwise, throws.
+  // Makes sure that we never return allow an invalid object (e.g. a null
+  // function) to leak out into client code.
+  void check_global(const std::string& name, const Type& type,
                     bool for_modification) const;
   // Similarly for functions.
-  bool check_function(const std::string& name, const Type& type) const;
+  void check_function(const std::string& name, const Type& type) const;
 
   const Program& _program;
   void* _global_data;
@@ -122,11 +124,6 @@ R Function<R(Args...)>::operator()(const Args&... args) const
 {
   // TODO: not clear how to call non-Yang functions (with no instance) yet.
   Instance* instance = get_instance();
-  if (!*this || !instance) {
-    log_err((instance ? instance->get_program().get_name() + ": " : ""),
-            "called null function object");
-    return R();
-  }
   return instance->call_via_trampoline<R>(_function, args...);
 }
 
@@ -136,9 +133,7 @@ T Instance::get_global(const std::string& name) const
   // TypeInfo will fail at compile-time for completely unsupported types; will
   // at runtime for pointers to unregistered user types.
   internal::TypeInfo<T> info;
-  if (!check_global(name, info(_program.get_context()), false)) {
-    return T();
-  }
+  check_global(name, info(_program.get_context()), false);
   return call_via_trampoline<T>("!global_get_" + name);
 }
 
@@ -146,9 +141,7 @@ template<typename T>
 void Instance::set_global(const std::string& name, const T& value)
 {
   internal::TypeInfo<T> info;
-  if (!check_global(name, info(_program.get_context()), true)) {
-    return;
-  }
+  check_global(name, info(_program.get_context()), true);
   call_via_trampoline<void>("!global_set_" + name, value);
 }
 
@@ -156,9 +149,7 @@ template<typename T>
 T Instance::get_function(const std::string& name)
 {
   internal::TypeInfo<T> info;
-  if (!check_function(name, info(_program.get_context()))) {
-    return T();
-  }
+  check_function(name, info(_program.get_context()));
   internal::FunctionConstruct<T> construct;
   return construct(get_native_fp(name), _global_data);
 }
@@ -167,9 +158,7 @@ template<typename R, typename... Args>
 R Instance::call(const std::string& name, const Args&... args)
 {
   internal::TypeInfo<Function<R(Args...)>> info;
-  if (!check_function(name, info(_program.get_context()))) {
-    return R();
-  }
+  check_function(name, info(_program.get_context()));
   return call_via_trampoline<R>(name, args...);
 }
 

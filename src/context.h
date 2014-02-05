@@ -5,6 +5,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "error.h"
 #include "log.h"
 #include "native.h"
 #include "type.h"
@@ -91,10 +92,6 @@
 // TODO: vectorised assignment, or pattern-matching assignment? Also, indexed
 // assignment.
 // TODO: warnings: for example, unused variables.
-// TODO: many calls to log_err should probably actually be thrown exceptions.
-// Currently, passing or returning a null Function object to Yang is undefined
-// behaviour if it's called; we should really throw exceptions so that it isn't
-// even possible to get a null Function object in the first place.
 // TODO: code hot-swapping. Careful with pointer values (e.g. functions) in
 // global data struct which probably need to be left as default values.
 //
@@ -105,6 +102,9 @@
 // TODO: add some kind of built-in data structures, including at least a generic
 // map<K, V> type. May require garbage-collection, unless we place tight
 // restrictions on their usage (e.g. only global variables).
+// TODO: make sure the exposed APIs have sensible and useful interfaces; e.g.,
+// should they have accessors to retrieve all possible useful data; do they
+// return strings or output to streams; etc.
 namespace yang {
 namespace internal {
   class StaticChecker;
@@ -165,8 +165,7 @@ namespace internal {
     yang::Type operator()(const Context& context) const
     {
       if (!context.has_type<T>()) {
-        log_err("using unregistered user type");
-        return {};
+        throw runtime_error("using unregistered user type");
       }
       yang::Type t;
       t._base = yang::Type::USER_TYPE;
@@ -189,15 +188,15 @@ void Context::register_type(const std::string& name)
 {
   auto it = _types.find(name);
   if (it != _types.end()) {
-    log_err("duplicate type `", name, "` registered in context");
+    throw runtime_error("duplicate type `" + name + "` registered in context");
     return;
   }
   // Could also store a reverse-map from internal pointer type-id; probably
   // not a big deal.
   for (const auto& pair : _types) {
     if (pair.second.obj->is<T*>()) {
-      log_err("duplicate types `", name, "` and `", pair.first,
-              "` registered in context");
+      throw runtime_error("duplicate types `" + name + "` and `" + pair.first +
+                          "` registered in context");
       return;
     }
   }
@@ -212,7 +211,8 @@ void Context::register_member_function(
     const std::string& name, const std::function<R(T*, Args...)>& f)
 {
   if (!has_type<T>()) {
-    log_err("member `", name, "` registered on unregistered type");
+    throw runtime_error(
+        "member `" + name + "` registered on unregistered type");
     return;
   }
   std::string type_name = get_type_name<T>();
@@ -225,7 +225,8 @@ void Context::register_function(
 {
   auto it = _functions.find(name);
   if (it != _functions.end()) {
-    log_err("duplicate function `", name, "` registered in context");
+    throw runtime_error(
+        "duplicate function `" + name + "` registered in context");
     return;
   }
 

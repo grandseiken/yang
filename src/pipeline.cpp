@@ -12,6 +12,7 @@
 #include <llvm/PassManager.h>
 
 #include "ast.h"
+#include "error.h"
 #include "irgen.h"
 #include "log.h"
 #include "print.h"
@@ -43,8 +44,8 @@ Program::Program(const Context& context, const std::string& name,
   }
   internal::Node::orphans.clear();
 
-  for (const std::string& s : internal::ParseGlobals::errors) {
-    log_err(s);
+  for (const std::string& err : internal::ParseGlobals::errors) {
+    log_err(err);
   }
   if (internal::ParseGlobals::errors.size()) {
     return;
@@ -87,7 +88,7 @@ bool Program::success() const
 std::string Program::print_ast() const
 {
   if (!success()) {
-    return "<error>";
+    throw runtime_error(_name + ": program did not compile successfully");
   }
   internal::AstPrinter printer;
   return printer.walk(*_ast) + '\n';
@@ -96,7 +97,7 @@ std::string Program::print_ast() const
 std::string Program::print_ir() const
 {
   if (!success()) {
-    return "<error>";
+    throw runtime_error(_name + ": program did not compile successfully");
   }
   std::string output;
   llvm::raw_string_ostream os(output);
@@ -126,8 +127,8 @@ void Program::generate_ir()
   _engine = std::unique_ptr<llvm::ExecutionEngine>(
       llvm::EngineBuilder(_module).setErrorStr(&error).create());
   if (!_engine) {
-    log_err("Couldn't create execution engine:\n", error);
-    _module = nullptr;
+    delete _module;
+    throw runtime_error(_name + ": couldn't create execution engine: " + error);
   }
   // Disable implicit searching so we don't accidentally resolve linked-in
   // functions.
@@ -138,8 +139,7 @@ void Program::generate_ir()
   irgen.emit_global_functions();
 
   if (llvm::verifyModule(*_module, llvm::ReturnStatusAction, &error)) {
-    log_err("Couldn't verify module:\n", error);
-    _module = nullptr;
+    throw runtime_error(_name + ": couldn't verify module: " + error);
   }
   _trampoline_map = irgen.get_trampoline_map();
 }
@@ -196,8 +196,9 @@ Instance::Instance(const Program& program)
   , _global_data(nullptr)
 {
   if (!_program.success()) {
-    log_err("instantiating invalid program");
-    return;
+    throw runtime_error(
+        _program._name +
+        ": instantiating program which did not compile successfully");
   }
   yang::void_fp global_alloc = get_native_fp("!global_alloc");
   typedef void* (*alloc_fp)(void*);
@@ -206,9 +207,6 @@ Instance::Instance(const Program& program)
 
 Instance::~Instance()
 {
-  if (!_global_data) {
-    return;
-  }
   yang::void_fp global_free = get_native_fp("!global_free");
   typedef void (*free_fp)(void*);
   ((free_fp)global_free)(_global_data);
@@ -235,43 +233,40 @@ yang::void_fp Instance::get_native_fp(llvm::Function* ir_fp) const
   return (yang::void_fp)(std::intptr_t)void_p;
 }
 
-bool Instance::check_global(const std::string& name, const Type& type,
+void Instance::check_global(const std::string& name, const Type& type,
                             bool for_modification) const
 {
   auto it = _program._globals.find(name);
   if (it == _program._globals.end()) {
-    log_err(_program._name,
-            ": requested global `", name, "` does not exist");
-    return false;
+    throw runtime_error(
+        _program._name + ": requested global `" + name + "` does not exist");
   }
   if (type != it->second) {
-    log_err(_program._name, ": global `", it->second.string() +
-            " ", name, "` accessed via incorrect type `", type.string() + "`");
-    return false;
+    throw runtime_error(
+        _program._name + ": global `" + it->second.string() + " " + name +
+        "` accessed via incompatible type `" + type.string() + "`");
   }
   if (for_modification &&
       (it->second.is_const() || !it->second.is_exported())) {
-    log_err(_program._name, ": global `", it->second.string(), " " + name,
-            "` cannot be modified externally");
-    return false;
+    throw runtime_error(
+        _program._name + ": global `" + it->second.string() + " " + name +
+        "` cannot be modified externally");
   }
-  return true;
 }
 
-bool Instance::check_function(const std::string& name, const Type& type) const
+void Instance::check_function(const std::string& name, const Type& type) const
 {
   auto it = _program._functions.find(name);
   if (it == _program._functions.end()) {
-    log_err(_program._name,
-            ": requested function `", name, "` does not exist");
-    return false;
+    throw runtime_error(
+        _program._name + ": requested function `" + name + "` does not exist");
   }
   if (type != it->second) {
-    log_err(_program._name, ": function `", it->second.string() +
-            " ", name, "` accessed via incorrect type `", type.string(), "`");
-    return false;
+    throw runtime_error(
+        _program._name + ": function `" + it->second.string() +
+        " " + name + "` accessed via incompatible type `" +
+        type.string() + "`");
   }
-  return true;
 }
 
 // End namespace yang.
