@@ -72,7 +72,7 @@ Node::Node(node_type type, const std::string& value)
   orphans.insert(this);
 }
 
-Node* Node::clone() const
+Node* Node::clone(bool clone_children) const
 {
   Node* node = new Node(type);
   node->line = line;
@@ -81,9 +81,22 @@ Node* Node::clone() const
   node->float_value = float_value;
   node->string_value = string_value;
   node->user_type_name = user_type_name;
+  if (!clone_children) {
+    return node;
+  }
 
-  for (const auto& m : children) {
-    node->add(m->clone());
+  // Paranoid: avoid blowing the stack on deep AST trees.
+  std::vector<std::pair<const Node*, Node*>> stack;
+  stack.emplace(stack.end(), this, node);
+  while (!stack.empty()) {
+    auto pair = stack.back();
+    stack.pop_back();
+
+    for (const auto& child : pair.first->children) {
+      Node* n = child->clone(false);
+      pair.second->add(n);
+      stack.emplace(stack.end(), child.get(), n);
+    }
   }
   return node;
 }

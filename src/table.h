@@ -94,13 +94,13 @@ std::size_t SymbolTable<K, V>::size() const
 template<typename K, typename V>
 void SymbolTable<K, V>::add(const K& symbol, const V& v)
 {
-  _stack.rbegin()->emplace(symbol, v);
+  _stack.back().emplace(symbol, v);
 }
 
 template<typename K, typename V>
 void SymbolTable<K, V>::remove(const K& symbol)
 {
-  _stack.rbegin()->erase(symbol);
+  _stack.back().erase(symbol);
 }
 
 template<typename K, typename V>

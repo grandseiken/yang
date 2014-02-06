@@ -58,7 +58,7 @@ T AstWalkerBase<T, Const>::walk(N& node)
   result_list root_output;
   stack.push_back({&node, node.children.begin(), result_list()});
   while (true) {
-    stack_elem& elem = *stack.rbegin();
+    stack_elem& elem = stack.back();
     // Correctly handle calling preorder on zero-length nodes, but not
     // duplicating the last preorder and visit on other nodes.
     if (elem.it == elem.n->children.begin()) {

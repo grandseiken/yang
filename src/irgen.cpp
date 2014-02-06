@@ -531,7 +531,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // If this was a nested function, set the insert point back to the last
       // block in the enclosing function and make the proper expression value.
       auto function = (llvm::Function*)_metadata[FUNCTION];
-      b.SetInsertPoint(&*function->getBasicBlockList().rbegin());
+      b.SetInsertPoint(&function->getBasicBlockList().back());
       return generic_function_value(parent, _metadata[ENVIRONMENT_PTR]);
     }
     case Node::NAMED_EXPRESSION:
@@ -1393,7 +1393,9 @@ llvm::Value* IrGenerator::generic_function_value(
   llvm::Value* v = llvm::ConstantStruct::get(type, values);
   v = _builder.CreateInsertValue(v, function_ptr, 0, "fptr");
   if (env_ptr) {
-    v = _builder.CreateInsertValue(v, env_ptr, 1, "eptr");
+    // Must be bitcast to void pointer, since it may be a global data type.
+    llvm::Value* cast = _builder.CreateBitCast(env_ptr, void_ptr_type());
+    v = _builder.CreateInsertValue(v, cast, 1, "eptr");
   }
   if (target_ptr) {
     v = _builder.CreateInsertValue(v, target_ptr, 2, "tptr");
@@ -1518,6 +1520,8 @@ llvm::Value* IrGenerator::global_ptr(llvm::Value* ptr, std::size_t index)
 
 llvm::Value* IrGenerator::global_ptr(const std::string& name)
 {
+  // Bitcast, since it may be a void pointer (which might in the future point to
+  // a closure struct).
   llvm::Value* v =
       _builder.CreateBitCast(_metadata[ENVIRONMENT_PTR], _global_data);
   return global_ptr(v, _global_numbering[name]);
