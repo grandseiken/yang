@@ -10,7 +10,6 @@
 #include <unordered_map>
 
 #include "error.h"
-#include "log.h"
 #include "native.h"
 #include "type.h"
 #include "type_info.h"

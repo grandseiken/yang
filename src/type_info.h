@@ -9,136 +9,14 @@
 #include <tuple>
 #include <unordered_map>
 
-#include "log.h"
+#include "function.h"
 #include "native.h"
 #include "type.h"
 
 namespace yang {
-
 class Context;
-class Instance;
-class Program;
 
 namespace internal {
-
-template<typename>
-struct FunctionConstruct;
-template<typename>
-struct TypeInfo;
-
-template<typename...>
-struct TrampolineCallArgs;
-template<typename>
-struct TrampolineCallReturn;
-template<typename, typename...>
-struct TrampolineCall;
-
-template<typename, typename>
-struct ReverseTrampolineCallArgs;
-template<typename, typename...>
-struct ReverseTrampolineCallReturn;
-
-// End namespace internal.
-}
-
-// Opaque Yang function object.
-template<typename T>
-class Function {
-  static_assert(sizeof(T) != sizeof(T), "use of non-function type");
-};
-
-template<typename R, typename... Args>
-class Function<R(Args...)> {
-public:
-
-  // Get the type corresponding to this function type as a yang Type object.
-  static Type get_type(const Context& context);
-
-  // Invoke the function.
-  R operator()(const Args&... args) const;
-
-private:
-
-  // If this is a Yang function, get the program instance it references.
-  // Otherwise, return a null pointer.
-  Instance* get_instance() const;
-
-  template<typename...>
-  friend struct internal::TrampolineCallArgs;
-  template<typename>
-  friend struct internal::TrampolineCallReturn;
-  template<typename, typename...>
-  friend struct internal::TrampolineCall;
-
-  template<typename, typename>
-  friend struct internal::ReverseTrampolineCallArgs;
-  template<typename, typename...>
-  friend struct internal::ReverseTrampolineCallReturn;
-
-  template<typename>
-  friend struct internal::FunctionConstruct;
-  template<typename>
-  friend class Function;
-  friend class Instance;
-
-  // Invariant: Function objects returned to client code must never be null.
-  // They must reference a genuine Yang function or C++ function, so that they
-  // can be invoked or passed to Yang code. Library code that return Functions
-  // to client code must throw rather than returning something unusable.
-  Function()
-    : _function(nullptr)
-    , _env(nullptr)
-    , _target(nullptr) {}
-
-  yang::void_fp _function;
-  void* _env;
-  yang::void_fp _target;
-
-};
-
-template<typename R, typename... Args>
-Type Function<R(Args...)>::get_type(const Context& context)
-{
-  internal::TypeInfo<Function<R(Args...)>> info;
-  return info(context);
-}
-
-template<typename R, typename... Args>
-Instance* Function<R(Args...)>::get_instance() const
-{
-  // Standard guarantees that pointer to structure points to its first member,
-  // and the pointer to the program instance is always the first element of
-  // the global data structure; so, we can just cast it to an instance
-  // pointer.
-  //
-  // This will change when the environment pointer can also point to a closure
-  // structure.
-  if (!_env) {
-    return nullptr;
-  }
-  return *(Instance**)_env;
-}
-
-namespace internal {
-
-template<typename T>
-struct FunctionConstruct {
-  static_assert(sizeof(T) != sizeof(T), "use of non-function type");
-  T operator()(yang::void_fp, void*) const
-  {
-    return {};
-  }
-};
-template<typename R, typename... Args>
-struct FunctionConstruct<Function<R(Args...)>> {
-  Function<R(Args...)> operator()(yang::void_fp function, void* env) const
-  {
-    Function<R(Args...)> f;
-    f._function = function;
-    f._env = env;
-    return f;
-  }
-};
 
 template<typename T>
 struct TypeInfo {

@@ -3,7 +3,6 @@
 // MIT License. See LICENSE file for details.
 //============================================================================//
 #include "type.h"
-#include "log.h"
 
 namespace yang {
 

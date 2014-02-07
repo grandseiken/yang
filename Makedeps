@@ -1,8 +1,8 @@
+#!/bin/bash
 #==============================================================================#
 # This file is part of the Yang software project. It is distributed under the
 # MIT License. See LICENSE file for details.
 #==============================================================================#
-#//!/bin/bash
 # Usage:
 # ./deps.sh depfile buildfile file outdir make_link_deps
 DEPFILE=$1

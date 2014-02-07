@@ -4,16 +4,12 @@
 //============================================================================//
 #include "pipeline.h"
 
-#include <llvm/Analysis/Passes.h>
 #include <llvm/Analysis/Verifier.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/JIT.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/TargetSelect.h>
-#include <llvm/Transforms/IPO.h>
-#include <llvm/Transforms/Scalar.h>
-#include <llvm/PassManager.h>
 
 #include "ast.h"
 #include "error.h"
@@ -64,10 +60,7 @@ Program::Program(const Context& context, const std::string& name,
   }
   _ast = std::move(output);
 
-  generate_ir();
-  if (optimise) {
-    optimise_ir();
-  }
+  generate_ir(optimise);
 }
 
 Program::~Program()
@@ -119,7 +112,7 @@ const Program::symbol_table& Program::get_globals() const
   return _globals;
 }
 
-void Program::generate_ir()
+void Program::generate_ir(bool optimise)
 {
   std::string error;
   llvm::InitializeNativeTarget();
@@ -143,56 +136,13 @@ void Program::generate_ir()
   irgen.emit_global_functions();
 
   if (llvm::verifyModule(*_module, llvm::ReturnStatusAction, &error)) {
+    // Shouldn't be possible.
     throw runtime_error(_name + ": couldn't verify module: " + error);
   }
+  if (optimise) {
+    irgen.optimise_ir();
+  }
   _trampoline_map = irgen.get_trampoline_map();
-}
-
-void Program::optimise_ir()
-{
-  llvm::PassManager optimiser;
-  optimiser.add(new llvm::DataLayout(*_engine->getDataLayout()));
-
-  // Basic alias analysis and register promotion.
-  optimiser.add(llvm::createBasicAliasAnalysisPass());
-  optimiser.add(llvm::createPromoteMemoryToRegisterPass());
-
-  // Optimise instructions, and reassociate for constant propagation.
-  optimiser.add(llvm::createInstructionCombiningPass());
-  optimiser.add(llvm::createReassociatePass());
-  optimiser.add(llvm::createGVNPass());
-
-  // Simplify the control-flow graph before tackling loops.
-  optimiser.add(llvm::createCFGSimplificationPass());
-
-  // Handle loops.
-  optimiser.add(llvm::createIndVarSimplifyPass());
-  optimiser.add(llvm::createLoopIdiomPass());
-  optimiser.add(llvm::createLoopRotatePass());
-  optimiser.add(llvm::createLoopUnrollPass());
-  optimiser.add(llvm::createLoopUnswitchPass());
-  optimiser.add(llvm::createLoopDeletionPass());
-
-  // Simplify again and delete all the dead code.
-  optimiser.add(llvm::createCFGSimplificationPass());
-  optimiser.add(llvm::createAggressiveDCEPass());
-
-  // Interprocedural optimisations.
-  optimiser.add(llvm::createFunctionInliningPass());
-  optimiser.add(llvm::createIPConstantPropagationPass());
-  optimiser.add(llvm::createGlobalOptimizerPass());
-  optimiser.add(llvm::createDeadArgEliminationPass());
-  optimiser.add(llvm::createGlobalDCEPass());
-  optimiser.add(llvm::createTailCallEliminationPass());
-
-  // After function inlining run a few passes again.
-  optimiser.add(llvm::createInstructionCombiningPass());
-  optimiser.add(llvm::createReassociatePass());
-  optimiser.add(llvm::createGVNPass());
-
-  // Run the optimisation passes.
-  // TODO: work out if there's others we should run, or in a different order.
-  optimiser.run(*_module);
 }
 
 Instance::Instance(const Program& program)

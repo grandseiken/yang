@@ -20,10 +20,13 @@ class NativeFunction {
                 "incorrect native function type argument used");
 };
 
+// A native function object. Includes a reference-counting mechanism, as Yang
+// code may hold references to these objects for arbitrary lengths of time.
 template<>
 class NativeFunction<void> {
 public:
 
+  inline NativeFunction();
   virtual ~NativeFunction() {}
   // Convert this to a particular NativeFunction of a given type and return the
   // contained function. It is the caller's responsibility to ensure the
@@ -31,6 +34,18 @@ public:
   // really is a NativeFunction<R(Args...)>.
   template<typename R, typename... Args>
   const std::function<R(Args...)>& get() const;
+
+  // Increment the reference count. The count starts at zero; this function
+  // should immediately after construction if reference-counting is to be used.
+  // The object must have been allocated with new!
+  inline NativeFunction* take_reference();
+  // Decrement the reference count and return pointer to this object. If it is
+  // then zero, deletes itself and returns null.
+  inline NativeFunction* release_reference();
+
+private:
+
+  std::size_t _reference_count;
 
 };
 
@@ -51,10 +66,10 @@ public:
   typedef std::function<R(Args...)> function_type;
   NativeFunction(const function_type& function);
   ~NativeFunction() override {}
+  const function_type& get_function() const;
 
 private:
 
-  friend NativeFunction<void>;
   function_type _function;
 
 };
@@ -105,6 +120,32 @@ private:
 
 };
 
+NativeFunction<void>::NativeFunction()
+  : _reference_count(0)
+{
+}
+
+auto NativeFunction<void>::take_reference() -> NativeFunction*
+{
+  ++_reference_count;
+  return this;
+}
+
+auto NativeFunction<void>::release_reference() -> NativeFunction*
+{
+  if (--_reference_count) {
+    return this;
+  }
+  delete this;
+  return nullptr;
+}
+
+template<typename R, typename... Args>
+const std::function<R(Args...)>& NativeFunction<void>::get() const
+{
+  return ((NativeFunction<R(Args...)>*)this)->get_function();
+}
+
 template<typename R, typename... Args>
 NativeFunction<R(Args...)>::NativeFunction(const function_type& function)
   : _function(function)
@@ -112,9 +153,9 @@ NativeFunction<R(Args...)>::NativeFunction(const function_type& function)
 }
 
 template<typename R, typename... Args>
-const std::function<R(Args...)>& NativeFunction<void>::get() const
+auto NativeFunction<R(Args...)>::get_function() const -> const function_type&
 {
-  return ((NativeFunction<R(Args...)>*)this)->_function;
+  return _function;
 }
 
 template<typename T>

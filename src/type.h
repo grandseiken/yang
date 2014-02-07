@@ -11,7 +11,7 @@
 namespace yang {
 
 namespace internal {
-  class IrGenerator;
+  class IrCommon;
   class Type;
   template<typename>
   struct TypeInfo;
@@ -58,7 +58,7 @@ public:
 private:
 
   friend struct std::hash<Type>;
-  friend class internal::IrGenerator;
+  friend class internal::IrCommon;
   friend class internal::Type;
   template<typename>
   friend struct internal::TypeInfo;

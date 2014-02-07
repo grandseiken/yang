@@ -10,7 +10,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "log.h"
 #include "type.h"
 #include "type_info.h"
 #include "typedefs.h"
@@ -19,7 +18,6 @@ namespace llvm {
   class ExecutionEngine;
   class Function;
   class Module;
-  class Type;
 }
 
 namespace yang {
@@ -56,8 +54,7 @@ public:
 private:
 
   friend class Instance;
-  void generate_ir();
-  void optimise_ir();
+  void generate_ir(bool optimise);
 
   const Context& _context;
   std::string _name;

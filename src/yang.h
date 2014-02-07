@@ -8,6 +8,7 @@
 // Convenience header that includes all user-visible headers.
 #include "context.h"
 #include "error.h"
+#include "function.h"
 #include "pipeline.h"
 #include "type_info.h"
 #include "typedefs.h"
