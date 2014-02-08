@@ -45,14 +45,34 @@ class Function {
   static_assert(sizeof(T) != sizeof(T), "use of non-function type");
 };
 
+// Common base class for dynamic storage.
+namespace internal {
+
+class FunctionBase {
+public:
+
+  virtual ~FunctionBase() {}
+
+private:
+
+  friend class IrCommon;
+  virtual void get_representation(
+      yang::void_fp* function, void** env, void** target) = 0;
+
+};
+
+// End namespace internal.
+}
+
 template<typename R, typename... Args>
-class Function<R(Args...)> {
+class Function<R(Args...)> : public internal::FunctionBase {
 public:
 
   // Construct a generic Yang Function object from a generic C++ function
   // object.
   typedef std::function<R(Args...)> cpp_type;
   Function(const cpp_type& cpp_function);
+  ~Function() override {}
 
   // Get the type corresponding to this function type as a Yang Type object.
   static Type get_type(const Context& context);
@@ -87,15 +107,29 @@ private:
   // to client code must throw rather than returning something unusable.
   Function();
 
+  void get_representation(
+      void_fp* function, void** env, void** target) override;
+
   // Reference-counted C++ function.
   internal::RefCountedNativeFunction<R(Args...)> _native_ref;
 
   // Bare variables (equivalent to the Yang representation).
-  yang::void_fp _function;
+  void_fp _function;
   void* _env;
   void* _target;
 
 };
+
+// Dynamic storage of an abitrary Function.
+namespace internal {
+  struct GenericFunction {
+    GenericFunction()
+      : ptr(nullptr) {}
+
+    yang::Type type;
+    std::unique_ptr<FunctionBase> ptr;
+  };
+}
 
 template<typename R, typename... Args>
 Function<R(Args...)>::Function(const cpp_type& function)
@@ -104,14 +138,6 @@ Function<R(Args...)>::Function(const cpp_type& function)
       internal::TypeInfo<Function<R(Args...)>>()()))
   , _env(nullptr)
   , _target(&_native_ref.get())
-{
-}
-
-template<typename R, typename... Args>
-Function<R(Args...)>::Function()
-  : _function(nullptr)
-  , _env(nullptr)
-  , _target(nullptr)
 {
 }
 
@@ -136,6 +162,23 @@ Instance* Function<R(Args...)>::get_instance() const
     return nullptr;
   }
   return *(Instance**)_env;
+}
+
+template<typename R, typename... Args>
+Function<R(Args...)>::Function()
+  : _function(nullptr)
+  , _env(nullptr)
+  , _target(nullptr)
+{
+}
+
+template<typename R, typename... Args>
+void Function<R(Args...)>::get_representation(
+    void_fp* function, void** env, void** target)
+{
+  *function = _function;
+  *env = _env;
+  *target = _target;
 }
 
 namespace internal {

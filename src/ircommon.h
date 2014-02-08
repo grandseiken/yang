@@ -32,8 +32,10 @@ public:
   void optimise_ir(llvm::Function* function = nullptr) const;
 
   // Generate trampoline functions for converting between calling conventions.
-  llvm::Function* create_trampoline_function(const yang::Type& function_type);
-  llvm::Function* create_reverse_trampoline_function(
+  // If the trampoline for the given type doesn't already exist, a new function
+  // will be generated and the insert point will need to be reset.
+  llvm::Function* get_trampoline_function(const yang::Type& function_type);
+  llvm::Function* get_reverse_trampoline_function(
       const yang::Type& function_type);
 
   typedef std::unordered_map<yang::Type, llvm::Function*> trampoline_map;
@@ -69,7 +71,7 @@ protected:
   llvm::Value* generic_function_value(
       llvm::Value* function_ptr, llvm::Value* env_ptr,
       llvm::Value* target_ptr = nullptr);
-  llvm::Value* generic_function_value(const GenericNativeFunction& function);
+  llvm::Value* generic_function_value(const GenericFunction& function);
   // Return a function type with extra parameter for the target function when
   // calling a trampoline.
   llvm::FunctionType* get_function_type_with_target(

@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <memory>
+#include <type_traits>
 #include "typedefs.h"
 #include "type.h"
 
@@ -19,11 +20,14 @@ class NativeFunction {
                 "incorrect native function type argument used");
 };
 
-// Class for dynamic storage of an arbitrary function.
+// Class for dynamic storage of an arbitrary C++ function. Includes a reference-
+// -counting mechanism, as Yang code may hold references to these objects for
+// arbitrary lengths of time.
 template<>
 class NativeFunction<void> {
 public:
 
+  inline NativeFunction();
   virtual ~NativeFunction() {}
   // Convert this to a particular NativeFunction of a given type and return the
   // contained function. It is the caller's responsibility to ensure the
@@ -31,29 +35,6 @@ public:
   // really is a NativeFunction<R(Args...)>.
   template<typename R, typename... Args>
   const std::function<R(Args...)>& get() const;
-
-};
-
-// Structure containing information about an arbitrary native function to be
-// made available via a Context.
-struct GenericNativeFunction {
-  GenericNativeFunction()
-    : ptr(nullptr) {}
-
-  yang::Type type;
-  std::unique_ptr<NativeFunction<void>> ptr;
-};
-
-// A native function object. Includes a reference-counting mechanism, as Yang
-// code may hold references to these objects for arbitrary lengths of time.
-template<typename R, typename... Args>
-class NativeFunction<R(Args...)> : public NativeFunction<void> {
-public:
-
-  typedef std::function<R(Args...)> function_type;
-  NativeFunction(const function_type& function);
-  ~NativeFunction() override {}
-  const function_type& get_function() const;
 
   // Increment the reference count. The count starts at zero; this function
   // should immediately after construction if reference-counting is to be used.
@@ -65,18 +46,36 @@ public:
 
 private:
 
-  function_type _function;
   std::size_t _reference_count;
 
 };
 
+template<typename R, typename... Args>
+class NativeFunction<R(Args...)> : public NativeFunction<void> {
+public:
+
+  typedef std::function<R(Args...)> function_type;
+  NativeFunction(const function_type& function);
+  ~NativeFunction() override {}
+  const function_type& get_function() const;
+
+  // Helpful overrides with the correct return type.
+  NativeFunction* take_reference();
+  NativeFunction* release_reference();
+
+private:
+
+  function_type _function;
+
+};
+
+// Automatic reference-counting for a NativeFunction.
 template<typename T>
 class RefCountedNativeFunction {
   static_assert(sizeof(T) != sizeof(T),
                 "incorrect native function type argument used");
 };
 
-// Automatic reference-counting for a NativeFunction.
 template<typename R, typename... Args>
 class RefCountedNativeFunction<R(Args...)> {
 public:
@@ -92,12 +91,13 @@ public:
   RefCountedNativeFunction& operator=(RefCountedNativeFunction&& function);
 
   explicit operator bool() const;
-  const NativeFunction<R(Args...)>& get() const;
-  /***/ NativeFunction<R(Args...)>& get();
+  typedef NativeFunction<R(Args...)> internal;
+  const internal& get() const;
+  /***/ internal& get();
 
 private:
 
-  NativeFunction<R(Args...)>* _internal;
+  internal* _internal;
 
 };
 
@@ -147,16 +147,35 @@ private:
 
 };
 
+NativeFunction<void>::NativeFunction()
+  : _reference_count(0)
+{
+}
+
 template<typename R, typename... Args>
 const std::function<R(Args...)>& NativeFunction<void>::get() const
 {
   return ((NativeFunction<R(Args...)>*)this)->get_function();
 }
 
+NativeFunction<void>* NativeFunction<void>::take_reference()
+{
+  ++_reference_count;
+  return this;
+}
+
+NativeFunction<void>* NativeFunction<void>::release_reference()
+{
+  if (--_reference_count) {
+    return this;
+  }
+  delete this;
+  return nullptr;
+}
+
 template<typename R, typename... Args>
 NativeFunction<R(Args...)>::NativeFunction(const function_type& function)
   : _function(function)
-  , _reference_count(0)
 {
 }
 
@@ -169,18 +188,13 @@ auto NativeFunction<R(Args...)>::get_function() const -> const function_type&
 template<typename R, typename... Args>
 auto NativeFunction<R(Args...)>::take_reference() -> NativeFunction*
 {
-  ++_reference_count;
-  return this;
+  return (NativeFunction*)NativeFunction<void>::take_reference();
 }
 
 template<typename R, typename... Args>
 auto NativeFunction<R(Args...)>::release_reference() -> NativeFunction*
 {
-  if (--_reference_count) {
-    return this;
-  }
-  delete this;
-  return nullptr;
+  return (NativeFunction*)NativeFunction<void>::release_reference();
 }
 
 template<typename R, typename... Args>
@@ -192,8 +206,7 @@ RefCountedNativeFunction<R(Args...)>::RefCountedNativeFunction()
 template<typename R, typename... Args>
 RefCountedNativeFunction<R(Args...)>::RefCountedNativeFunction(
     const std::function<R(Args...)>& function)
-  : _internal(
-      (new internal::NativeFunction<R(Args...)>(function))->take_reference())
+  : _internal((new internal(function))->take_reference())
 {
 }
 
@@ -218,13 +231,14 @@ auto RefCountedNativeFunction<R(Args...)>::operator=(
     const RefCountedNativeFunction& function) -> RefCountedNativeFunction&
 {
   if (this == &function) {
-    return;
+    return *this;
   }
   if (_internal) {
     _internal->release_reference();
   }
   _internal = function._internal ?
       function._internal->take_reference() : nullptr;
+  return *this;
 }
 
 template<typename R, typename... Args>
@@ -240,6 +254,7 @@ auto RefCountedNativeFunction<R(Args...)>::operator=(
     RefCountedNativeFunction&& function) -> RefCountedNativeFunction&
 {
   std::swap(_internal, function._internal);
+  return *this;
 }
 
 template<typename R, typename... Args>
@@ -249,14 +264,13 @@ RefCountedNativeFunction<R(Args...)>::operator bool() const
 }
 
 template<typename R, typename... Args>
-const NativeFunction<R(Args...)>&
-    RefCountedNativeFunction<R(Args...)>::get() const
+auto RefCountedNativeFunction<R(Args...)>::get() const -> const internal&
 {
   return *_internal;
 }
 
 template<typename R, typename... Args>
-NativeFunction<R(Args...)>& RefCountedNativeFunction<R(Args...)>::get()
+auto RefCountedNativeFunction<R(Args...)>::get() -> internal&
 {
   return *_internal;
 }

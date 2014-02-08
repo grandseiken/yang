@@ -5,7 +5,6 @@
 #ifndef YANG_SRC_CONTEXT_H
 #define YANG_SRC_CONTEXT_H
 
-#include <functional>
 #include <string>
 #include <unordered_map>
 
@@ -97,6 +96,8 @@
 // TODO: warnings: for example, unused variables.
 // TODO: code hot-swapping. Careful with pointer values (e.g. functions) in
 // global data struct which probably need to be left as default values.
+// TODO: possibly allow ref-counted user types. Set up some template that
+// mirrors the mechanics of Function.
 //
 // Further off (helpful stuff that can be emulated without needing to be built-
 // -in right away):
@@ -117,7 +118,6 @@ namespace internal {
 class Context {
 public:
 
-  // TODO: make this class take yang::Functions instead of std::functions.
   Context() {}
 
   // Noncopyable.
@@ -132,12 +132,12 @@ public:
   // Add a member function to a user type.
   template<typename T, typename R, typename... Args>
   void register_member_function(
-      const std::string& name, const std::function<R(T*, Args...)>& f);
+      const std::string& name, const Function<R(T*, Args...)>& f);
 
   // Add a globally-available function to the context.
   template<typename R, typename... Args>
   void register_function(
-      const std::string& name, const std::function<R(Args...)>& f);
+      const std::string& name, const Function<R(Args...)>& f);
 
   // Information about registered types.
   template<typename T>
@@ -149,7 +149,7 @@ private:
 
   typedef std::unordered_map<std::string, internal::GenericNativeType> type_map;
   typedef std::unordered_map<
-      std::string, internal::GenericNativeFunction> function_map;
+      std::string, internal::GenericFunction> function_map;
 
   friend class internal::StaticChecker;
   friend class internal::IrGenerator;
@@ -212,7 +212,7 @@ void Context::register_type(const std::string& name)
 
 template<typename T, typename R, typename... Args>
 void Context::register_member_function(
-    const std::string& name, const std::function<R(T*, Args...)>& f)
+    const std::string& name, const Function<R(T*, Args...)>& f)
 {
   if (!has_type<T>()) {
     throw runtime_error(
@@ -225,7 +225,7 @@ void Context::register_member_function(
 
 template<typename R, typename... Args>
 void Context::register_function(
-    const std::string& name, const std::function<R(Args...)>& f)
+    const std::string& name, const Function<R(Args...)>& f)
 {
   auto it = _functions.find(name);
   if (it != _functions.end()) {
@@ -235,10 +235,10 @@ void Context::register_function(
   }
 
   internal::TypeInfo<Function<R(Args...)>> info;
-  internal::GenericNativeFunction& symbol = _functions[name];
+  internal::GenericFunction& symbol = _functions[name];
   symbol.type = info(*this);
-  symbol.ptr = std::unique_ptr<internal::NativeFunction<R(Args...)>>(
-      new internal::NativeFunction<R(Args...)>(f));
+  symbol.ptr =
+      std::unique_ptr<internal::FunctionBase>(new Function<R(Args...)>(f));
   internal::GenerateReverseTrampolineLookupTable<Function<R(Args...)>>()();
 }
 

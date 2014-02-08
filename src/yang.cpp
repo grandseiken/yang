@@ -48,20 +48,20 @@ int main(int argc, char** argv)
     return &test;
   };
   context.register_type<Test>("Test");
-  context.register_function("get_test", std::function<Test*()>(get_test));
+  context.register_function("get_test", Fn<Test*()>(get_test));
   auto id_fn = [&](Fn<int_t(int_t)> f)
   {
     return f;
   };
   context.register_function(
-      "id_fn", std::function<Fn<int_t(int_t)>(Fn<int_t(int_t)>)>(id_fn));
+      "id_fn", Fn<Fn<int_t(int_t)>(Fn<int_t(int_t)>)>(id_fn));
   auto test_foo = [&](Test* t, Fn<int_t(int_t)> f, int_t a)
   {
     log_info("in Test:foo, self is ", t, ", a is ", a);
     return 2 * f(a);
   };
   context.register_member_function<Test>(
-      "foo", std::function<int_t(Test*, Fn<int_t(int_t)>, int_t)>(test_foo));
+      "foo", Fn<int_t(Test*, Fn<int_t(int_t)>, int_t)>(test_foo));
 
   yang::Program program(context, path, contents);
   if (!program.success()) {

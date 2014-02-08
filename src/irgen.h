@@ -44,8 +44,6 @@ class IrGenerator : public IrCommon, public ConstAstWalker<IrGeneratorUnion> {
 public:
 
   typedef std::unordered_map<std::string, yang::Type> symbol_frame;
-  typedef std::unordered_map<std::string, GenericNativeFunction> context_frame;
-
   IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
               symbol_frame& globals, const Context& context);
   ~IrGenerator();

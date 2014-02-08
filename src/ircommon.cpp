@@ -79,7 +79,7 @@ void IrCommon::optimise_ir(llvm::Function* function) const
   module_optimiser.run(_module);
 }
 
-llvm::Function* IrCommon::create_trampoline_function(
+llvm::Function* IrCommon::get_trampoline_function(
     const yang::Type& function_type)
 {
   // Trampoline functions must be generated for every function type that might
@@ -103,7 +103,7 @@ llvm::Function* IrCommon::create_trampoline_function(
   //
   // It might be possible to further erase function pointers to minimise the
   // number of functions needed.
-  auto it = _trampoline_map.find(function_type);
+  auto it = _trampoline_map.find(function_type.erase_user_types());
   if (it != _trampoline_map.end()) {
     return it->second;
   }
@@ -121,12 +121,12 @@ llvm::Function* IrCommon::create_trampoline_function(
   yang::Type return_type = function_type.get_function_return_type();
   // Handle the transitive closure.
   if (return_type.is_function()) {
-    create_trampoline_function(return_type);
+    get_trampoline_function(return_type);
   }
   for (std::size_t i = 0; i < function_type.get_function_num_args(); ++i) {
     yang::Type t = function_type.get_function_arg_type(i);
     if (t.is_function()) {
-      create_reverse_trampoline_function(t);
+      get_reverse_trampoline_function(t);
     }
   }
   auto llvm_type = function_type_from_generic(get_llvm_type(function_type));
@@ -209,11 +209,11 @@ llvm::Function* IrCommon::create_trampoline_function(
     b().CreateStore(result, function->arg_begin());
   }
   b().CreateRetVoid();
-  _trampoline_map.emplace(function_type, function);
+  _trampoline_map.emplace(function_type.erase_user_types(), function);
   return function;
 }
 
-llvm::Function* IrCommon::create_reverse_trampoline_function(
+llvm::Function* IrCommon::get_reverse_trampoline_function(
     const yang::Type& function_type)
 {
   auto it = _reverse_trampoline_map.find(function_type.erase_user_types());
@@ -222,13 +222,12 @@ llvm::Function* IrCommon::create_reverse_trampoline_function(
   }
   // Handle transitive closure.
   if (function_type.get_function_return_type().is_function()) {
-    create_reverse_trampoline_function(
-        function_type.get_function_return_type());
+    get_reverse_trampoline_function(function_type.get_function_return_type());
   }
   for (std::size_t i = 0; i < function_type.get_function_num_args(); ++i) {
     yang::Type t = function_type.get_function_arg_type(i);
     if (t.is_function()) {
-      create_trampoline_function(t);
+      get_trampoline_function(t);
     }
   }
 
@@ -468,24 +467,27 @@ llvm::Value* IrCommon::generic_function_value(
   return v;
 }
 
-llvm::Value* IrCommon::generic_function_value(
-    const GenericNativeFunction& function)
+llvm::Value* IrCommon::generic_function_value(const GenericFunction& function)
 {
-  llvm::Value* f = _reverse_trampoline_map[function.type.erase_user_types()];
+  yang::void_fp fptr;
+  void* eptr;
+  void* tptr;
 
-  // Chop off the last argument so that this behaves like a regular function
-  // of the type.
-  std::vector<llvm::Type*> args;
-  auto ft = (llvm::FunctionType*)f->getType()->getPointerElementType();
-  for (std::size_t i = 0; i < ft->getNumParams() - 1; ++i) {
-    args.push_back(ft->getParamType(i));
+  function.ptr->get_representation(&fptr, &eptr, &tptr);
+  llvm::Type* ft = llvm::PointerType::get(
+      function_type_from_generic(get_llvm_type(function.type)), 0);
+
+  if (tptr) {
+    // Use internal reverse trampoline instead of external one, so it can be more
+    // easily inlined.
+    llvm::Value* v = get_reverse_trampoline_function(function.type);
+    v = b().CreateBitCast(v, ft, "fun");
+    // Native functions don't need an environment pointer.
+    return generic_function_value(v, nullptr, constant_ptr(tptr));
   }
-
-  auto corrected_ft = llvm::PointerType::get(
-      llvm::FunctionType::get(ft->getReturnType(), args, false), 0);
-  f = b().CreateBitCast(f, corrected_ft, "fun");
-  // Context functions don't need an environment pointer.
-  return generic_function_value(f, nullptr, constant_ptr(function.ptr.get()));
+  llvm::Value* v =
+      b().CreateBitCast(constant_ptr((void*)(std::intptr_t)fptr), ft, "fun");
+  return generic_function_value(v, constant_ptr(eptr), nullptr);
 }
 
 llvm::FunctionType* IrCommon::get_function_type_with_target(
@@ -632,7 +634,7 @@ yang::void_fp YangTrampolineGlobals::get_trampoline_function(
 {
   return nullptr;
   llvm::Function* function =
-      get_instance()._common.create_trampoline_function(function_type);
+      get_instance()._common.get_trampoline_function(function_type);
   get_instance()._common.optimise_ir(function);
   return (yang::void_fp)(std::intptr_t)
       get_instance()._engine->getPointerToFunction(function);
@@ -642,7 +644,7 @@ yang::void_fp YangTrampolineGlobals::get_reverse_trampoline_function(
     const yang::Type& function_type)
 {
   llvm::Function* function =
-      get_instance()._common.create_reverse_trampoline_function(function_type);
+      get_instance()._common.get_reverse_trampoline_function(function_type);
   get_instance()._common.optimise_ir(function);
   return (yang::void_fp)(std::intptr_t)
       get_instance()._engine->getPointerToFunction(function);

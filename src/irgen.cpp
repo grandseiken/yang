@@ -84,7 +84,7 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // Context. User type member functions are present in the context function map
   // as well as free functions.
   for (const auto& pair : context.get_functions()) {
-    create_reverse_trampoline_function(pair.second.type);
+    get_reverse_trampoline_function(pair.second.type);
   }
 }
 
@@ -149,7 +149,7 @@ void IrGenerator::emit_global_functions()
     auto function_type = llvm::FunctionType::get(t, _global_data, false);
     auto getter = llvm::Function::Create(
         function_type, llvm::Function::ExternalLinkage, name, &_module);
-    create_trampoline_function(get_yang_type(function_type));
+    get_trampoline_function(get_yang_type(function_type));
 
     auto getter_block = llvm::BasicBlock::Create(
         b().getContext(), "entry", getter);
@@ -164,7 +164,7 @@ void IrGenerator::emit_global_functions()
     function_type = llvm::FunctionType::get(void_type(), setter_args, false);
     auto setter = llvm::Function::Create(
         function_type, llvm::Function::ExternalLinkage, name, &_module);
-    create_trampoline_function(get_yang_type(function_type));
+    get_trampoline_function(get_yang_type(function_type));
 
     auto setter_block = llvm::BasicBlock::Create(
         b().getContext(), "entry", setter);
@@ -487,7 +487,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       auto function = (llvm::Function*)parent;
       auto function_type =
           (llvm::FunctionType*)function->getType()->getPointerElementType();
-      create_trampoline_function(get_yang_type(function_type));
+      get_trampoline_function(get_yang_type(function_type));
       // Top-level functions Nodes have their int_value set to 1 when defined
       // using the `export` keyword.
       if (node.int_value) {
@@ -667,40 +667,31 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       if (_metadata.has(TYPE_EXPR_CONTEXT)) {
         goto type_function;
       }
-      bool member_function = node.children[0]->type == Node::MEMBER_SELECTION;
 
       // TODO: is it true that always either environment or target pointer is
       // null? If so, can we get rid of get_function_type_with_target and the
       // branching here, and just call with the final environment/target
-      // pointers ORed together?
+      // pointers OR-ed together?
       std::vector<llvm::Value*> args;
-      if (member_function) {
+      llvm::Value* genf = results[0];
+
+      // Special logic for member-function calling.
+      if (node.children[0]->type == Node::MEMBER_SELECTION) {
+        std::string s = node.children[0]->user_type_name +
+            "::" + node.children[0]->string_value;
+        auto it = _context.get_functions().find(s);
+        genf = generic_function_value(it->second);
+
         args.push_back(results[0]);
       }
       for (std::size_t i = 1; i < results.size(); ++i) {
         args.push_back(results[i]);
       }
 
-      // Special odd logic for member-function calling.
-      if (member_function) {
-        std::string s = node.children[0]->user_type_name +
-            "::" + node.children[0]->string_value;
-
-        // Context functions don't need an environment pointer.
-        args.push_back(llvm::ConstantPointerNull::get(void_ptr_type()));
-
-        // Add the target function pointer.
-        auto it = _context.get_functions().find(s);
-        args.push_back(constant_ptr(it->second.ptr.get()));
-        const auto& map = get_reverse_trampoline_map();
-        auto jt = map.find(it->second.type.erase_user_types());
-        return b().CreateCall(jt->second, args);
-      }
-
       // Extract pointers from the struct.
-      llvm::Value* fptr = b().CreateExtractValue(results[0], 0, "fptr");
-      llvm::Value* eptr = b().CreateExtractValue(results[0], 1, "eptr");
-      llvm::Value* tptr = b().CreateExtractValue(results[0], 2, "tptr");
+      llvm::Value* fptr = b().CreateExtractValue(genf, 0, "fptr");
+      llvm::Value* eptr = b().CreateExtractValue(genf, 1, "eptr");
+      llvm::Value* tptr = b().CreateExtractValue(genf, 2, "tptr");
       args.push_back(eptr);
 
       // Switch on the presence of a trampoline function pointer.
@@ -712,7 +703,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       auto merge_block =
           llvm::BasicBlock::Create(b().getContext(), "merge", parent);
 
-      auto f_type = get_function_type_with_target(types[0]);
+      auto f_type = get_function_type_with_target(genf->getType());
       auto fp_type = llvm::PointerType::get(f_type, 0);
 
       llvm::Value* cmp = b().CreateICmpNE(
