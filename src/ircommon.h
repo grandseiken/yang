@@ -27,10 +27,12 @@ class IrCommon {
 public:
 
   IrCommon(llvm::Module& module, llvm::ExecutionEngine& engine);
-  void optimise_ir() const;
+  // Optimise the IR code. If function is null, does interprocedural
+  // optimisation on the whole module.
+  void optimise_ir(llvm::Function* function = nullptr) const;
 
   // Generate trampoline functions for converting between calling conventions.
-  llvm::Function* create_trampoline_function(llvm::FunctionType* function_type);
+  llvm::Function* create_trampoline_function(const yang::Type& function_type);
   llvm::Function* create_reverse_trampoline_function(
       const yang::Type& function_type);
 
@@ -97,6 +99,32 @@ private:
   // trampoline function).
   trampoline_map _trampoline_map;
   trampoline_map _reverse_trampoline_map;
+
+};
+
+// Each program module generates its own reverse trampolines so it can inline
+// them easily. We also need a global set of reverse trampolines so that
+// Yang Function objects can be constructed from C++ functions with an
+// appropriate trampoline.
+class YangTrampolineGlobals {
+public:
+
+  static yang::void_fp get_trampoline_function(const yang::Type& function_type);
+  static yang::void_fp get_reverse_trampoline_function(
+      const yang::Type& function_type);
+
+private:
+
+  YangTrampolineGlobals();
+  ~YangTrampolineGlobals();
+
+  static YangTrampolineGlobals& get_instance();
+  llvm::Module* create_module() const;
+
+  std::string _error;
+  llvm::Module* _module;
+  std::unique_ptr<llvm::ExecutionEngine> _engine;
+  IrCommon _common;
 
 };
 

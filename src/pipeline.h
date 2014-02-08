@@ -123,7 +123,11 @@ private:
 template<typename R, typename... Args>
 R Function<R(Args...)>::operator()(const Args&... args) const
 {
-  // TODO: not clear how to call non-Yang functions (with no instance) yet.
+  // For C++ functions, just call it directly.
+  if (_target) {
+    auto native = (internal::NativeFunction<void>*)_target;
+    return native->get<R, Args...>()(args...);
+  }
   Instance* instance = get_instance();
   return instance->call_via_trampoline<R>(_function, args...);
 }

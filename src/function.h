@@ -16,6 +16,9 @@ class Instance;
 
 namespace internal {
 
+// Avoid including unnecessary files in this header.
+yang::void_fp get_global_reverse_trampoline_function(const yang::Type& type);
+
 template<typename>
 struct FunctionConstruct;
 template<typename>
@@ -84,12 +87,25 @@ private:
   // to client code must throw rather than returning something unusable.
   Function();
 
+  // Reference-counted C++ function.
+  internal::RefCountedNativeFunction<R(Args...)> _native_ref;
+
   // Bare variables (equivalent to the Yang representation).
   yang::void_fp _function;
   void* _env;
-  yang::void_fp _target;
+  void* _target;
 
 };
+
+template<typename R, typename... Args>
+Function<R(Args...)>::Function(const cpp_type& function)
+  : _native_ref(function)
+  , _function(internal::get_global_reverse_trampoline_function(
+      internal::TypeInfo<Function<R(Args...)>>()()))
+  , _env(nullptr)
+  , _target(&_native_ref.get())
+{
+}
 
 template<typename R, typename... Args>
 Function<R(Args...)>::Function()
@@ -135,7 +151,7 @@ struct FunctionConstruct {
 template<typename R, typename... Args>
 struct FunctionConstruct<Function<R(Args...)>> {
   Function<R(Args...)> operator()(yang::void_fp function, void* env,
-                                  yang::void_fp target = nullptr) const
+                                  void* target = nullptr) const
   {
     Function<R(Args...)> f;
     f._function = function;

@@ -18,6 +18,11 @@ class Context;
 
 namespace internal {
 
+// Currently, it's not clear how it would be possible to also support user
+// functions taking arguments by const-ref, since the calling convention
+// can't be known when Yang code makes the call. We could require const-ref
+// arguments where it matters (vectors and functions); or maybe somehow wrap
+// one in the other.
 template<typename T>
 struct TypeInfo {
   static_assert(sizeof(T) != sizeof(T), "use of unsupported type");
@@ -255,7 +260,6 @@ struct Functions<R, List<Args...>> {
 };
 
 // Call function with args from a tuple.
-// TODO: allow const references in context functions.
 template<typename R, typename... Args, std::size_t... I>
 R list_call(const std::function<R(Args...)>& f, const List<Args...>& args,
             const Indices<I...>&)
@@ -288,7 +292,7 @@ struct TrampolineReturn<vec<T, N>> {
 };
 template<typename R, typename... Args>
 struct TrampolineReturn<Function<R(Args...)>> {
-  typedef List<yang::void_fp*, void**, yang::void_fp*> type;
+  typedef List<yang::void_fp*, void**, void**> type;
 };
 
 template<typename... Args>
@@ -310,7 +314,7 @@ struct TrampolineArgs<vec<T, N>, Args...> {
 template<typename R, typename... Args, typename... Brgs>
 struct TrampolineArgs<Function<R(Args...)>, Brgs...> {
   typedef typename Join<
-      List<yang::void_fp, void*, yang::void_fp>,
+      List<yang::void_fp, void*, void*>,
       typename TrampolineArgs<Brgs...>::type>::type type;
 };
 
@@ -533,9 +537,9 @@ struct ReverseTrampolineCallReturn<vec<T, N>, Args...> {
 };
 template<typename R, typename... Args>
 struct ReverseTrampolineCallReturn<Function<R(Args...)>,
-                                   yang::void_fp*, void**, yang::void_fp*> {
+                                   yang::void_fp*, void**, void**> {
   void operator()(const Function<R(Args...)>& result,
-                  yang::void_fp* fptr, void** eptr, yang::void_fp* tptr) const
+                  yang::void_fp* fptr, void** eptr, void** tptr) const
   {
     *fptr = result._function;
     *eptr = result._env;

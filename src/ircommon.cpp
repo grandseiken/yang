@@ -10,6 +10,8 @@
 #include <llvm/Transforms/IPO.h>
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/PassManager.h>
+#include <llvm/Support/TargetSelect.h>
+#include "error.h"
 #include "type_info.h"
 
 namespace yang {
@@ -22,9 +24,13 @@ IrCommon::IrCommon(llvm::Module& module, llvm::ExecutionEngine& engine)
 {
 }
 
-void IrCommon::optimise_ir() const
+void IrCommon::optimise_ir(llvm::Function* function) const
 {
-  llvm::PassManager optimiser;
+  llvm::PassManager module_optimiser;
+  llvm::FunctionPassManager function_optimiser(&_module);
+
+  auto& optimiser = function ?
+      (llvm::PassManager&)function_optimiser : module_optimiser;
   optimiser.add(new llvm::DataLayout(*_engine.getDataLayout()));
 
   // Basic alias analysis and register promotion.
@@ -51,6 +57,11 @@ void IrCommon::optimise_ir() const
   optimiser.add(llvm::createCFGSimplificationPass());
   optimiser.add(llvm::createAggressiveDCEPass());
 
+  if (function) {
+    function_optimiser.run(*function);
+    return;
+  }
+
   // Interprocedural optimisations.
   optimiser.add(llvm::createFunctionInliningPass());
   optimiser.add(llvm::createIPConstantPropagationPass());
@@ -65,11 +76,11 @@ void IrCommon::optimise_ir() const
   optimiser.add(llvm::createGVNPass());
 
   // TODO: work out if there's others we should run, or in a different order.
-  optimiser.run(_module);
+  module_optimiser.run(_module);
 }
 
 llvm::Function* IrCommon::create_trampoline_function(
-    llvm::FunctionType* function_type)
+    const yang::Type& function_type)
 {
   // Trampoline functions must be generated for every function type that might
   // be called externally or referenced by valid Function objects; reverse
@@ -92,8 +103,7 @@ llvm::Function* IrCommon::create_trampoline_function(
   //
   // It might be possible to further erase function pointers to minimise the
   // number of functions needed.
-  yang::Type yang_type = get_yang_type(function_type);
-  auto it = _trampoline_map.find(yang_type);
+  auto it = _trampoline_map.find(function_type);
   if (it != _trampoline_map.end()) {
     return it->second;
   }
@@ -108,19 +118,20 @@ llvm::Function* IrCommon::create_trampoline_function(
   // definitely going to work. Essentially, we unpack vectors into individual
   // values, and convert return values to pointer arguments; the trampoline
   // takes the actual function to be called as the final argument.
-  auto return_type = function_type->getReturnType();
+  yang::Type return_type = function_type.get_function_return_type();
   // Handle the transitive closure.
-  if (get_yang_type(return_type).is_function()) {
-    create_trampoline_function(function_type_from_generic(return_type));
+  if (return_type.is_function()) {
+    create_trampoline_function(return_type);
   }
-  for (auto it = function_type->param_begin();
-       it != function_type->param_end(); ++it) {
-    yang::Type t = get_yang_type(*it);
+  for (std::size_t i = 0; i < function_type.get_function_num_args(); ++i) {
+    yang::Type t = function_type.get_function_arg_type(i);
     if (t.is_function()) {
       create_reverse_trampoline_function(t);
     }
   }
-  auto ext_function_type = get_trampoline_type(function_type, false);
+  auto llvm_type = function_type_from_generic(get_llvm_type(function_type));
+  auto llvm_return_type = llvm_type->getReturnType();
+  auto ext_function_type = get_trampoline_type(llvm_type, false);
 
   // Generate the function code.
   auto function = llvm::Function::Create(
@@ -136,13 +147,13 @@ llvm::Function* IrCommon::create_trampoline_function(
   // Translate trampoline arguments to an LLVM-internal argument list.
   auto jt = function->arg_begin();
   for (std::size_t i = 0;
-       i < get_trampoline_num_return_args(return_type); ++i) {
+       i < get_trampoline_num_return_args(llvm_return_type); ++i) {
     jt->setName("r" + std::to_string(i));
     ++jt;
   }
   std::size_t i = 0;
-  for (auto it = function_type->param_begin();
-       it != function_type->param_end(); ++it, ++i) {
+  for (auto it = llvm_type->param_begin();
+       it != llvm_type->param_end(); ++it, ++i) {
     if ((*it)->isVectorTy()) {
       std::size_t size = (*it)->getVectorNumElements();
       llvm::Value* v = (*it)->isIntOrIntVectorTy() ?
@@ -171,20 +182,20 @@ llvm::Function* IrCommon::create_trampoline_function(
     // Environment pointer is last parameter.
     auto kt = it;
     jt->setName(
-        ++kt == function_type->param_end() ? "env" : "a" + std::to_string(i));
+        ++kt == llvm_type->param_end() ? "env" : "a" + std::to_string(i));
     call_args.push_back(jt++);
   }
 
   // Do the call and translate the result back to native calling convention.
   llvm::Value* result = b().CreateCall(callee, call_args);
-  if (return_type->isVectorTy()) {
+  if (llvm_return_type->isVectorTy()) {
     auto it = function->arg_begin();
-    for (std::size_t i = 0; i < return_type->getVectorNumElements(); ++i) {
+    for (std::size_t i = 0; i < llvm_return_type->getVectorNumElements(); ++i) {
       llvm::Value* v = b().CreateExtractElement(result, constant_int(i), "vec");
       b().CreateStore(v, it++);
     }
   }
-  else if (return_type->isStructTy()) {
+  else if (llvm_return_type->isStructTy()) {
     llvm::Value* fptr = b().CreateExtractValue(result, 0, "fptr");
     llvm::Value* eptr = b().CreateExtractValue(result, 1, "eptr");
     llvm::Value* tptr = b().CreateExtractValue(result, 2, "tptr");
@@ -194,11 +205,11 @@ llvm::Function* IrCommon::create_trampoline_function(
     b().CreateStore(eptr, it++);
     b().CreateStore(tptr, it++);
   }
-  else if (!return_type->isVoidTy()) {
+  else if (!llvm_return_type->isVoidTy()) {
     b().CreateStore(result, function->arg_begin());
   }
   b().CreateRetVoid();
-  _trampoline_map.emplace(yang_type, function);
+  _trampoline_map.emplace(function_type, function);
   return function;
 }
 
@@ -217,7 +228,7 @@ llvm::Function* IrCommon::create_reverse_trampoline_function(
   for (std::size_t i = 0; i < function_type.get_function_num_args(); ++i) {
     yang::Type t = function_type.get_function_arg_type(i);
     if (t.is_function()) {
-      create_trampoline_function(function_type_from_generic(get_llvm_type(t)));
+      create_trampoline_function(t);
     }
   }
 
@@ -614,6 +625,57 @@ std::size_t IrCommon::get_trampoline_num_return_args(
       return_type->isVoidTy() ? 0 :
       return_type->isVectorTy() ? return_type->getVectorNumElements() :
       return_type->isStructTy() ? 3 : 1;
+}
+
+yang::void_fp YangTrampolineGlobals::get_trampoline_function(
+    const yang::Type& function_type)
+{
+  return nullptr;
+  llvm::Function* function =
+      get_instance()._common.create_trampoline_function(function_type);
+  get_instance()._common.optimise_ir(function);
+  return (yang::void_fp)(std::intptr_t)
+      get_instance()._engine->getPointerToFunction(function);
+}
+
+yang::void_fp YangTrampolineGlobals::get_reverse_trampoline_function(
+    const yang::Type& function_type)
+{
+  llvm::Function* function =
+      get_instance()._common.create_reverse_trampoline_function(function_type);
+  get_instance()._common.optimise_ir(function);
+  return (yang::void_fp)(std::intptr_t)
+      get_instance()._engine->getPointerToFunction(function);
+}
+
+YangTrampolineGlobals::YangTrampolineGlobals()
+  : _module(create_module())
+  , _engine(llvm::EngineBuilder(_module).setErrorStr(&_error).create())
+  , _common(*_module, *_engine)
+{
+  if (!_engine) {
+    delete _module;
+    throw yang::runtime_error("couldn't create execution engine: " + _error);
+  }
+  _engine->DisableSymbolSearching();
+}
+
+YangTrampolineGlobals::~YangTrampolineGlobals()
+{
+}
+
+YangTrampolineGlobals& YangTrampolineGlobals::get_instance()
+{
+  // This must be lazily-initialised rather than a static class member; it
+  // depends on LLVM static initialisation.
+  static YangTrampolineGlobals instance;
+  return instance;
+}
+
+llvm::Module* YangTrampolineGlobals::create_module() const
+{
+  llvm::InitializeNativeTarget();
+  return new llvm::Module("!trampoline_globals", llvm::getGlobalContext());
 }
 
 // End namespace yang::internal.

@@ -97,5 +97,12 @@ int main(int argc, char** argv)
   icall(jinc);
   log_info("instance i: ", instance.get_global<int_t>("i"));
   log_info("jnstance i: ", jnstance.get_global<int_t>("i"));
+
+  auto f = [](int_t t)
+  {
+    return t + 5;
+  };
+  auto lambda = Fn<int_t(int_t)>(f);
+  log_info("g(lambda): ", jnstance.call<int_t>("g", lambda));
   return 0;
 }

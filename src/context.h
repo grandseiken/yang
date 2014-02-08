@@ -117,6 +117,7 @@ namespace internal {
 class Context {
 public:
 
+  // TODO: make this class take yang::Functions instead of std::functions.
   Context() {}
 
   // Noncopyable.
