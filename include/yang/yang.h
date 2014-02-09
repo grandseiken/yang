@@ -2,19 +2,15 @@
 // This file is part of the Yang software project. It is distributed under the
 // MIT License. See LICENSE file for details.
 //============================================================================//
-#include <yang/context.h>
+#ifndef YANG_INCLUDE_YANG_YANG_H
+#define YANG_INCLUDE_YANG_YANG_H
 
-namespace yang {
+// Convenience header that includes all user-visible headers.
+#include "context.h"
+#include "error.h"
+#include "function.h"
+#include "pipeline.h"
+#include "type.h"
+#include "typedefs.h"
 
-const Context::type_map& Context::get_types() const
-{
-  return _types;
-}
-
-const Context::function_map& Context::get_functions() const
-{
-  return _functions;
-}
-
-// End namespace yang.
-}
+#endif

@@ -9,7 +9,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
-#include "typedefs.h"
+#include <yang/typedefs.h>
 
 namespace yang {
 namespace internal {

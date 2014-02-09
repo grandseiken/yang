@@ -7,8 +7,8 @@
 
 #include <unordered_map>
 #include <llvm/IR/IRBuilder.h>
-#include "type.h"
-#include "typedefs.h"
+#include <yang/type.h>
+#include <yang/typedefs.h>
 
 namespace llvm {
   class Constant;

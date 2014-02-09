@@ -11,8 +11,8 @@
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/PassManager.h>
 #include <llvm/Support/TargetSelect.h>
-#include "error.h"
-#include "type_info.h"
+#include <yang/error.h>
+#include <yang/type_info.h>
 
 namespace yang {
 namespace internal {
@@ -478,8 +478,8 @@ llvm::Value* IrCommon::generic_function_value(const GenericFunction& function)
       function_type_from_generic(get_llvm_type(function.type)), 0);
 
   if (tptr) {
-    // Use internal reverse trampoline instead of external one, so it can be more
-    // easily inlined.
+    // Use internal reverse trampoline instead of external one, so it can be
+    // more easily inlined.
     llvm::Value* v = get_reverse_trampoline_function(function.type);
     v = b().CreateBitCast(v, ft, "fun");
     // Native functions don't need an environment pointer.

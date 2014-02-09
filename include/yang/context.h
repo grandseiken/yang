@@ -2,8 +2,8 @@
 // This file is part of the Yang software project. It is distributed under the
 // MIT License. See LICENSE file for details.
 //============================================================================//
-#ifndef YANG_SRC_CONTEXT_H
-#define YANG_SRC_CONTEXT_H
+#ifndef YANG_INCLUDE_YANG_CONTEXT_H
+#define YANG_INCLUDE_YANG_CONTEXT_H
 
 #include <string>
 #include <unordered_map>

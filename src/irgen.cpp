@@ -5,7 +5,7 @@
 #include "irgen.h"
 
 #include <llvm/IR/Module.h>
-#include "context.h"
+#include <yang/context.h>
 
 namespace llvm {
   class LLVMContext;

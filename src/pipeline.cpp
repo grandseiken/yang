@@ -2,7 +2,7 @@
 // This file is part of the Yang software project. It is distributed under the
 // MIT License. See LICENSE file for details.
 //============================================================================//
-#include "pipeline.h"
+#include <yang/pipeline.h>
 
 #include <llvm/Analysis/Verifier.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
@@ -11,8 +11,8 @@
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/TargetSelect.h>
 
+#include <yang/error.h>
 #include "ast.h"
-#include "error.h"
 #include "irgen.h"
 #include "log.h"
 #include "print.h"

@@ -7,7 +7,7 @@
 
 #include <string>
 #include <vector>
-#include "type.h"
+#include <yang/type.h>
 
 namespace yang {
 namespace internal {

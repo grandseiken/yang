@@ -32,9 +32,14 @@ get_deps() {
   DIR=$(dirname $1)
   # Extract the filenames in lines that look like:
   #   #include "foo.h"
+  # Or:
+  #   #include <yang/foo.h>
   LIST=$( \
       grep -ho '^#include \+\"[^"]\+\"' $1 | \
       sed "s/#include \+\"\([^\"]\+\)\"/\1/g")
+  SYS_LIST=$( \
+      grep -ho '^#include \+<yang/[^>]\+\.h>' $1 | \
+      sed "s/#include \+<\([^>]\+.h\)>/\1/g")
 
   DEPS=""
   for DEP in $LIST; do
@@ -43,6 +48,13 @@ get_deps() {
         echo "$DIR/$DEP" | \
         sed ":repeat; s/[^/]\+\/\(\.\.\/\)*\.\.\//\1/; t repeat")
 
+    if [ -f $DEP ]; then
+      DEPS="$DEPS $DEP"
+    fi
+  done
+  for DEP in $SYS_LIST; do
+    # Prefix directory and collapse pathname.
+    DEP="./include/$DEP"
     if [ -f $DEP ]; then
       DEPS="$DEPS $DEP"
     fi

@@ -1,4 +1,5 @@
 bin/
 dbg/
 gen/
+lib/
 dependencies/

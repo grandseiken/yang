@@ -9,11 +9,11 @@
 #include <unordered_map>
 #include <string>
 
+#include <yang/native.h>
+#include <yang/type.h>
+#include <yang/typedefs.h>
 #include "ircommon.h"
-#include "native.h"
 #include "table.h"
-#include "type.h"
-#include "typedefs.h"
 #include "walker.h"
 
 namespace llvm {

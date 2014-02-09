@@ -8,9 +8,9 @@
 #include <string>
 #include <unordered_map>
 
+#include <yang/type.h>
 #include "internal_type.h"
 #include "table.h"
-#include "type.h"
 #include "walker.h"
 
 namespace yang {
