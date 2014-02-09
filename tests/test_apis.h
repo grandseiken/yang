@@ -35,11 +35,11 @@ TEST_F(YangTest, ContextTest)
   struct type_b {};
   struct type_c {};
 
-  ASSERT_NO_THROW(ctxt.register_type<type_a>("type_a"));
-  EXPECT_THROW(ctxt.register_type<type_a>("type_a"), runtime_error);
-  EXPECT_THROW(ctxt.register_type<type_a>("type_b"), runtime_error);
-  EXPECT_THROW(ctxt.register_type<type_b>("type_a"), runtime_error);
-  EXPECT_NO_THROW(ctxt.register_type<type_b>("type_b"));
+  ASSERT_NO_THROW(ctxt.register_type<type_a>("TypeA"));
+  EXPECT_THROW(ctxt.register_type<type_a>("TypeA"), runtime_error);
+  EXPECT_THROW(ctxt.register_type<type_a>("TypeB"), runtime_error);
+  EXPECT_THROW(ctxt.register_type<type_b>("TypeA"), runtime_error);
+  EXPECT_NO_THROW(ctxt.register_type<type_b>("TypeB"));
 
   auto voidf = Function<void()>([](){});
   ASSERT_NO_THROW(ctxt.register_function("foo", voidf));
@@ -53,15 +53,15 @@ TEST_F(YangTest, ContextTest)
   EXPECT_NO_THROW(ctxt.register_member_function<type_a>("bar", voidaf));
 
   // Conflicts between member and nonmember functions.
-  EXPECT_THROW(ctxt.register_function("type_a::foo", voidf), runtime_error);
-  EXPECT_NO_THROW(ctxt.register_function("type_a::baz", voidf));
+  EXPECT_THROW(ctxt.register_function("TypeA::foo", voidf), runtime_error);
+  EXPECT_NO_THROW(ctxt.register_function("TypeA::baz", voidf));
   EXPECT_THROW(
       ctxt.register_member_function<type_a>("baz", voidaf), runtime_error);
 
   EXPECT_TRUE(ctxt.has_type<type_a>());
   EXPECT_FALSE(ctxt.has_type<type_c>());
-  EXPECT_EQ(ctxt.get_type_name<type_a>(), "type_a");
-  EXPECT_EQ(ctxt.get_type_name<type_c>(), "");
+  EXPECT_EQ(ctxt.get_type_name<type_a>(), "TypeA");
+  EXPECT_THROW(ctxt.get_type_name<type_c>(), runtime_error);
 
   // Unregistered types.
   auto voidcf = Function<void(type_c*)>([](type_c*){});
@@ -74,7 +74,7 @@ TEST_F(YangTest, ContextTest)
   EXPECT_THROW(ctxt.register_function("cf", cf), runtime_error);
 }
 
-std::string TestApisStr = R"(
+const std::string TestApisStr = R"(
 export global var a = (0, 1, 2);
 export global {
   const b = (0., 1., 2.);
@@ -158,7 +158,7 @@ TEST_F(YangTest, ProgramTest)
   EXPECT_FALSE(dt->second.is_exported());
 }
 
-TEST_F(YangTest, Instance)
+TEST_F(YangTest, InstanceTest)
 {
   typedef Function<int_t(int_t)> intf_t;
   typedef Function<void()> voidf_t;

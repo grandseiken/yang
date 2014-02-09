@@ -678,6 +678,15 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // null? If so, can we get rid of get_function_type_with_target and the
       // branching here, and just call with the final environment/target
       // pointers OR-ed together?
+      // In fact, it occurs to me that since we always know the type statically,
+      // there isn't actually any need to pass the trampoline around. Instead of
+      // (function/trampoline, environment, target) we could simply use
+      // (target, environment). The logic becomes: do a runtime check to see if
+      // environment is null. If so, call trampoline looked up from
+      // _reverse_trampoline_map; otherwise, call target directly and pass
+      // environment.
+      // Then we can get rid of the global yang trampolines entirely. I'm not
+      // sure why I thought those were necessary.
       std::vector<llvm::Value*> args;
       llvm::Value* genf = results[0];
 

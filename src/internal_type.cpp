@@ -218,7 +218,7 @@ yang::Type Type::external(bool exported) const
 std::string Type::string_internal() const
 {
   if (_base == USER_TYPE) {
-    return _user_type_name + "*";
+    return _user_type_name + "*" + (_const ? " const" : "");
   }
 
   if (_base == FUNCTION) {

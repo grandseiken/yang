@@ -2,7 +2,7 @@
 // This file is part of the Yang software project. It is distributed under the
 // MIT License. See LICENSE file for details.
 //============================================================================//
-std::string TestTrampolinesStr = R"(
+const std::string TestTrampolinesStr = R"(
 export test_int = int(int x)
 {
   return x * 2;
@@ -50,7 +50,7 @@ TEST_F(YangTest, Trampolines)
   EXPECT_EQ(inst.call<user_type*>("test_user_type", &u), &u);
 }
 
-std::string TestReverseTrampolinesStr = R"(
+const std::string TestReverseTrampolinesStr = R"(
 export test_int = int()
 {
   return context_int(5);
@@ -128,7 +128,7 @@ TEST_F(YangTest, ReverseTrampolines)
   EXPECT_EQ(inst.call<user_type*>("test_user_type")->id, 0);
 }
 
-std::string TestMultiArgTrampolinesStr = R"(
+const std::string TestMultiArgTrampolinesStr = R"(
 export test = int(int a, int4 b, float c, int(int) d, float2 e, UserType f)
 {
   return context_test(a, b, c, d, e, f);
@@ -160,3 +160,5 @@ TEST_F(YangTest, MultiArgTrampolines)
       test(2, ivec_t<4>{1, 2, 3, 4}, 3.5, intf_t(d), fvec_t<2>{7.1, 6.9}, &u);
   EXPECT_EQ(result, 42);
 }
+
+// TODO: test trampolines for some super-high-order functions.

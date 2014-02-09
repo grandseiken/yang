@@ -87,7 +87,7 @@ Node* Node::clone(bool clone_children) const
 
   // Paranoid: avoid blowing the stack on deep AST trees.
   std::vector<std::pair<const Node*, Node*>> stack;
-  stack.emplace(stack.end(), this, node);
+  stack.emplace_back(this, node);
   while (!stack.empty()) {
     auto pair = stack.back();
     stack.pop_back();
@@ -95,7 +95,7 @@ Node* Node::clone(bool clone_children) const
     for (const auto& child : pair.first->children) {
       Node* n = child->clone(false);
       pair.second->add(n);
-      stack.emplace(stack.end(), child.get(), n);
+      stack.emplace_back(child.get(), n);
     }
   }
   return node;

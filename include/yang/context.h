@@ -98,6 +98,8 @@
 // global data struct which probably need to be left as default values.
 // TODO: possibly allow ref-counted user types. Set up some template that
 // mirrors the mechanics of Function.
+// TODO: make sure everything is (possibly optionally?) thread-safe.
+// TODO: hex literals, scientific notation float literals, etc.
 //
 // Further off (helpful stuff that can be emulated without needing to be built-
 // -in right away):
@@ -169,7 +171,7 @@ namespace internal {
     yang::Type operator()(const Context& context) const
     {
       if (!context.has_type<T>()) {
-        throw runtime_error("using unregistered user type");
+        throw runtime_error("use of unregistered user type");
       }
       yang::Type t;
       t._base = yang::Type::USER_TYPE;
@@ -261,7 +263,7 @@ std::string Context::get_type_name() const
       return pair.first;
     }
   }
-  return "";
+  throw runtime_error("use of unregistered user type");
 }
 
 // End namepsace yang.
