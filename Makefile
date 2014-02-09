@@ -93,7 +93,7 @@ ALL_FILES=\
 # Master targets.
 .PHONY: all
 all: \
-	lib $(BINARIES) test
+	lib $(BINARIES) .tests_passed
 .PHONY: lib
 lib: \
 	$(LIB)
@@ -104,6 +104,7 @@ yang: \
 test: \
 	$(TEST_BINARY)
 	$(TEST_BINARY)
+	touch .tests_passed
 .PHONY: add
 add:
 	git add $(ALL_FILES)
@@ -216,6 +217,10 @@ $(TEST_BINARY): \
 	@echo Linking./$@
 	$(CXX) -o ./$@ $< $(LFLAGS) \
 	    -L$(GTEST_DIR)/lib -Wl,-Bstatic -lgtest -Wl,-Bdynamic -lpthread
+.tests_passed: \
+	$(TEST_BINARY)
+	$(TEST_BINARY)
+	touch ./$@
 
 # Ensure a directory exists.
 .PRECIOUS: ./%.mkdir

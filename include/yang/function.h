@@ -36,6 +36,9 @@ struct ReverseTrampolineCallArgs;
 template<typename, typename...>
 struct ReverseTrampolineCallReturn;
 
+template<typename>
+struct GenerateReverseTrampolineLookupTable;
+
 // End namespace internal.
 }
 
@@ -139,6 +142,10 @@ Function<R(Args...)>::Function(const cpp_type& function)
   , _env(nullptr)
   , _target(&_native_ref.get())
 {
+  // Make sure the reverse trampoline is generated, since the global Yang
+  // trampolines will compile a reference it to immediately, even if the
+  // Function is never used.
+  internal::GenerateReverseTrampolineLookupTable<Function<R(Args...)>>()();
 }
 
 template<typename R, typename... Args>

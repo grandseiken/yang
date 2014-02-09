@@ -6,51 +6,63 @@
 #include <gtest/gtest.h>
 #include <yang/yang.h>
 
+namespace yang {
+
 // Standard test fixture.
 class YangTest : public testing::Test {
 public:
 
+  YangTest();
   ~YangTest() override {}
 
 protected:
 
   struct user_type {
-    yang::int_t id;
+    std::size_t id;
   };
 
-  yang::Context& context();
-  yang::Program& program(const std::string& contents);
-  yang::Program& program(const yang::Context& context,
-                         const std::string& contents);
+  Context& context();
+  Program& program(const std::string& contents);
+  Program& program(const Context& context, const std::string& contents);
 
-  yang::Instance& instance(const std::string& contents);
-  yang::Instance& instance(const yang::Context& context,
-                           const std::string& contents);
-  yang::Instance& instance(const yang::Program& program);
+  Instance& instance(const std::string& contents);
+  Instance& instance(const Context& context, const std::string& contents);
+  Instance& instance(const Program& program);
 
 private:
 
-  std::vector<std::unique_ptr<yang::Context>> _contexts;
-  std::vector<std::unique_ptr<yang::Program>> _programs;
-  std::vector<std::unique_ptr<yang::Instance>> _instances;
+  std::vector<std::unique_ptr<Context>> _contexts;
+  std::vector<std::unique_ptr<Program>> _programs;
+  std::vector<std::unique_ptr<Instance>> _instances;
   std::vector<std::unique_ptr<user_type>> _user_values;
-  yang::int_t _user_value_id;
+
+  std::size_t _program_id;
+  std::size_t _user_value_id;
 
 };
 
 // Test headers.
-namespace yang {
-
+#include "test_apis.h"
+#include "test_errors.h"
+#include "test_functions.h"
+#include "test_semantics.h"
 #include "test_trampolines.h"
+#include "test_user_types.h"
 
-// End namespace yang.
+// Fixture implementation.
+YangTest::YangTest()
+  : _program_id(0)
+  , _user_value_id(0)
+{
 }
 
-yang::Context& YangTest::context()
+Context& YangTest::context()
 {
-  _contexts.emplace(_contexts.end(), new yang::Context());
-  auto& context = *_contexts.back(); 
+  _contexts.emplace(_contexts.end(), new Context());
+  auto& context = *_contexts.back();
 
+  // Standard context has a user type registed and a function to produce them.
+  // Each one gets a different ID.
   context.register_type<user_type>("UserType");
   auto get_user_type = [this]()
   {
@@ -61,42 +73,47 @@ yang::Context& YangTest::context()
   };
 
   context.register_function(
-      "get_user_type", yang::Function<user_type*()>(get_user_type));
+      "get_user_type", Function<user_type*()>(get_user_type));
   return context;
 }
 
-yang::Program& YangTest::program(const std::string& contents)
+Program& YangTest::program(const std::string& contents)
 {
-  _programs.emplace_back(new yang::Program(context(), "test", contents));
+  _programs.emplace_back(
+      new Program(context(), "test" + std::to_string(_program_id++), contents));
   return *_programs.back();
 }
 
-yang::Program& YangTest::program(const yang::Context& context,
-                                 const std::string& contents)
+Program& YangTest::program(const Context& context, const std::string& contents)
 {
-  _programs.emplace_back(new yang::Program(context, "test", contents));
+  _programs.emplace_back(
+      new Program(context, "test" + std::to_string(_program_id++), contents));
   return *_programs.back();
 }
 
-yang::Instance& YangTest::instance(const std::string& contents)
+Instance& YangTest::instance(const std::string& contents)
 {
-  _instances.emplace_back(new yang::Instance(program(contents)));
+  _instances.emplace_back(new Instance(program(contents)));
   return *_instances.back();
 }
 
-yang::Instance& YangTest::instance(const yang::Context& context,
-                                   const std::string& contents)
+Instance& YangTest::instance(
+    const Context& context, const std::string& contents)
 {
-  _instances.emplace_back(new yang::Instance(program(context, contents)));
+  _instances.emplace_back(new Instance(program(context, contents)));
   return *_instances.back();
 }
 
-yang::Instance& YangTest::instance(const yang::Program& program)
+Instance& YangTest::instance(const Program& program)
 {
-  _instances.emplace_back(new yang::Instance(program));
+  _instances.emplace_back(new Instance(program));
   return *_instances.back();
 }
 
+// End namespace yang.
+}
+
+// Run all tests.
 int main(int argc, char** argv)
 {
   testing::InitGoogleTest(&argc, argv);

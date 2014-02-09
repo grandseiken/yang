@@ -59,6 +59,11 @@ bool Type::is_float() const
   return _base == FLOAT && _count == 1;
 }
 
+bool Type::is_vector() const
+{
+  return is_int_vector() || is_float_vector();
+}
+
 bool Type::is_int_vector() const
 {
   return _base == INT && _count > 1;

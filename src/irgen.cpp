@@ -95,12 +95,13 @@ IrGenerator::~IrGenerator()
 
 void IrGenerator::emit_global_functions()
 {
-  // Register malloc and free. Malloc takes a pointer argument, since
-  // we computer sizeof with pointer arithmetic. (Conveniently, it's
-  // also a type of the correct bit-width.)
+  llvm::Type* llvm_size_t =
+      llvm::IntegerType::get(b().getContext(), 8 * sizeof(std::size_t));
+
+  // Register malloc and free.
   auto malloc_ptr = get_native_function(
       "malloc", (yang::void_fp)&malloc,
-      llvm::FunctionType::get(_global_data, _global_data, false));
+      llvm::FunctionType::get(_global_data, llvm_size_t, false));
   auto free_ptr = get_native_function(
       "free", (yang::void_fp)&free,
       llvm::FunctionType::get(void_type(), _global_data, false));
@@ -119,6 +120,7 @@ void IrGenerator::emit_global_functions()
       constant_int(0), _global_data, "null");
   size_of = b().CreateGEP(
       size_of, constant_int(1), "sizeof");
+  size_of = b().CreatePtrToInt(size_of, llvm_size_t, "size");
   // Call malloc, set instance pointer, call each of the global initialisation
   // functions, and return the pointer.
   llvm::Value* v = b().CreateCall(malloc_ptr, size_of, "call");
@@ -156,8 +158,11 @@ void IrGenerator::emit_global_functions()
     auto it = getter->arg_begin();
     it->setName("global");
     b().SetInsertPoint(getter_block);
+    // Loads out of the global data structure must be byte-aligned! I don't
+    // entirely understand why, but leaving the default will segfault at random
+    // sometimes for certain types (e.g. float vectors).
     b().CreateRet(
-        b().CreateLoad(global_ptr(it, pair.second), "load"));
+        b().CreateAlignedLoad(global_ptr(it, pair.second), 1, "load"));
 
     name = "!global_set_" + pair.first;
     std::vector<llvm::Type*> setter_args{t, _global_data};
@@ -625,8 +630,9 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
               _symbol_table.get(node.string_value, 0),
               _metadata[ENVIRONMENT_PTR]);
         }
-        // Otherwise it's a global, so look up in the global structure.
-        return b().CreateLoad(global_ptr(node.string_value), "load");
+        // Otherwise it's a global, so look up in the global structure with a
+        // byte-aligned load.
+        return b().CreateAlignedLoad(global_ptr(node.string_value), 1, "load");
       }
 
       // It's possible that nothing matches, when this is the identifier on the
