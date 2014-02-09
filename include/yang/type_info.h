@@ -362,7 +362,7 @@ struct TrampolineCallArgs<vec<T, N>, Args...> {
   type helper(const vec<T, N>& arg, const Args&... args,
               const Indices<I...>&) const
   {
-    return join(Mul<N, T>::type(arg[I]...),
+    return join(typename Mul<N, T>::type(arg[I]...),
                 TrampolineCallArgs<Args...>()(args...));
   }
 
