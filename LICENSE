@@ -33,6 +33,7 @@ Software           Directory and license information
 --------           ---------------------------------
 Berkeley YACC      dependencies/byacc/README
 Flex               dependencies/flex/COPYING
+Google Test        dependencies/googletest/LICENSE
 LLVM               dependencies/llvm/LICENSE.txt
 Autoconf           dependencies/llvm/autoconf/LICENSE.txt
                    dependencies/llvm/projects/sample/autoconf/LICENSE.txt

@@ -8,3 +8,6 @@
 [submodule "dependencies/flex"]
 	path = dependencies/flex
 	url = https://github.com/grandseiken/flex.git
+[submodule "dependencies/googletest"]
+	path = dependencies/googletest
+	url = http://git.chromium.org/external/googletest.git
