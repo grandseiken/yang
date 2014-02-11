@@ -3,6 +3,8 @@
 // MIT License. See LICENSE file for details.
 //============================================================================*/
 %{
+// TODO: switch to reentrant scanner/parser. This will mean we can get rid of a
+// bunch of hacky ParseGlobals nonsene and parser reset logic.
 
 #include "yang.l.h"
 #include "../src/ast.h"
@@ -178,6 +180,7 @@ stmt
 {$$ = new Node(Node::EMPTY_STMT);}
   | expr ';'
 {$$ = new Node(Node::EXPR_STMT, $1);}
+  /* TODO: void returns! */
   | T_RETURN expr ';'
 {$$ = new Node(Node::RETURN_STMT, $2);}
   | T_IF '(' expr ')' stmt %prec T_IF

@@ -18,6 +18,7 @@
 #include "print.h"
 #include "static.h"
 #include "../gen/yang.y.h"
+#include "../gen/yang.l.h"
 
 int yang_parse();
 
@@ -36,6 +37,8 @@ Program::Program(const Context& context, const std::string& name,
   internal::ParseGlobals::parser_output = nullptr;
   internal::ParseGlobals::errors.clear();
 
+  yang_lineno = 0;
+  yang_restart(nullptr);
   yang_parse();
   std::unique_ptr<internal::Node> output(internal::ParseGlobals::parser_output);
   internal::Node::orphans.erase(output.get());

@@ -132,3 +132,49 @@ TEST_F(YangTest, YangFunctions)
   EXPECT_EQ(inst.get_global<int_t>("value"), 12);
   EXPECT_EQ(jnst.get_global<int_t>("value"), 14);
 }
+
+const std::string TestHighOrderFunctionsStr = R"(
+export out = int()()()
+{
+  return int()()
+  {
+    return int()
+    {
+      return 1;
+    };
+  };
+};
+
+export out_in = int(int()()() x)
+{
+  return x()()();
+};
+
+export in_in = int(int(int) x)
+{
+  return x(1);
+};
+export in = int(int(int(int)) x)
+{
+  return x(int(int a) {return 1 + a;});
+};
+)";
+
+TEST_F(YangTest, HighOrderFunctions)
+{
+  auto& inst = instance(TestHighOrderFunctionsStr);
+  typedef Function<int_t()> intf_t;
+  typedef Function<intf_t()> intf2_t;
+  typedef Function<intf2_t()> intf3_t;
+  auto out = inst.get_function<intf3_t>("out");
+  auto out_in = inst.get_function<Function<int_t(intf3_t)>>("out_in");
+  EXPECT_EQ(out()()(), 1);
+  EXPECT_EQ(out_in(out), 1);
+
+  typedef Function<int_t(int_t)> int2f_t;
+  typedef Function<int_t(int2f_t)> int3f_t;
+  typedef Function<int_t(int3f_t)> int4f_t;
+  auto in_in = inst.get_function<int3f_t>("in_in");
+  auto in = inst.get_function<int4f_t>("in");
+  EXPECT_EQ(in(in_in), 2);
+}

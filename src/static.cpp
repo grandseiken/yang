@@ -501,9 +501,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
 
       if (results[0].is_vector() && !err &&
-          (!results[1].is_vector() || !results[2].is_vector() ||
-           results[0].count() != results[1].count() ||
-           results[0].count() != results[2].count())) {
+          (!results[1].is_vector() || results[0].count() != results[1].count())) {
         error(node, "length-" + std::to_string(results[0].count()) +
                     " vectorised branch applied to " +
                     rs[1] + " and " + rs[2]);
@@ -749,6 +747,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
                 s + ": named argument in vector construction");
         }
         if (!results[i].primitive()) {
+          // Could potentially store the bad types we saw already so as not to
+          // repeat the error.
           error(*node.children[i], s + ": element with non-primitive type " +
                                    rs[i] + " in vector construction");
           t = Type::ERROR;
