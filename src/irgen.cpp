@@ -356,6 +356,10 @@ void IrGenerator::infix(const Node& node, const result_list& results)
         auto else_block = (llvm::BasicBlock*)_metadata[IF_ELSE_BLOCK];
         auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
         b().CreateBr(merge_block);
+
+        // Metadata blocks must always be updated to the current one, in case we
+        // created a bunch of new ones before we got to the end!
+        _metadata[IF_THEN_BLOCK] = b().GetInsertBlock();
         b().SetInsertPoint(else_block);
       }
       break;
@@ -657,6 +661,9 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
         // Vectorised ternary. Short-circuiting isn't possible.
         return b().CreateSelect(i2b(results[0]), results[1], results[2]);
       }
+      // Update in case we branched again.
+      _metadata[IF_ELSE_BLOCK] = b().GetInsertBlock();
+
       auto then_block = (llvm::BasicBlock*)_metadata[IF_THEN_BLOCK];
       auto else_block = (llvm::BasicBlock*)_metadata[IF_ELSE_BLOCK];
       auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
@@ -752,6 +759,9 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
         // Short-circuiting isn't possible.
         return b2i(binary(i2b(results[0]), i2b(results[1]), binary_lambda));
       }
+      // Update in case we branched again.
+      _metadata[LOGICAL_OP_RHS_BLOCK] = b().GetInsertBlock();
+
       auto source_block = (llvm::BasicBlock*)_metadata[LOGICAL_OP_SOURCE_BLOCK];
       auto rhs_block = (llvm::BasicBlock*)_metadata[LOGICAL_OP_RHS_BLOCK];
       auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
@@ -944,13 +954,20 @@ void IrGenerator::create_function(
   auto block = llvm::BasicBlock::Create(b().getContext(), "entry", function);
   b().SetInsertPoint(block);
 
+  // The code for Node::TYPE_FUNCTION in visit() ensures it takes an environment
+  // pointer.
+  auto eptr = --function->arg_end();
+  eptr->setName("env");
+  _metadata.add(ENVIRONMENT_PTR, eptr);
+  _metadata.add(FUNCTION, function);
+
   _symbol_table.push();
   // Recursive lookup handled similarly to arguments below.
   if (_immediate_left_assign.length()) {
+    llvm::Type* fp_type = llvm::PointerType::get(function_type, 0);
     llvm::Value* v = b().CreateAlloca(
-        llvm::PointerType::get(function_type, 0), nullptr,
-        _immediate_left_assign);
-    b().CreateStore(function, v);
+        generic_function_type(fp_type), nullptr, _immediate_left_assign);
+    b().CreateStore(generic_function_value(function, eptr), v);
     _symbol_table.add(_immediate_left_assign, v);
     _immediate_left_assign.clear();
   }
@@ -972,12 +989,6 @@ void IrGenerator::create_function(
     _symbol_table.add(name, alloc);
     ++arg_num;
   }
-  // The code for Node::TYPE_FUNCTION in visit() ensures it takes an environment
-  // pointer.
-  auto eptr = --function->arg_end();
-  eptr->setName("env");
-  _metadata.add(ENVIRONMENT_PTR, eptr);
-  _metadata.add(FUNCTION, function);
 }
 
 llvm::Value* IrGenerator::i2b(llvm::Value* v)

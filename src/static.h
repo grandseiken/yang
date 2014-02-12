@@ -22,7 +22,7 @@ class StaticChecker : public ConstAstWalker<Type> {
 public:
 
   typedef std::unordered_map<std::string, yang::Type> symbol_frame;
-  StaticChecker(const yang::Context& context,
+  StaticChecker(const yang::Context& context, std::string* error_output,
                 symbol_frame& functions_output, symbol_frame& globals_output);
   ~StaticChecker();
 
@@ -78,6 +78,7 @@ private:
   SymbolTable<std::string, Type> _symbol_table;
 
   const yang::Context& _context;
+  std::string* _error_output;
   symbol_frame& _functions_output;
   symbol_frame& _globals_output;
 

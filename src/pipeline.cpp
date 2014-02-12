@@ -25,7 +25,8 @@ int yang_parse();
 namespace yang {
 
 Program::Program(const Context& context, const std::string& name,
-                 const std::string& contents, bool optimise)
+                 const std::string& contents, bool optimise,
+                 std::string* error_output)
   : _context(context)
   , _name(name)
   , _ast(nullptr)
@@ -48,13 +49,18 @@ Program::Program(const Context& context, const std::string& name,
   internal::Node::orphans.clear();
 
   for (const std::string& err : internal::ParseGlobals::errors) {
-    log_err(err);
+    if (error_output) {
+      *error_output += err + '\n';
+    }
+    else {
+      log_err(err);
+    }
   }
   if (internal::ParseGlobals::errors.size()) {
     return;
   }
 
-  internal::StaticChecker checker(_context, _functions, _globals);
+  internal::StaticChecker checker(_context, error_output, _functions, _globals);
   checker.walk(*output);
   if (checker.errors()) {
     _functions.clear();
@@ -139,7 +145,8 @@ void Program::generate_ir(bool optimise)
   irgen.emit_global_functions();
 
   if (llvm::verifyModule(*_module, llvm::ReturnStatusAction, &error)) {
-    // Shouldn't be possible.
+    // Shouldn't be possible and indicates severe bug, so log the entire IR.
+    log_err(print_ir());
     throw runtime_error(_name + ": couldn't verify module: " + error);
   }
   if (optimise) {

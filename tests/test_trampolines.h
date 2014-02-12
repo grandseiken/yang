@@ -160,5 +160,3 @@ TEST_F(YangTest, MultiArgTrampolines)
       test(2, ivec_t<4>{1, 2, 3, 4}, 3.5, intf_t(d), fvec_t<2>{7.1, 6.9}, &u);
   EXPECT_EQ(result, 42);
 }
-
-// TODO: test trampolines for some super-high-order functions.

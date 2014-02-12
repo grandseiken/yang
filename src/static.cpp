@@ -23,12 +23,13 @@ namespace yang {
 namespace internal {
 
 StaticChecker::StaticChecker(
-    const yang::Context& context,
+    const yang::Context& context, std::string* error_output,
     symbol_frame& functions_output, symbol_frame& globals_output)
   : _errors(false)
   , _metadata(Type::VOID)
   , _symbol_table(Type::VOID)
   , _context(context)
+  , _error_output(error_output)
   , _functions_output(functions_output)
   , _globals_output(globals_output)
 {
@@ -853,7 +854,13 @@ void StaticChecker::error(const Node& node, const std::string& message)
   if (_current_function.length()) {
     m = "in function `" + _current_function + "`: " + m;
   }
-  log_err(ParseGlobals::error(node.line, node.text, m));
+  std::string full_message = ParseGlobals::error(node.line, node.text, m);
+  if (_error_output) {
+    *_error_output += full_message + '\n';
+  }
+  else {
+    log_err(full_message);
+  }
 }
 
 // End namespace yang::internal.

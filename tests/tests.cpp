@@ -22,6 +22,7 @@ protected:
   };
 
   Context& context();
+  Program& program_suppress_errors(const std::string& contents);
   Program& program(const std::string& contents);
   Program& program(const Context& context, const std::string& contents);
 
@@ -77,6 +78,15 @@ Context& YangTest::context()
   context.register_function(
       "get_user_type", Function<user_type*()>(get_user_type));
   return context;
+}
+
+Program& YangTest::program_suppress_errors(const std::string& contents)
+{
+  std::string suppress_errors;
+  _programs.emplace_back(
+      new Program(context(), "test" + std::to_string(_program_id++),
+                  contents, true, &suppress_errors));
+  return *_programs.back();
 }
 
 Program& YangTest::program(const std::string& contents)

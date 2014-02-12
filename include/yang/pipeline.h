@@ -30,8 +30,11 @@ namespace internal {
 class Program {
 public:
 
+  // Errors will be appended to the error_output string if the pointer is non-
+  // -null; otherwise, they will go to stderr.
   Program(const Context& context, const std::string& name,
-          const std::string& contents, bool optimise = true);
+          const std::string& contents, bool optimise = true,
+          std::string* error_output = nullptr);
   ~Program();
 
   // Noncopyable.
