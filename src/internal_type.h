@@ -20,8 +20,9 @@ public:
 
   // When adding a new type, make sure to update:
   // - the user-facing equivalent in type.h;
-  // - the type-conversions and global data-structure calculation in irgen.cpp;
-  // - the trampoline function generation, also in irgen.cpp;
+  // - the type-conversions and global data-structure calculation in irgen.cpp
+  //   and ircommon.cpp;
+  // - the trampoline function generation, in ircommon.cpp;
   // - the trampoline function call templates in type_info.h;
   // - the external to internal conversion functions in this file;
   // - all the other obvious places. There are definitely a lot.

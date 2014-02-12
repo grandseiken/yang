@@ -46,6 +46,7 @@ private:
 #include "test_apis.h"
 #include "test_errors.h"
 #include "test_functions.h"
+#include "test_refcounting.h"
 #include "test_semantics.h"
 #include "test_trampolines.h"
 #include "test_user_types.h"

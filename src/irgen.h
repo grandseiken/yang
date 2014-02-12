@@ -69,8 +69,18 @@ private:
   llvm::Value* i2w(llvm::Value* v);
   llvm::Value* w2i(llvm::Value* v);
 
+  // Indexing the global data structure.
   llvm::Value* global_ptr(llvm::Value* ptr, std::size_t index);
   llvm::Value* global_ptr(const std::string& name);
+  llvm::Value* global_load(llvm::Value* ptr, std::size_t index);
+  llvm::Value* global_load(const std::string& name);
+  // Storing to the global data structure, with refcounting.
+  void global_store(llvm::Value* value, llvm::Value* ptr, std::size_t index,
+                    bool first_initialisation = false);
+  void global_store(llvm::Value* value, const std::string& name,
+                    bool first_initialisation = false);
+  // Raw reference-counting.
+  void update_reference_count(llvm::Value* value, int_t change);
 
   // Power implementation.
   llvm::Value* pow(llvm::Value* v, llvm::Value* u);
@@ -91,6 +101,7 @@ private:
     ENVIRONMENT_PTR,
     GLOBAL_INIT_FUNCTION,
     FUNCTION,
+    PARENT_BLOCK,
     TYPE_EXPR_CONTEXT,
 
     IF_THEN_BLOCK,
@@ -130,6 +141,9 @@ private:
   SymbolTable<metadata, llvm::Value*> _metadata;
   // Metadata that isn't an llvm::Value.
   std::string _immediate_left_assign;
+
+  // Refcount function.
+  llvm::Function* _refcount_function;
 
 };
 

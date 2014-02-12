@@ -21,6 +21,22 @@ namespace std {
   };
 }
 
+namespace {
+void refcount_function(void* target, yang::int_t change)
+{
+  auto native = (yang::internal::NativeFunction<void>*)target;
+  while (change > 0) {
+    native->take_reference();
+    --change;
+  }
+  while (change < 0) {
+    native->release_reference();
+    ++change;
+  }
+}
+// End anonymous namespace.
+}
+
 namespace yang {
 namespace internal {
 
@@ -46,6 +62,8 @@ IrGeneratorUnion::operator llvm::Value*() const
   return value;
 }
 
+// TODO: this whole file needs refactored, to use a wrapped Value class that
+// knows about Yang types instead of LLVM types.
 IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
                          symbol_frame& globals, const Context& context)
   : IrCommon(module, engine)
@@ -53,6 +71,12 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   , _context(context)
   , _symbol_table(nullptr)
   , _metadata(nullptr)
+  , _refcount_function(get_native_function(
+      "refcount_function", (void_fp)&refcount_function,
+      llvm::FunctionType::get(
+          void_type(),
+          std::vector<llvm::Type*>{void_ptr_type(), int_type()},
+          false)))
 {
   // Set up the global data type. Since each program is designed to support
   // multiple independent instances running simultaeneously, the idea is to
@@ -124,13 +148,14 @@ void IrGenerator::emit_global_functions()
   // Call malloc, set instance pointer, call each of the global initialisation
   // functions, and return the pointer.
   llvm::Value* v = b().CreateCall(malloc_ptr, size_of, "call");
-  b().CreateStore(alloc->arg_begin(), global_ptr(v, 0));
+  global_store(alloc->arg_begin(), v, 0, true);
   for (llvm::Function* f : _global_inits) {
     b().CreateCall(f, v);
   }
   b().CreateRet(v);
 
   // Create free function.
+  // TODO: this should also be able to call user-defined script destructors.
   auto free = llvm::Function::Create(
       llvm::FunctionType::get(void_type(), _global_data, false),
       llvm::Function::ExternalLinkage, "!global_free", &_module);
@@ -139,6 +164,12 @@ void IrGenerator::emit_global_functions()
   b().SetInsertPoint(free_block);
   auto it = free->arg_begin();
   it->setName("global");
+  // Make sure to decrement the reference count on each global variable on
+  // destruction.
+  for (const auto pair : _global_numbering) {
+    llvm::Value* old = global_load(it, pair.second);
+    update_reference_count(old, -1);
+  }
   b().CreateCall(free_ptr, it);
   b().CreateRetVoid();
 
@@ -161,8 +192,7 @@ void IrGenerator::emit_global_functions()
     // Loads out of the global data structure must be byte-aligned! I don't
     // entirely understand why, but leaving the default will segfault at random
     // sometimes for certain types (e.g. float vectors).
-    b().CreateRet(
-        b().CreateAlignedLoad(global_ptr(it, pair.second), 1, "load"));
+    b().CreateRet(global_load(it, pair.second));
 
     name = "!global_set_" + pair.first;
     std::vector<llvm::Type*> setter_args{t, _global_data};
@@ -179,7 +209,7 @@ void IrGenerator::emit_global_functions()
     ++jt;
     jt->setName("global");
     b().SetInsertPoint(setter_block);
-    b().CreateStore(it, global_ptr(jt, pair.second));
+    global_store(it, jt, pair.second);
     b().CreateRetVoid();
   }
 }
@@ -200,16 +230,17 @@ void IrGenerator::preorder(const Node& node)
       auto block =
           llvm::BasicBlock::Create(b().getContext(), "entry", function);
 
-      _metadata.add(GLOBAL_INIT_FUNCTION, function);
-      b().SetInsertPoint(block);
-      _symbol_table.push();
-
       // Store a special entry in the symbol table for the implicit global
       // structure pointer.
       auto it = function->arg_begin();
       it->setName("global");
       _metadata.add(ENVIRONMENT_PTR, it);
       _metadata.add(FUNCTION, function);
+      _metadata.add(PARENT_BLOCK, b().GetInsertBlock());
+
+      _metadata.add(GLOBAL_INIT_FUNCTION, function);
+      b().SetInsertPoint(block);
+      _symbol_table.push();
       break;
     }
 
@@ -518,6 +549,8 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
         // this point; but the block must have a terminator.
         b().CreateBr(b().GetInsertBlock());
       }
+      auto parent_block = (llvm::BasicBlock*)_metadata[PARENT_BLOCK];
+
       _symbol_table.pop();
       _symbol_table.pop();
       _metadata.pop();
@@ -526,8 +559,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       }
       // If this was a nested function, set the insert point back to the last
       // block in the enclosing function and make the proper expression value.
-      auto function = (llvm::Function*)_metadata[FUNCTION];
-      b().SetInsertPoint(&function->getBasicBlockList().back());
+      b().SetInsertPoint(parent_block);
       return generic_function_value(parent, _metadata[ENVIRONMENT_PTR]);
     }
     case Node::NAMED_EXPRESSION:
@@ -636,7 +668,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
         }
         // Otherwise it's a global, so look up in the global structure with a
         // byte-aligned load.
-        return b().CreateAlignedLoad(global_ptr(node.string_value), 1, "load");
+        return global_load(node.string_value);
       }
 
       // It's possible that nothing matches, when this is the identifier on the
@@ -717,7 +749,6 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       args.push_back(eptr);
 
       // Switch on the presence of a trampoline function pointer.
-      auto parent = b().GetInsertBlock()->getParent();
       auto cpp_block =
           llvm::BasicBlock::Create(b().getContext(), "cpp", parent);
       auto yang_block =
@@ -876,7 +907,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // We can't store values for globals in the symbol table since the lookup
       // depends on the current function's environment pointer argument.
       else {
-        b().CreateStore(results[1], global_ptr(s));
+        global_store(results[1], s);
       }
       return results[1];
     }
@@ -890,7 +921,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // with a null value so we can distinguish it from top-level functions.
       if (_metadata.has(GLOBAL_INIT_FUNCTION)) {
         _symbol_table.add(s, 0, nullptr);
-        b().CreateStore(results[1], global_ptr(s));
+        global_store(results[1], s, true);
         return results[1];
       }
 
@@ -951,15 +982,16 @@ void IrGenerator::create_function(
       function_type, llvm::Function::InternalLinkage,
       "anonymous", &_module);
 
-  auto block = llvm::BasicBlock::Create(b().getContext(), "entry", function);
-  b().SetInsertPoint(block);
-
   // The code for Node::TYPE_FUNCTION in visit() ensures it takes an environment
   // pointer.
   auto eptr = --function->arg_end();
   eptr->setName("env");
   _metadata.add(ENVIRONMENT_PTR, eptr);
   _metadata.add(FUNCTION, function);
+  _metadata.add(PARENT_BLOCK, b().GetInsertPoint());
+
+  auto block = llvm::BasicBlock::Create(b().getContext(), "entry", function);
+  b().SetInsertPoint(block);
 
   _symbol_table.push();
   // Recursive lookup handled similarly to arguments below.
@@ -1055,6 +1087,63 @@ llvm::Value* IrGenerator::global_ptr(const std::string& name)
   // a closure struct).
   llvm::Value* v = b().CreateBitCast(_metadata[ENVIRONMENT_PTR], _global_data);
   return global_ptr(v, _global_numbering[name]);
+}
+
+llvm::Value* IrGenerator::global_load(llvm::Value* ptr, std::size_t index)
+{
+  return b().CreateAlignedLoad(global_ptr(ptr, index), 1, "load");
+}
+
+llvm::Value* IrGenerator::global_load(const std::string& name)
+{
+  return b().CreateAlignedLoad(global_ptr(name), 1, "load");
+}
+
+void IrGenerator::global_store(
+    llvm::Value* value, llvm::Value* ptr, std::size_t index,
+    bool first_initialisation)
+{
+  llvm::Value* old = global_load(ptr, index);
+  if (!first_initialisation) {
+    update_reference_count(old, -1);
+  }
+  update_reference_count(value, 1);
+  b().CreateAlignedStore(value, global_ptr(ptr, index), 1);
+}
+
+void IrGenerator::global_store(llvm::Value* value, const std::string& name,
+                               bool first_initialisation)
+{
+  llvm::Value* old = global_load(name);
+  if (!first_initialisation) {
+    update_reference_count(old, -1);
+  }
+  update_reference_count(value, 1);
+  b().CreateAlignedStore(value, global_ptr(name), 1);
+}
+
+void IrGenerator::update_reference_count(llvm::Value* value, int_t change)
+{
+  if (!value->getType()->isStructTy()) {
+    return;
+  }
+  llvm::Value* tptr = b().CreateExtractValue(value, 2, "tptr");
+
+  auto parent = b().GetInsertBlock()->getParent();
+  auto refcount_block =
+      llvm::BasicBlock::Create(b().getContext(), "refcount", parent);
+  auto merge_block =
+      llvm::BasicBlock::Create(b().getContext(), "merge", parent);
+
+  llvm::Value* cmp = b().CreateICmpNE(
+      tptr, llvm::ConstantPointerNull::get(void_ptr_type()));
+  b().CreateCondBr(cmp, refcount_block, merge_block);
+
+  b().SetInsertPoint(refcount_block);
+  std::vector<llvm::Value*> args{tptr, constant_int(change)};
+  b().CreateCall(_refcount_function, args);
+  b().CreateBr(merge_block);
+  b().SetInsertPoint(merge_block);
 }
 
 llvm::Value* IrGenerator::pow(llvm::Value* v, llvm::Value* u)

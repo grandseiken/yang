@@ -67,6 +67,9 @@ private:
 // End namespace internal.
 }
 
+// TODO: is there some way to use template-deduction for some sort of
+// make_function() function that doesn't require redundantly specifying all
+// the argument types and return type?
 template<typename R, typename... Args>
 class Function<R(Args...)> : public internal::FunctionBase {
 public:

@@ -163,15 +163,26 @@ void StaticChecker::infix(const Node& node, const result_list& results)
         add_symbol_checking_collision(
             node, _immediate_left_assign,
             inside_function() * (_symbol_table.size() - 1), t);
-        _immediate_left_assign = "";
       }
       _symbol_table.push();
       // We currently don't implement closures at all, so we need to stick a
       // bunch of overrides into an intermediate stack frame to avoid the locals
       // from the enclosing scope being referenced, if any.
       // Starting at frame 1 finds all names except globals.
+      // TODO: get rid of all this nonsense.
       for (const std::string& s : locals) {
         _symbol_table.add(s, Type::ENCLOSING_FUNCTION);
+      }
+      // We also need to make sure top-level function names get overridden in
+      // inner scopes, until closures are implemented.
+      if (_immediate_left_assign.length()) {
+        if (!_symbol_table.has(_immediate_left_assign,
+                               _symbol_table.size() - 1)) {
+          _symbol_table.add(_immediate_left_assign,
+                            _symbol_table[_immediate_left_assign]);
+        }
+        // Move this back to the place above when closures are in.
+        _immediate_left_assign = "";
       }
 
       // Do the arguments.

@@ -8,6 +8,23 @@ export rec_fac = int(int n)
   return n ? n * rec_fac(n - 1) : 1;
 };
 
+export daft_fib = int(int n)
+{
+  if (n <= 1) {
+    return 1;
+  }
+  else {
+    return daft_fib(n - 1) + daft_fib(n - 2);
+  }
+};
+
+export global {
+  var global_inner = int()
+  {
+    return 42;
+  }();
+};
+
 export count_to_ten = int()
 {
   var a = 0;
@@ -22,7 +39,7 @@ global {
 export ternary_fun = int()
 {
   const a = 1 ? (1, 2) : (0, 1);
-  const b = (1, 0) ? (4, 1) : (2, 3);
+  const b = (1, 0) ? 2 * (1, 1) * 2 : (2, 3);
   ++global_i;
   return $+a + $*b + global_i;
 };
@@ -63,9 +80,11 @@ TEST_F(YangTest, SemanticsTest)
   auto& inst = instance(TestSemanticsStr);
   // Test recursion.
   EXPECT_EQ(inst.call<int_t>("rec_fac", 6), 720);
+  EXPECT_EQ(inst.call<int_t>("daft_fib", 10), 89);
   // Check tail call optimisation is working.
   EXPECT_NO_THROW(inst.call<int_t>("rec_fac", 1000000));
 
+  EXPECT_EQ(inst.get_global<int_t>("global_inner"), 42);
   EXPECT_EQ(inst.call<int_t>("count_to_ten"), 10);
   EXPECT_EQ(inst.call<int_t>("ternary_fun"), 16);
   EXPECT_EQ(inst.call<int_t>("crazy_combine"), 65);

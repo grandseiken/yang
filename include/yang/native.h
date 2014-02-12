@@ -43,9 +43,28 @@ public:
   // Decrement the reference count and return pointer to this object. If it is
   // then zero, deletes itself and returns null.
   inline NativeFunction* release_reference();
+  // For debugging purposes.
+  inline std::size_t get_reference_count() const;
 
 private:
 
+  // List of NativeFunctions which have become unreferenced and should be
+  // cleaned up.
+  // There are good reasons not to delete a NativeFunction as soon as its
+  // reference count reaches zero. Consider a C++ function which returns
+  // a temporary Function wrapping another C++ function directly to Yang; or a
+  // Yang program which overwrites stores a local variable before overwriting
+  // the last reference to a C++ function in its global structure. In each case
+  // Yang has access to a NativeFunction whose reference count is now zero.
+  //
+  // But if we keep a list instead, and only clean up the memory when execution
+  // has definitely returned to C++, we can be sure everything works (and we're
+  // spared from implementing full reference-counting on Yang local variables).
+  //
+  // This isn't thread-safe as-is. To do that, we'd need to be sure that each
+  // element added to the list is only deleted at some point after *all* theads
+  // have returned execution to C++ at least once.
+  static std::vector<NativeFunction*> unreferenced;
   std::size_t _reference_count;
 
 };
@@ -150,6 +169,12 @@ private:
 NativeFunction<void>::NativeFunction()
   : _reference_count(0)
 {
+  // This constructor is a good time to clean up old memory, since it's also
+  // the only way to allocate new memory.
+  for (NativeFunction* native : unreferenced) {
+    delete native;
+  }
+  unreferenced.clear();
 }
 
 template<typename R, typename... Args>
@@ -169,8 +194,13 @@ NativeFunction<void>* NativeFunction<void>::release_reference()
   if (--_reference_count) {
     return this;
   }
-  delete this;
+  unreferenced.push_back(this);
   return nullptr;
+}
+
+std::size_t NativeFunction<void>::get_reference_count() const
+{
+  return _reference_count;
 }
 
 template<typename R, typename... Args>

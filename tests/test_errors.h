@@ -69,6 +69,8 @@ TEST_F(YangTest, ErrorTest)
 
   // Nested function errors.
   err("x = void() {var a = 0; void() {a;};};");
+  err("x = void() {void() {x;};};");
+  err("x = void() {var y = void() {void() {y;};};};");
 
   // Statement errors.
   err("x = void() {if (0.);};");
