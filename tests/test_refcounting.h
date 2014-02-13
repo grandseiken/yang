@@ -4,10 +4,18 @@
 //============================================================================//
 const std::string TestFunctionRefCountingStr = R"(
 export global {
+  var noop = int()
+  {
+    return 0;
+  };
   var stored = int()
   {
     return 0;
   };
+
+  {
+    const t = stored;
+  }
 };
 
 export store = void(int() x)
@@ -27,7 +35,33 @@ export get = int()()
 
 export pass_through = int()(int()() x)
 {
-  return x();
+  const y = x();
+  return stored = y;
+};
+
+export store_in_local = void()
+{
+  var temp = stored;
+  {
+    const t = temp;
+  }
+  stored = noop;
+  stored = temp;
+};
+
+export store_in_local_callout = void(void()() x)
+{
+  var temp = stored;
+  stored = noop;
+  x()();
+  stored = temp;
+};
+
+export overwrite_and_return = int()()
+{
+  var temp = stored;
+  stored = noop;
+  return temp;
 };
 )";
 
@@ -79,6 +113,20 @@ TEST_F(YangTest, FunctionRefCounting)
   });
   auto h_prime = inst.call<intf_t>("pass_through", h);
   EXPECT_EQ(h_prime(), 100);
+
+  // Stored only in Yang locals for a while.
+  inst.call<void>("store_in_local");
+  EXPECT_EQ(inst.get_global<intf_t>("stored")(), 101);
+
+  // Stored only in local while constructing new functions in C++.
+  auto callout = Function<Function<void()>()>([]()
+  {
+    return Function<void()>([](){});
+  });
+  inst.call<void>("store_in_local_callout", callout);
+  EXPECT_EQ(inst.get_global<intf_t>("stored")(), 102);
+
+  EXPECT_EQ(inst.call<intf_t>("overwrite_and_return")(), 103);
   // It'd be nice to test memory usage and that everything is actually getting
   // destroyed at the end, but it's not clear how to do that unintrusively.
 }

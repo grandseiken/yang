@@ -205,6 +205,8 @@ void StaticChecker::infix(const Node& node, const result_list& results)
             error(*ptr, "duplicate argument name `" + name + "`");
           }
           _symbol_table.add(name, t.elements(elem));
+          // Arguments are implicitly const!
+          _symbol_table[name].set_const(true);
           arg_names.insert(name);
           ++elem;
         }
@@ -678,13 +680,15 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         error(node, "reference to `" + s + "` in enclosing function");
         return Type::ERROR;
       }
-      if (t.is_const()) {
-        error(node, "assignment to `" + s + "` of type " + t.string());
-      }
       if (!t.is(results[1])) {
         error(node, rs[1] + " assigned to `" + s + "` of type " + t.string());
+        t = results[1];
+        t.set_const(false);
       }
-      t = results[1];
+      else if (t.is_const()) {
+        error(node, "assignment to `" + s + "` of type " + t.string());
+        t.set_const(false);
+      }
       return results[1];
     }
 
@@ -708,6 +712,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
           _globals_output.emplace(s, t.external(exported));
         }
       };
+      bool global = !inside_function() && _symbol_table.size() <= 3;
 
       if (use_function_immediate_assign_hack(node)) {
         // Symbol has already been added by immediate-name-assign recursion
@@ -715,7 +720,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         // global symbol table.
         std::size_t index = inside_function() * (_symbol_table.size() - 1);
         _symbol_table.get(s, index).set_const(node.type == Node::ASSIGN_CONST);
-        if (!inside_function()) {
+        if (global) {
           add_global();
         }
         return results[1];
@@ -725,7 +730,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       t.set_const(node.type == Node::ASSIGN_CONST);
 
       // Within global blocks, use the top-level symbol table frame.
-      if (!inside_function()) {
+      if (global) {
         add_symbol_checking_collision(node, s, 0, t);
         // Store global in the global map for future use.
         add_global();

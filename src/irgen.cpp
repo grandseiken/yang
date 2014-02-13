@@ -148,7 +148,7 @@ void IrGenerator::emit_global_functions()
   // Call malloc, set instance pointer, call each of the global initialisation
   // functions, and return the pointer.
   llvm::Value* v = b().CreateCall(malloc_ptr, size_of, "call");
-  global_store(alloc->arg_begin(), v, 0, true);
+  memory_store(alloc->arg_begin(), global_ptr(v, 0), true);
   for (llvm::Function* f : _global_inits) {
     b().CreateCall(f, v);
   }
@@ -167,7 +167,7 @@ void IrGenerator::emit_global_functions()
   // Make sure to decrement the reference count on each global variable on
   // destruction.
   for (const auto pair : _global_numbering) {
-    llvm::Value* old = global_load(it, pair.second);
+    llvm::Value* old = memory_load(global_ptr(it, pair.second));
     update_reference_count(old, -1);
   }
   b().CreateCall(free_ptr, it);
@@ -192,7 +192,7 @@ void IrGenerator::emit_global_functions()
     // Loads out of the global data structure must be byte-aligned! I don't
     // entirely understand why, but leaving the default will segfault at random
     // sometimes for certain types (e.g. float vectors).
-    b().CreateRet(global_load(it, pair.second));
+    b().CreateRet(memory_load(global_ptr(it, pair.second)));
 
     name = "!global_set_" + pair.first;
     std::vector<llvm::Type*> setter_args{t, _global_data};
@@ -209,7 +209,7 @@ void IrGenerator::emit_global_functions()
     ++jt;
     jt->setName("global");
     b().SetInsertPoint(setter_block);
-    global_store(it, jt, pair.second);
+    memory_store(it, global_ptr(jt, pair.second));
     b().CreateRetVoid();
   }
 }
@@ -241,12 +241,16 @@ void IrGenerator::preorder(const Node& node)
       _metadata.add(GLOBAL_INIT_FUNCTION, function);
       b().SetInsertPoint(block);
       _symbol_table.push();
+      _refcount_locals.emplace_back();
+      _refcount_locals.back().emplace_back();
       break;
     }
 
     case Node::FUNCTION:
       _metadata.push();
       _metadata.add(TYPE_EXPR_CONTEXT, nullptr);
+      _refcount_locals.emplace_back();
+      _refcount_locals.back().emplace_back();
       break;
     case Node::GLOBAL_ASSIGN:
     case Node::ASSIGN_VAR:
@@ -259,12 +263,14 @@ void IrGenerator::preorder(const Node& node)
 
     case Node::BLOCK:
       _symbol_table.push();
+      _refcount_locals.back().emplace_back();
       break;
 
     case Node::IF_STMT:
     {
       _metadata.push();
       _symbol_table.push();
+      _refcount_locals.back().emplace_back();
       create_block(IF_THEN_BLOCK, "then");
       create_block(MERGE_BLOCK, "merge");
       if (node.children.size() > 2) {
@@ -277,6 +283,7 @@ void IrGenerator::preorder(const Node& node)
     {
       _metadata.push();
       _symbol_table.push();
+      _refcount_locals.back().emplace_back();
       create_block(LOOP_COND_BLOCK, "cond");
       create_block(LOOP_BODY_BLOCK, "loop");
       auto after_block = create_block(LOOP_AFTER_BLOCK, "after");
@@ -290,6 +297,7 @@ void IrGenerator::preorder(const Node& node)
     {
       _metadata.push();
       _symbol_table.push();
+      _refcount_locals.back().emplace_back();
       auto loop_block =create_block(LOOP_BODY_BLOCK, "loop");
       auto cond_block = create_block(LOOP_COND_BLOCK, "cond");
       auto merge_block = create_block(MERGE_BLOCK, "merge");
@@ -521,6 +529,8 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       b().CreateRetVoid();
       _symbol_table.pop();
       _metadata.pop();
+      // There can't be any locals to dereference in this scope.
+      _refcount_locals.pop_back();
       return results[0];
     case Node::GLOBAL_ASSIGN:
     {
@@ -542,6 +552,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       auto function_type =
           (llvm::FunctionType*)parent->getType()->getElementType();
       if (function_type->getReturnType()->isVoidTy()) {
+        dereference_scoped_locals(true);
         b().CreateRetVoid();
       }
       else {
@@ -554,6 +565,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       _symbol_table.pop();
       _symbol_table.pop();
       _metadata.pop();
+      _refcount_locals.pop_back();
       if (!_metadata.has(FUNCTION)) {
         return parent;
       }
@@ -573,6 +585,8 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       b().CreateBr(after_block);
       b().SetInsertPoint(after_block);
       _symbol_table.pop();
+      dereference_scoped_locals(false);
+      _refcount_locals.back().pop_back();
       return parent;
     }
     case Node::EMPTY_STMT:
@@ -583,6 +597,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     {
       auto dead_block =
           llvm::BasicBlock::Create(b().getContext(), "dead", parent);
+      dereference_scoped_locals(true);
       llvm::Value* v = b().CreateRet(results[0]);
       b().SetInsertPoint(dead_block);
       return v;
@@ -592,6 +607,9 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
       _symbol_table.pop();
       _metadata.pop();
+      dereference_scoped_locals(false);
+      _refcount_locals.back().pop_back();
+
       b().CreateBr(merge_block);
       b().SetInsertPoint(merge_block);
       return results[0];
@@ -602,6 +620,8 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
       _symbol_table.pop();
       _metadata.pop();
+      dereference_scoped_locals(false);
+      _refcount_locals.back().pop_back();
 
       b().CreateBr(after_block);
       b().SetInsertPoint(merge_block);
@@ -613,6 +633,8 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
       _symbol_table.pop();
       _metadata.pop();
+      dereference_scoped_locals(false);
+      _refcount_locals.back().pop_back();
 
       b().CreateCondBr(i2b(results[1]), loop_block, merge_block);
       b().SetInsertPoint(merge_block);
@@ -652,7 +674,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // Load the local variable, if it's there.
       if (_symbol_table.has(node.string_value) &&
           _symbol_table.index(node.string_value)) {
-        return b().CreateLoad(_symbol_table[node.string_value], "load");
+        return memory_load(_symbol_table[node.string_value]);
       }
       // Otherwise it's a top-level function, global, or context function. We
       // must be careful to only return globals/functions *after* they have been
@@ -668,7 +690,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
         }
         // Otherwise it's a global, so look up in the global structure with a
         // byte-aligned load.
-        return global_load(node.string_value);
+        return memory_load(global_ptr(node.string_value));
       }
 
       // It's possible that nothing matches, when this is the identifier on the
@@ -902,12 +924,12 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // See Node::IDENTIFIER.
       const std::string& s = node.children[0]->string_value;
       if (_symbol_table[s]) {
-        b().CreateStore(results[1], _symbol_table[s]);
+        memory_store(results[1], _symbol_table[s]);
       }
       // We can't store values for globals in the symbol table since the lookup
       // depends on the current function's environment pointer argument.
       else {
-        global_store(results[1], s);
+        memory_store(results[1], global_ptr(s));
       }
       return results[1];
     }
@@ -919,9 +941,9 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // In a global block, rather than allocating anything we simply store into
       // the prepared fields of the global structure. Also enter the symbol now
       // with a null value so we can distinguish it from top-level functions.
-      if (_metadata.has(GLOBAL_INIT_FUNCTION)) {
+      if (_metadata.has(GLOBAL_INIT_FUNCTION) && _symbol_table.size() <= 3) {
         _symbol_table.add(s, 0, nullptr);
-        global_store(results[1], s, true);
+        memory_store(results[1], global_ptr(s), true);
         return results[1];
       }
 
@@ -932,7 +954,8 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
           ((llvm::Function*)b().GetInsertPoint()->getParent())->getEntryBlock();
       llvm::IRBuilder<> entry(&entry_block, entry_block.begin());
       llvm::Value* v = entry.CreateAlloca(types[1], nullptr, s);
-      b().CreateStore(results[1], v);
+      memory_store(results[1], v, true);
+      _refcount_locals.back().back().push_back(v);
       _symbol_table.add(s, v);
       return results[1];
     }
@@ -1089,37 +1112,20 @@ llvm::Value* IrGenerator::global_ptr(const std::string& name)
   return global_ptr(v, _global_numbering[name]);
 }
 
-llvm::Value* IrGenerator::global_load(llvm::Value* ptr, std::size_t index)
+llvm::Value* IrGenerator::memory_load(llvm::Value* ptr)
 {
-  return b().CreateAlignedLoad(global_ptr(ptr, index), 1, "load");
+  return b().CreateAlignedLoad(ptr, 1, "load");
 }
 
-llvm::Value* IrGenerator::global_load(const std::string& name)
+void IrGenerator::memory_store(
+    llvm::Value* value, llvm::Value* ptr, bool first_initialisation)
 {
-  return b().CreateAlignedLoad(global_ptr(name), 1, "load");
-}
-
-void IrGenerator::global_store(
-    llvm::Value* value, llvm::Value* ptr, std::size_t index,
-    bool first_initialisation)
-{
-  llvm::Value* old = global_load(ptr, index);
   if (!first_initialisation) {
+    llvm::Value* old = memory_load(ptr);
     update_reference_count(old, -1);
   }
   update_reference_count(value, 1);
-  b().CreateAlignedStore(value, global_ptr(ptr, index), 1);
-}
-
-void IrGenerator::global_store(llvm::Value* value, const std::string& name,
-                               bool first_initialisation)
-{
-  llvm::Value* old = global_load(name);
-  if (!first_initialisation) {
-    update_reference_count(old, -1);
-  }
-  update_reference_count(value, 1);
-  b().CreateAlignedStore(value, global_ptr(name), 1);
+  b().CreateAlignedStore(value, ptr, 1);
 }
 
 void IrGenerator::update_reference_count(llvm::Value* value, int_t change)
@@ -1144,6 +1150,24 @@ void IrGenerator::update_reference_count(llvm::Value* value, int_t change)
   b().CreateCall(_refcount_function, args);
   b().CreateBr(merge_block);
   b().SetInsertPoint(merge_block);
+}
+
+void IrGenerator::dereference_scoped_locals(bool all_scopes)
+{
+  const auto& function = _refcount_locals.back();
+  if (all_scopes) {
+    for (const auto& scope : function) {
+      for (llvm::Value* alloc : scope) {
+        llvm::Value* v = memory_load(alloc);
+        update_reference_count(v, -1);
+      }
+    }
+    return;
+  }
+  for (llvm::Value* alloc : function.back()) {
+    llvm::Value* v = memory_load(alloc);
+    update_reference_count(v, -1);
+  }
 }
 
 llvm::Value* IrGenerator::pow(llvm::Value* v, llvm::Value* u)

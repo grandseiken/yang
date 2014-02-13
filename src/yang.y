@@ -153,7 +153,10 @@ elem_list
 
 elem
   : opt_export T_GLOBAL stmt
-{$$ = new Node(Node::GLOBAL, $3);
+{if ($3->type != Node::BLOCK) {
+   $3 = new Node(Node::BLOCK, $3);
+ }
+ $$ = new Node(Node::GLOBAL, $3);
  $$->int_value = $1->int_value;}
   | opt_export expr T_ASSIGN expr ';'
 {$$ = new Node(Node::GLOBAL_ASSIGN, $2, $4);

@@ -6,6 +6,7 @@
 
 namespace yang {
   namespace internal {
-    std::vector<NativeFunction<void>*> NativeFunction<void>::unreferenced;
+    std::unordered_set<NativeFunction<void>*>
+        NativeFunction<void>::unreferenced;
   }
 }

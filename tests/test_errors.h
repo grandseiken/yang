@@ -144,6 +144,7 @@ TEST_F(YangTest, ErrorTest)
   err("global {const a = 0;}; global {a = 0;};");
   err("x = void() {}; x = void() {};");
   err("x = void() {}; global const x = x;");
+  err("x = void(int y) {y = 0;};");
 
   // Name resolution / scope errors.
   err("x = void() {y;};");
@@ -156,4 +157,8 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {while (1) {var a = 0;} a;};");
   err("x = void() {var a = a;};");
   err("x = void() {{var a = a;} a;};");
+  err("global{{const a = 0;}}; x = void() {a;};");
+  err("global if (var a = 0);; x = void() {a;};");
+  err("global if (1) {var a = 0;}; x = void() {a;};");
+  err("global void() {var a = 0;};; x = void() {a;};");
 }

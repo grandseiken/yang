@@ -21,6 +21,9 @@ protected:
     std::size_t id;
   };
 
+  // Deallocate all the objects constructed for this test so far.
+  void clear();
+
   Context& context();
   Program& program_suppress_errors(const std::string& contents);
   Program& program(const std::string& contents);
@@ -56,6 +59,14 @@ YangTest::YangTest()
   : _program_id(0)
   , _user_value_id(0)
 {
+}
+
+void YangTest::clear()
+{
+  _instances.clear();
+  _user_values.clear();
+  _programs.clear();
+  _contexts.clear();
 }
 
 Context& YangTest::context()

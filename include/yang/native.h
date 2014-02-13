@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <type_traits>
+#include <unordered_set>
 #include "typedefs.h"
 #include "type.h"
 
@@ -48,23 +49,17 @@ public:
 
 private:
 
-  // List of NativeFunctions which have become unreferenced and should be
-  // cleaned up.
-  // There are good reasons not to delete a NativeFunction as soon as its
-  // reference count reaches zero. Consider a C++ function which returns
-  // a temporary Function wrapping another C++ function directly to Yang; or a
-  // Yang program which overwrites stores a local variable before overwriting
-  // the last reference to a C++ function in its global structure. In each case
-  // Yang has access to a NativeFunction whose reference count is now zero.
+  // Set of NativeFunctions which have become unreferenced and should be cleaned
+  // up. There are good reasons not to delete a NativeFunction as soon as its
+  // reference count reaches zero; particularly, it would require extra special-
+  // -case logic for handling return of refcounted values from one function to
+  // another. So we don't do refcounting directly on return values, and we don't
+  // do refcounting on arguments either (they are const and must be referenced
+  // in the calling context).
   //
-  // But if we keep a list instead, and only clean up the memory when execution
-  // has definitely returned to C++, we can be sure everything works (and we're
-  // spared from implementing full reference-counting on Yang local variables).
-  //
-  // This isn't thread-safe as-is. To do that, we'd need to be sure that each
-  // element added to the list is only deleted at some point after *all* theads
-  // have returned execution to C++ at least once.
-  static std::vector<NativeFunction*> unreferenced;
+  // This isn't thread-safe as-is. We need to properly handle return values for
+  // that (which would mean we could delete immediately).
+  static std::unordered_set<NativeFunction*> unreferenced;
   std::size_t _reference_count;
 
 };
@@ -185,7 +180,9 @@ const std::function<R(Args...)>& NativeFunction<void>::get() const
 
 NativeFunction<void>* NativeFunction<void>::take_reference()
 {
-  ++_reference_count;
+  if (!_reference_count++) {
+    unreferenced.erase(this);
+  }
   return this;
 }
 
@@ -194,7 +191,7 @@ NativeFunction<void>* NativeFunction<void>::release_reference()
   if (--_reference_count) {
     return this;
   }
-  unreferenced.push_back(this);
+  unreferenced.insert(this);
   return nullptr;
 }
 

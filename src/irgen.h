@@ -72,15 +72,16 @@ private:
   // Indexing the global data structure.
   llvm::Value* global_ptr(llvm::Value* ptr, std::size_t index);
   llvm::Value* global_ptr(const std::string& name);
-  llvm::Value* global_load(llvm::Value* ptr, std::size_t index);
-  llvm::Value* global_load(const std::string& name);
-  // Storing to the global data structure, with refcounting.
-  void global_store(llvm::Value* value, llvm::Value* ptr, std::size_t index,
-                    bool first_initialisation = false);
-  void global_store(llvm::Value* value, const std::string& name,
+
+  // Storing to some structure (global data or closure) with refcounting.
+  llvm::Value* memory_load(llvm::Value* ptr);
+  void memory_store(llvm::Value* value, llvm::Value* ptr,
                     bool first_initialisation = false);
   // Raw reference-counting.
   void update_reference_count(llvm::Value* value, int_t change);
+  // Emit code to decrement reference count of locals in topmost scope, or
+  // all scopes (for returns).
+  void dereference_scoped_locals(bool all_scopes);
 
   // Power implementation.
   llvm::Value* pow(llvm::Value* v, llvm::Value* u);
@@ -142,6 +143,8 @@ private:
   // Metadata that isn't an llvm::Value.
   std::string _immediate_left_assign;
 
+  // List of local variables in scope, for refcounting.
+  std::vector<std::vector<std::vector<llvm::Value*>>> _refcount_locals;
   // Refcount function.
   llvm::Function* _refcount_function;
 
