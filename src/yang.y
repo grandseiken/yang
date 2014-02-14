@@ -134,9 +134,6 @@ typedef yang::internal::Node Node;
 %%
 
   /* Language grammar. */
-  /* TODO: can we make the semicolons on the end of function definitions
-     optional? It's kind of unnatural. The hard part is making it consistent
-     for local function definitions. */
 
 program
   : elem_list T_EOF
@@ -159,7 +156,7 @@ elem
  }
  $$ = new Node(Node::GLOBAL, $3);
  $$->int_value = $1->int_value;}
-  | opt_export expr T_ASSIGN expr ';'
+  | opt_export expr T_ASSIGN expr
 {$$ = new Node(Node::GLOBAL_ASSIGN, $2, $4);
  $$->int_value = $1->int_value;}
   | ';'

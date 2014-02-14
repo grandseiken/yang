@@ -16,28 +16,28 @@ export global {
   {
     const t = stored;
   }
-};
+}
 
 export store = void(int() x)
 {
   stored = x;
-};
+}
 
 export call = int()
 {
   return stored();
-};
+}
 
 export get = int()()
 {
   return stored;
-};
+}
 
 export pass_through = int()(int()() x)
 {
   const y = x();
   return stored = y;
-};
+}
 
 export store_in_local = void()
 {
@@ -52,7 +52,7 @@ export store_in_local = void()
   }
   stored = noop;
   stored = temp;
-};
+}
 
 export store_in_local_callout = void(void()() x)
 {
@@ -72,14 +72,14 @@ export store_in_local_callout = void(void()() x)
   stored = noop;
   x()();
   stored = temp;
-};
+}
 
 export overwrite_and_return = int()()
 {
   var temp = stored;
   stored = noop;
   return temp;
-};
+}
 )";
 
 TEST_F(YangTest, FunctionRefCounting)
@@ -88,7 +88,7 @@ TEST_F(YangTest, FunctionRefCounting)
   typedef Function<int_t()> intf_t;
 
   // No refcounting necessary.
-  auto f = intf_t([]()
+  auto f = make_fn([]()
   {
     return 13;
   });
@@ -98,7 +98,7 @@ TEST_F(YangTest, FunctionRefCounting)
 
   {
     // Goes out of scope before we use it.
-    auto g = intf_t([]()
+    auto g = make_fn([]()
     {
       return 42;
     });
@@ -109,7 +109,7 @@ TEST_F(YangTest, FunctionRefCounting)
 
   {
     // The same thing but via set_global.
-    auto g = intf_t([]()
+    auto g = make_fn([]()
     {
       return 43;
     });
@@ -120,13 +120,14 @@ TEST_F(YangTest, FunctionRefCounting)
 
   // Goes out of scope before we even return to Yang.
   int_t h_contents = 99;
-  auto h = Function<intf_t()>([&]()
+  auto h = make_fn([&]()
   {
+    // Make it a bit complicated so it's not all optimised away.
     std::function<int_t()> t = [&]()
     {
       return ++h_contents;
     };
-    return intf_t(t);
+    return make_fn(t);
   });
   auto h_prime = inst.call<intf_t>("pass_through", h);
   EXPECT_EQ(h_prime(), 100);
@@ -136,9 +137,9 @@ TEST_F(YangTest, FunctionRefCounting)
   EXPECT_EQ(inst.get_global<intf_t>("stored")(), 106);
 
   // Stored only in local while constructing new functions in C++.
-  auto callout = Function<Function<void()>()>([]()
+  auto callout = make_fn([]()
   {
-    return Function<void()>([](){});
+    return make_fn([](){});
   });
   inst.call<void>("store_in_local_callout", callout);
   EXPECT_EQ(inst.get_global<intf_t>("stored")(), 109);

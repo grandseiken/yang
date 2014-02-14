@@ -67,9 +67,6 @@ private:
 // End namespace internal.
 }
 
-// TODO: is there some way to use template-deduction for some sort of
-// make_function() function that doesn't require redundantly specifying all
-// the argument types and return type?
 template<typename R, typename... Args>
 class Function<R(Args...)> : public internal::FunctionBase {
 public:
@@ -125,6 +122,58 @@ private:
   void* _target;
 
 };
+
+namespace internal {
+
+template<typename T> struct RemoveClass {};
+template<typename C, typename R, typename... Args>
+struct RemoveClass<R(C::*)(Args...)> {
+  using type = R(Args...);
+};
+template<typename C, typename R, typename... Args>
+struct RemoveClass<R(C::*)(Args...) const> {
+  using type = R(Args...);
+};
+template<typename C, typename R, typename... Args>
+struct RemoveClass<R(C::*)(Args...) volatile> {
+  using type = R(Args...);
+};
+template<typename C, typename R, typename... Args>
+struct RemoveClass<R(C::*)(Args...) const volatile> {
+  using type = R(Args...);
+};
+
+template<typename T>
+struct GetSignature {
+  using type = typename RemoveClass<
+      decltype(&std::remove_reference<T>::type::operator())>::type;
+};
+template<typename R, typename... Args>
+struct GetSignature<R(Args...)> {
+  using type = R(Args...);
+};
+template<typename R, typename... Args>
+struct GetSignature<R(&)(Args...)> {
+  using type = R(Args...);
+};
+template<typename R, typename... Args>
+struct GetSignature<R(*)(Args...)> {
+  using type = R(Args...);
+};
+
+template<typename T>
+using make_fn_type = yang::Function<typename GetSignature<T>::type>;
+
+// End namespace internal.
+}
+
+// Convenient template-deduction constructor function. Creates a yang::Function
+// of the correct type from an unambiguous callable or lambda.
+template<typename T>
+internal::make_fn_type<T> make_fn(T&& t)
+{
+  return internal::make_fn_type<T>(std::forward<T>(t));
+}
 
 // Dynamic storage of an abitrary Function.
 namespace internal {

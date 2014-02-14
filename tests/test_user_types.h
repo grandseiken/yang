@@ -9,40 +9,40 @@ global {
 export takes_user_type = int(UserType u)
 {
   return u.get_id();
-};
+}
 export takes_other_type = void(Other o)
 {
   oo = o;
   o.extract();
-};
+}
 export extract_oo = void()
 {
   takes_other_type(oo);
-};
+}
 )";
 
 const std::string TestUserTypesStrB = R"(
 export global {
   var u = get_user_type();
   const v = u;
-};
+}
 export returns_user_type = UserType()
 {
   u = get_user_type();
   return u;
-};
+}
 export takes_user_type = void(UserType u)
 {
   return u.set_id(99);
-};
+}
 export call_user_type = void(void(UserType) x, UserType u)
 {
   x(u);
-};
+}
 export call_void = void(void() x)
 {
   x();
-};
+}
 )";
 
 TEST_F(YangTest, UserTypes)
@@ -52,19 +52,19 @@ TEST_F(YangTest, UserTypes)
   };
   int_t extract_value = 0;
 
-  auto get_id = Function<int_t(user_type*)>([](user_type* u)
+  auto get_id = make_fn([](user_type* u)
   {
-    return u->id;
+    return int_t(u->id);
   });
-  auto set_id = Function<void(user_type*, int_t)>([](user_type* u, int_t id)
+  auto set_id = make_fn([](user_type* u, int_t id)
   {
     u->id = id;
   });
-  auto null_other_type = Function<other_t*()>([]()
+  auto null_other_type = make_fn([]()
   {
-    return nullptr;
+    return (other_t*)nullptr;
   });
-  auto extract = Function<void(other_t*)>([&](other_t* o)
+  auto extract = make_fn([&](other_t* o)
   {
     extract_value = o->value;
   });

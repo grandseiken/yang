@@ -41,12 +41,12 @@ TEST_F(YangTest, ContextTest)
   EXPECT_THROW(ctxt.register_type<type_b>("TypeA"), runtime_error);
   EXPECT_NO_THROW(ctxt.register_type<type_b>("TypeB"));
 
-  auto voidf = Function<void()>([](){});
+  auto voidf = make_fn([](){});
   ASSERT_NO_THROW(ctxt.register_function("foo", voidf));
   EXPECT_THROW(ctxt.register_function("foo", voidf), runtime_error);
   EXPECT_NO_THROW(ctxt.register_function("bar", voidf));
 
-  auto voidaf = Function<void(type_a*)>([](type_a*){});
+  auto voidaf = make_fn([](type_a*){});
   ASSERT_NO_THROW(ctxt.register_member_function<type_a>("foo", voidaf));
   EXPECT_THROW(
       ctxt.register_member_function<type_a>("foo", voidaf), runtime_error);
@@ -64,9 +64,9 @@ TEST_F(YangTest, ContextTest)
   EXPECT_THROW(ctxt.get_type_name<type_c>(), runtime_error);
 
   // Unregistered types.
-  auto voidcf = Function<void(type_c*)>([](type_c*){});
-  auto cf = Function<type_c*()>([](){
-    return nullptr;
+  auto voidcf = make_fn([](type_c*){});
+  auto cf = make_fn([](){
+    return (type_c*)nullptr;
   });
   EXPECT_THROW(
       ctxt.register_member_function<type_c>("foo", voidcf), runtime_error);
@@ -78,20 +78,20 @@ const std::string TestApisStr = R"(
 export global var a = (0, 1, 2);
 export global {
   const b = (0., 1., 2.);
-};
+}
 global {
   var c = 3;
-};
+}
 global const d = 18;
 
 export f = int(int a)
 {
   return a * 2;
-};
+}
 g = int(int a)
 {
   return a * 3;
-};
+}
 )";
 
 TEST_F(YangTest, ProgramTest)

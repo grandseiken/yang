@@ -6,7 +6,7 @@ const std::string TestSemanticsStr = R"(
 export rec_fac = int(int n)
 {
   return n ? n * rec_fac(n - 1) : 1;
-};
+}
 
 export daft_fib = int(int n)
 {
@@ -16,25 +16,25 @@ export daft_fib = int(int n)
   else {
     return daft_fib(n - 1) + daft_fib(n - 2);
   }
-};
+}
 
 export global {
   var global_inner = int()
   {
     return 42;
   }();
-};
+}
 
 export count_to_ten = int()
 {
   var a = 0;
   while (a < 10) ++a;
   return a;
-};
+}
 
 global {
   var global_i = 0;
-};
+}
 global
 if (true) {
   const one = 1;
@@ -47,7 +47,7 @@ export ternary_fun = int()
   const b = (1, 0) ? 2 * (1, 1) * 2 : (2, 3);
   ++global_i;
   return $+a + $*b + global_i;
-};
+}
 
 export crazy_combine = int()
 {
@@ -58,7 +58,7 @@ export crazy_combine = int()
     x = a % 2 ? ternary_fun : count_to_ten;
   }
   return r;
-};
+}
 
 export shadowing = int(int a)
 {
@@ -77,7 +77,7 @@ export shadowing = int(int a)
   var a = 8;
   shadowing += a;
   return shadowing;
-};
+}
 
 export global const ten = count_to_ten();
 export global {
@@ -85,7 +85,7 @@ export global {
   for (var i = 0; i < 10; ++i) {
     ++again;
   }
-};
+}
 
 export again_mod = void(int a)
 {
@@ -94,7 +94,7 @@ export again_mod = void(int a)
     return;
   }
   again += 2;
-};
+}
 )";
 
 TEST_F(YangTest, SemanticsTest)

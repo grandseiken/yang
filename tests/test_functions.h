@@ -6,42 +6,41 @@ const std::string TestCppFunctionsStr = R"(
 export via_context = int(int x)
 {
   return cpp(x);
-};
+}
 export via_scope_resolve = int()
 {
   get_user_type();
   return UserType::cpp(get_user_type());
-};
+}
 export via_explicit_scope_resolve = int()
 {
   return UserType::ucpp(get_user_type());
-};
+}
 export via_member_function = int()
 {
   return get_user_type().cpp();
-};
+}
 export via_argument = int(int(int) x)
 {
   return x(5);
-};
+}
 export via_return = int()
 {
   return get_cpp()(6);
-};
+}
 )";
 
 TEST_F(YangTest, CppFunctions)
 {
-  typedef Function<int_t(int_t)> intf_t;
-  auto cpp = intf_t([](int_t a)
+  auto cpp = make_fn([](int_t a)
   {
     return a * 11;
   });
-  auto ucpp = Function<int_t(user_type*)>([](user_type* u)
+  auto ucpp = make_fn([](user_type* u)
   {
-    return u->id * 11;
+    return int_t(u->id * 11);
   });
-  auto get_cpp = Function<intf_t()>([&]()
+  auto get_cpp = make_fn([&]()
   {
     return cpp;
   });
@@ -72,33 +71,33 @@ TEST_F(YangTest, CppFunctions)
 const std::string TestYangFunctionsStr = R"(
 global {
   var value = 1;
-};
+}
 export add = int(int x)
 {
   return value += x;
-};
+}
 export add5 = int()
 {
   return add(5);
-};
+}
 export add_via_context = int()
 {
   return context_function(add);
-};
+}
 export get_add = int()()
 {
   return add5;
-};
+}
 export call_add = int(int(int) x)
 {
   return x(13);
-};
+}
 )";
 
 TEST_F(YangTest, YangFunctions)
 {
   typedef Function<int_t(int_t)> intf_t;
-  auto context_function = Function<int_t(intf_t)>([](intf_t function)
+  auto context_function = make_fn([](intf_t function)
   {
     return function(-2);
   });
@@ -143,21 +142,21 @@ export out = int()()()
       return 1;
     };
   };
-};
+}
 
 export out_in = int(int()()() x)
 {
   return x()()();
-};
+}
 
 export in_in = int(int(int) x)
 {
   return x(1);
-};
+}
 export in = int(int(int(int)) x)
 {
   return x(int(int a) {return 1 + a;});
-};
+}
 )";
 
 TEST_F(YangTest, HighOrderFunctions)
