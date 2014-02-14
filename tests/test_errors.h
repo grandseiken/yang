@@ -14,9 +14,10 @@ TEST_F(YangTest, FailureTest)
 
 TEST_F(YangTest, ErrorTest)
 {
+  auto& ctxt = context();
   auto err = [&](const std::string& str)
   {
-    EXPECT_FALSE(program_suppress_errors(str).success()) <<
+    EXPECT_FALSE(program_suppress_errors(ctxt, str).success()) <<
         "Should fail to compile:\n" << str << std::endl;
   };
 
@@ -155,6 +156,8 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {if (1) {var a = 0;} a;};");
   err("x = void() {for (var a = 1;;); a;};");
   err("x = void() {while (1) {var a = 0;} a;};");
+  err("x = void() {do 0; while (var a = 0); a;};");
+  err("x = void() {for (0; 0; var a = 0) {a;}};");
   err("x = void() {var a = a;};");
   err("x = void() {{var a = a;} a;};");
   err("global{{const a = 0;}}; x = void() {a;};");

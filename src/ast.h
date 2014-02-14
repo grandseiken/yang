@@ -35,6 +35,7 @@ struct Node {
     BLOCK,
     EMPTY_STMT,
     EXPR_STMT,
+    RETURN_VOID_STMT,
     RETURN_STMT,
     IF_STMT,
     FOR_STMT,

@@ -442,19 +442,24 @@ llvm::FunctionType* IrCommon::function_type_from_generic(
   return (llvm::FunctionType*)f_type;
 }
 
+llvm::Value* IrCommon::generic_function_value_null(
+    llvm::StructType* generic_function_type) const
+{
+  std::vector<llvm::Constant*> values;
+  values.push_back(llvm::ConstantPointerNull::get(
+      (llvm::PointerType*)generic_function_type->getElementType(0)));
+  values.push_back(llvm::ConstantPointerNull::get(void_ptr_type()));
+  values.push_back(llvm::ConstantPointerNull::get(void_ptr_type()));
+  return llvm::ConstantStruct::get(generic_function_type, values);
+}
+
 llvm::Value* IrCommon::generic_function_value(
     llvm::Value* function_ptr,
     llvm::Value* env_ptr, llvm::Value* target_ptr)
 {
   auto type = (llvm::StructType*)generic_function_type(function_ptr->getType());
+  llvm::Value* v = generic_function_value_null(type);
 
-  std::vector<llvm::Constant*> values;
-  values.push_back(llvm::ConstantPointerNull::get(
-      (llvm::PointerType*)type->getElementType(0)));
-  values.push_back(llvm::ConstantPointerNull::get(void_ptr_type()));
-  values.push_back(llvm::ConstantPointerNull::get(void_ptr_type()));
-
-  llvm::Value* v = llvm::ConstantStruct::get(type, values);
   v = b().CreateInsertValue(v, function_ptr, 0, "fptr");
   if (env_ptr) {
     // Must be bitcast to void pointer, since it may be a global data type.

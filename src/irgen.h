@@ -75,8 +75,8 @@ private:
 
   // Storing to some structure (global data or closure) with refcounting.
   llvm::Value* memory_load(llvm::Value* ptr);
-  void memory_store(llvm::Value* value, llvm::Value* ptr,
-                    bool first_initialisation = false);
+  void memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr);
+  void memory_store(llvm::Value* value, llvm::Value* ptr);
   // Raw reference-counting.
   void update_reference_count(llvm::Value* value, int_t change);
   // Emit code to decrement reference count of locals in topmost scope, or

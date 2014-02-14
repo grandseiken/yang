@@ -365,19 +365,22 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     case Node::EMPTY_STMT:
     case Node::EXPR_STMT:
       return Type::VOID;
+    case Node::RETURN_VOID_STMT:
     case Node::RETURN_STMT:
+    {
+      Type t = node.type == Node::RETURN_STMT ? results[0] : Type::VOID;
       // If we're not in a function, we must be in a global block.
       if (!inside_function()) {
         error(node, "return statement inside `global`");
+        return t;
       }
-      else {
-        const Type& current_return = current_return_type();
-        if (!results[0].is(current_return)) {
-          error(node, "returning " + rs[0] + " from " +
-                      current_return.string() + " function");
-        }
+      const Type& current_return = current_return_type();
+      if (!t.is(current_return)) {
+        error(node, "returning " + t.string() + " from " +
+                    current_return.string() + " function");
       }
-      return results[0];
+      return t;
+    }
     case Node::IF_STMT:
     {
       if (!results[0].is(Type::INT)) {

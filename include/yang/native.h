@@ -9,6 +9,7 @@
 #include <memory>
 #include <type_traits>
 #include <unordered_set>
+
 #include "typedefs.h"
 #include "type.h"
 

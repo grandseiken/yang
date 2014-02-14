@@ -154,6 +154,7 @@ elem_list
 elem
   : opt_export T_GLOBAL stmt
 {if ($3->type != Node::BLOCK) {
+   // Ensure a consistent scope depth for all global declarations.
    $3 = new Node(Node::BLOCK, $3);
  }
  $$ = new Node(Node::GLOBAL, $3);
@@ -183,7 +184,8 @@ stmt
 {$$ = new Node(Node::EMPTY_STMT);}
   | expr ';'
 {$$ = new Node(Node::EXPR_STMT, $1);}
-  /* TODO: void returns! */
+  | T_RETURN ';'
+{$$ = new Node(Node::RETURN_VOID_STMT);}
   | T_RETURN expr ';'
 {$$ = new Node(Node::RETURN_STMT, $2);}
   | T_IF '(' expr ')' stmt %prec T_IF
@@ -196,7 +198,7 @@ stmt
      new Node(Node::INT_LITERAL, 1), $3, new Node(Node::INT_LITERAL, 1));
  $$->add($5);}
   | T_FOR '(' opt_expr ';' opt_expr ';' opt_expr ')' stmt
-{$$ = new Node(Node::FOR_STMT, $3, $5, $7);
+{$$ = new Node(Node::FOR_STMT, $3, $5, new Node(Node::BLOCK, $7));
  $$->add($9);}
   | T_DO stmt T_WHILE '(' expr ')' ';'
 {$$ = new Node(Node::DO_WHILE_STMT, $2, $5);}

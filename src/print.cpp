@@ -86,6 +86,8 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
       return indent() + ";\n";
     case Node::EXPR_STMT:
       return indent() + results[0] + ";\n";
+    case Node::RETURN_VOID_STMT:
+      return indent() + "return;\n";
     case Node::RETURN_STMT:
       return indent() + "return " + results[0] + ";\n";
     case Node::IF_STMT:

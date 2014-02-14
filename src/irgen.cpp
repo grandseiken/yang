@@ -148,7 +148,11 @@ void IrGenerator::emit_global_functions()
   // Call malloc, set instance pointer, call each of the global initialisation
   // functions, and return the pointer.
   llvm::Value* v = b().CreateCall(malloc_ptr, size_of, "call");
-  memory_store(alloc->arg_begin(), global_ptr(v, 0), true);
+  // Make sure refcounted memory is initialised.
+  for (const auto& pair : _global_numbering) {
+    memory_init(b(), global_ptr(v, pair.second));
+  }
+  memory_store(alloc->arg_begin(), global_ptr(v, 0));
   for (llvm::Function* f : _global_inits) {
     b().CreateCall(f, v);
   }
@@ -593,12 +597,14 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       return constant_int(0);
     case Node::EXPR_STMT:
       return results[0];
+    case Node::RETURN_VOID_STMT:
     case Node::RETURN_STMT:
     {
       auto dead_block =
           llvm::BasicBlock::Create(b().getContext(), "dead", parent);
       dereference_scoped_locals(true);
-      llvm::Value* v = b().CreateRet(results[0]);
+      llvm::Value* v = node.type == Node::RETURN_STMT ?
+          b().CreateRet(results[0]) : b().CreateRetVoid();
       b().SetInsertPoint(dead_block);
       return v;
     }
@@ -607,11 +613,11 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
       _symbol_table.pop();
       _metadata.pop();
-      dereference_scoped_locals(false);
-      _refcount_locals.back().pop_back();
 
       b().CreateBr(merge_block);
       b().SetInsertPoint(merge_block);
+      dereference_scoped_locals(false);
+      _refcount_locals.back().pop_back();
       return results[0];
     }
     case Node::FOR_STMT:
@@ -620,11 +626,11 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
       _symbol_table.pop();
       _metadata.pop();
-      dereference_scoped_locals(false);
-      _refcount_locals.back().pop_back();
 
       b().CreateBr(after_block);
       b().SetInsertPoint(merge_block);
+      dereference_scoped_locals(false);
+      _refcount_locals.back().pop_back();
       return results[0];
     }
     case Node::DO_WHILE_STMT:
@@ -633,11 +639,11 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
       _symbol_table.pop();
       _metadata.pop();
-      dereference_scoped_locals(false);
-      _refcount_locals.back().pop_back();
 
       b().CreateCondBr(i2b(results[1]), loop_block, merge_block);
       b().SetInsertPoint(merge_block);
+      dereference_scoped_locals(false);
+      _refcount_locals.back().pop_back();
       return results[0];
     }
     case Node::BREAK_STMT:
@@ -943,7 +949,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // with a null value so we can distinguish it from top-level functions.
       if (_metadata.has(GLOBAL_INIT_FUNCTION) && _symbol_table.size() <= 3) {
         _symbol_table.add(s, 0, nullptr);
-        memory_store(results[1], global_ptr(s), true);
+        memory_store(results[1], global_ptr(s));
         return results[1];
       }
 
@@ -954,7 +960,8 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
           ((llvm::Function*)b().GetInsertPoint()->getParent())->getEntryBlock();
       llvm::IRBuilder<> entry(&entry_block, entry_block.begin());
       llvm::Value* v = entry.CreateAlloca(types[1], nullptr, s);
-      memory_store(results[1], v, true);
+      memory_init(entry, v);
+      memory_store(results[1], v);
       _refcount_locals.back().back().push_back(v);
       _symbol_table.add(s, v);
       return results[1];
@@ -1117,13 +1124,24 @@ llvm::Value* IrGenerator::memory_load(llvm::Value* ptr)
   return b().CreateAlignedLoad(ptr, 1, "load");
 }
 
-void IrGenerator::memory_store(
-    llvm::Value* value, llvm::Value* ptr, bool first_initialisation)
+void IrGenerator::memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr)
 {
-  if (!first_initialisation) {
-    llvm::Value* old = memory_load(ptr);
-    update_reference_count(old, -1);
+  // We need to make sure ref-counted memory locations are initialised with
+  // something sensible. Otherwise, the first store will try to decrement
+  // the refcount on something undefined. (Important in particular for variable
+  // declarations which are "executed" more than once.)
+  llvm::Type* elem = ptr->getType()->getPointerElementType();
+  if (elem->isStructTy()) {
+    // Null Yang function.
+    pos.CreateAlignedStore(
+        generic_function_value_null((llvm::StructType*)elem), ptr, 1);
   }
+}
+
+void IrGenerator::memory_store(llvm::Value* value, llvm::Value* ptr)
+{
+  llvm::Value* old = memory_load(ptr);
+  update_reference_count(old, -1);
   update_reference_count(value, 1);
   b().CreateAlignedStore(value, ptr, 1);
 }
@@ -1160,6 +1178,7 @@ void IrGenerator::dereference_scoped_locals(bool all_scopes)
       for (llvm::Value* alloc : scope) {
         llvm::Value* v = memory_load(alloc);
         update_reference_count(v, -1);
+        memory_init(b(), alloc);
       }
     }
     return;
@@ -1167,6 +1186,7 @@ void IrGenerator::dereference_scoped_locals(bool all_scopes)
   for (llvm::Value* alloc : function.back()) {
     llvm::Value* v = memory_load(alloc);
     update_reference_count(v, -1);
+    memory_init(b(), alloc);
   }
 }
 

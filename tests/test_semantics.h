@@ -81,10 +81,19 @@ export shadowing = int(int a)
 
 export global const ten = count_to_ten();
 export global {
-  var ten_again = 0;
+  var again = 0;
   for (var i = 0; i < 10; ++i) {
-    ++ten_again;
+    ++again;
   }
+};
+
+export again_mod = void(int a)
+{
+  if (a) {
+    ++again;
+    return;
+  }
+  again += 2;
 };
 )";
 
@@ -104,6 +113,10 @@ TEST_F(YangTest, SemanticsTest)
   EXPECT_EQ(inst.call<int_t>("shadowing", 2), 15);
 
   EXPECT_EQ(inst.get_global<int_t>("ten"), 10);
-  EXPECT_EQ(inst.get_global<int_t>("ten_again"), 10);
+  EXPECT_EQ(inst.get_global<int_t>("again"), 10);
+  inst.call<void>("again_mod", 0);
+  EXPECT_EQ(inst.get_global<int_t>("again"), 12);
+  inst.call<void>("again_mod", 1);
+  EXPECT_EQ(inst.get_global<int_t>("again"), 13);
   // TODO: just getting started. Need way more semantic tests.
 }

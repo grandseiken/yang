@@ -33,6 +33,9 @@ Program::Program(const Context& context, const std::string& name,
   , _module(nullptr)
   , _engine(nullptr)
 {
+  // TODO: instantiating Program leaks a small amount of memory somehow, but
+  // I'm not entirely sure what the cause is. Maybe down to Flex/BYACC or some
+  // AST issue.
   internal::ParseGlobals::lexer_input_contents = &contents;
   internal::ParseGlobals::lexer_input_offset = 0;
   internal::ParseGlobals::parser_output = nullptr;

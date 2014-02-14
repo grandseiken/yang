@@ -68,6 +68,8 @@ protected:
       llvm::Type* return_type, const std::vector<llvm::Type*>& arg_types) const;
   llvm::FunctionType* function_type_from_generic(
       llvm::Type* generic_function_type) const;
+  llvm::Value* generic_function_value_null(
+      llvm::StructType* generic_function_type) const;
   llvm::Value* generic_function_value(
       llvm::Value* function_ptr, llvm::Value* env_ptr,
       llvm::Value* target_ptr = nullptr);
