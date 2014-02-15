@@ -873,7 +873,7 @@ void StaticChecker::error(const Node& node, const std::string& message)
   if (_current_function.length()) {
     m = "in function `" + _current_function + "`: " + m;
   }
-  std::string full_message = ParseGlobals::error(node.line, node.text, m);
+  std::string full_message = format_error(node.line, node.text, m);
   if (_error_output) {
     *_error_output += full_message + '\n';
   }

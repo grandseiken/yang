@@ -7,33 +7,13 @@
 #include "../src/ast.h"
 #include "yang.y.h"
 
-  /* Handle lexer input from a string. */
-
-#undef YY_INPUT
-#define YY_INPUT(b, r, m) lexer_input(b, &r, m)
-int yang_error(const char* message);
-
-namespace {
-
-  int lexer_input(char* buffer, std::size_t* bytes_read, std::size_t bytes_max)
-  {
-    const std::string& in = *yang::internal::ParseGlobals::lexer_input_contents;
-    std::size_t& offset = yang::internal::ParseGlobals::lexer_input_offset;
-
-    *bytes_read = std::min(bytes_max, in.length() - offset);
-    for (std::size_t i = 0; i < *bytes_read; ++i) {
-      buffer[i] = in[i + offset];
-    }
-    offset += *bytes_read;
-    return 0;
-  }
-
-}
-
 typedef yang::internal::Node Node;
+int yang_error(yyscan_t scan, const char* message);
 
 %}
 
+%option bison-bridge
+%option reentrant
 %option noyywrap
 %option yylineno
 %x line_comment
@@ -62,13 +42,13 @@ vector_size [1-9]{digit}*
   /* Comments and whitespace. */
 
 <*>{tab} {
-  yang_error("tab character");
+  yang_error(yyscanner, "tab character");
 }
 <*>{whitespace_newline} {
-  yang_error("end-of-line whitespace");
+  yang_error(yyscanner, "end-of-line whitespace");
 }
 <long_comment><<EOF>> {
-  yang_error("end-of-input inside comment");
+  yang_error(yyscanner, "end-of-input inside comment");
   BEGIN(INITIAL);
   return T_EOF;
 }
@@ -97,31 +77,35 @@ return {return T_RETURN;}
   /* Types. */
 
 void {
-  yang_lval.node = new Node(Node::TYPE_VOID);
+  yang_get_lval(yyscanner)->node = new Node(yyscanner, Node::TYPE_VOID);
   return T_TYPE_LITERAL;
 }
 int {
-  yang_lval.node = new Node(Node::TYPE_INT, 1);
+  yang_get_lval(yyscanner)->node = new Node(yyscanner, Node::TYPE_INT, 1);
   return T_TYPE_LITERAL;
 }
 int0 {
-  yang_lval.node = new Node(Node::TYPE_VOID);
+  yang_get_lval(yyscanner)->node = new Node(yyscanner, Node::TYPE_VOID);
   return T_TYPE_LITERAL;
 }
 int{vector_size} {
-  yang_lval.node = new Node(Node::TYPE_INT, std::stoi(3 + yang_text));
+  yang_get_lval(yyscanner)->node =
+      new Node(yyscanner, Node::TYPE_INT,
+               std::stoi(3 + yang_get_text(yyscanner)));
   return T_TYPE_LITERAL;
 }
 float {
-  yang_lval.node = new Node(Node::TYPE_FLOAT, 1);
+  yang_get_lval(yyscanner)->node = new Node(yyscanner, Node::TYPE_FLOAT, 1);
   return T_TYPE_LITERAL;
 }
 float0 {
-  yang_lval.node = new Node(Node::TYPE_VOID);
+  yang_get_lval(yyscanner)->node = new Node(yyscanner, Node::TYPE_VOID);
   return T_TYPE_LITERAL;
 }
 float{vector_size} {
-  yang_lval.node = new Node(Node::TYPE_FLOAT, std::stoi(5 + yang_text));
+  yang_get_lval(yyscanner)->node =
+      new Node(yyscanner, Node::TYPE_FLOAT,
+               std::stoi(5 + yang_get_text(yyscanner)));
   return T_TYPE_LITERAL;
 }
 
@@ -175,26 +159,29 @@ float{vector_size} {
   /* Identifiers and literals. */
 
 true {
-  yang_lval.node = new Node(Node::INT_LITERAL, 1);
+  yang_get_lval(yyscanner)->node = new Node(yyscanner, Node::INT_LITERAL, 1);
   return T_INT_LITERAL;
 }
 false {
-  yang_lval.node = new Node(Node::INT_LITERAL, 0);
+  yang_get_lval(yyscanner)->node = new Node(yyscanner, Node::INT_LITERAL, 0);
   return T_INT_LITERAL;
 }
 {identifier} {
-  yang_lval.node = new Node(Node::IDENTIFIER, yang_text);
+  yang_get_lval(yyscanner)->node =
+      new Node(yyscanner, Node::IDENTIFIER, yang_get_text(yyscanner));
   return T_IDENTIFIER;
 }
 {int_literal} {
-  yang_lval.node = new Node(Node::INT_LITERAL, std::stoi(yang_text));
+  yang_get_lval(yyscanner)->node =
+      new Node(yyscanner, Node::INT_LITERAL, std::stoi(yang_get_text(yyscanner)));
   return T_INT_LITERAL;
 }
 {float_literal} {
-  yang_lval.node = new Node(Node::FLOAT_LITERAL, std::stod(yang_text));
+  yang_get_lval(yyscanner)->node =
+      new Node(yyscanner, Node::FLOAT_LITERAL, std::stod(yang_get_text(yyscanner)));
   return T_FLOAT_LITERAL;
 }
 
   /* Default. */
 
-{default} {return yang_text[0];}
+{default} {return yang_get_text(yyscanner)[0];}

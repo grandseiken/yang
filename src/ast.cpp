@@ -5,14 +5,15 @@
 #include "ast.h"
 
 #include <sstream>
+#include "../gen/yang.y.h"
 #include "../gen/yang.l.h"
 
 namespace yang {
 namespace internal {
 
-Node::Node(node_type type)
-  : line(yang_lineno)
-  , text(yang_text ? yang_text : "")
+Node::Node(std::size_t line, const std::string& text, node_type type)
+  : line(line)
+  , text(text)
   , type(type)
   , int_value(0)
   , float_value(0)
@@ -20,30 +21,40 @@ Node::Node(node_type type)
   orphans.insert(this);
 }
 
-Node::Node(node_type type, Node* a)
-  : Node(type)
+Node::Node(scan_t scan, node_type type)
+  : line(yang_get_lineno(scan))
+  , text(yang_get_text(scan) ? yang_get_text(scan) : "")
+  , type(type)
+  , int_value(0)
+  , float_value(0)
+{
+  orphans.insert(this);
+}
+
+Node::Node(scan_t scan, node_type type, Node* a)
+  : Node(scan, type)
 {
   add(a);
 }
 
-Node::Node(node_type type, Node* a, Node* b)
-  : Node(type)
+Node::Node(scan_t scan, node_type type, Node* a, Node* b)
+  : Node(scan, type)
 {
   add(a);
   add(b);
 }
 
-Node::Node(node_type type, Node* a, Node* b, Node* c)
-  : Node(type)
+Node::Node(scan_t scan, node_type type, Node* a, Node* b, Node* c)
+  : Node(scan, type)
 {
   add(a);
   add(b);
   add(c);
 }
 
-Node::Node(node_type type, yang::int_t value)
-  : line(yang_lineno)
-  , text(yang_text ? yang_text : "")
+Node::Node(scan_t scan, node_type type, yang::int_t value)
+  : line(yang_get_lineno(scan))
+  , text(yang_get_text(scan) ? yang_get_text(scan) : "")
   , type(type)
   , int_value(value)
   , float_value(0)
@@ -51,9 +62,9 @@ Node::Node(node_type type, yang::int_t value)
   orphans.insert(this);
 }
 
-Node::Node(node_type type, yang::float_t value)
-  : line(yang_lineno)
-  , text(yang_text ? yang_text : "")
+Node::Node(scan_t scan, node_type type, yang::float_t value)
+  : line(yang_get_lineno(scan))
+  , text(yang_get_text(scan) ? yang_get_text(scan) : "")
   , type(type)
   , int_value(0)
   , float_value(value)
@@ -61,9 +72,9 @@ Node::Node(node_type type, yang::float_t value)
   orphans.insert(this);
 }
 
-Node::Node(node_type type, const std::string& value)
-  : line(yang_lineno)
-  , text(yang_text ? yang_text : "")
+Node::Node(scan_t scan, node_type type, const std::string& value)
+  : line(yang_get_lineno(scan))
+  , text(yang_get_text(scan) ? yang_get_text(scan) : "")
   , type(type)
   , int_value(0)
   , float_value(0)
@@ -74,9 +85,7 @@ Node::Node(node_type type, const std::string& value)
 
 Node* Node::clone(bool clone_children) const
 {
-  Node* node = new Node(type);
-  node->line = line;
-  node->text = text;
+  Node* node = new Node(line, text, type);
   node->int_value = int_value;
   node->float_value = float_value;
   node->string_value = string_value;
@@ -170,13 +179,7 @@ std::string Node::op_string(node_type t)
 
 std::unordered_set<Node*> Node::orphans;
 
-const std::string* ParseGlobals::lexer_input_contents = nullptr;
-std::size_t ParseGlobals::lexer_input_offset = 0;
-
-Node* ParseGlobals::parser_output = nullptr;
-std::vector<std::string> ParseGlobals::errors;
-
-std::string ParseGlobals::error(
+std::string format_error(
     std::size_t line, const std::string& token, const std::string& message)
 {
   bool replace = false;

@@ -20,7 +20,7 @@
 #include "../gen/yang.y.h"
 #include "../gen/yang.l.h"
 
-int yang_parse();
+int yang_parse(yyscan_t scan);
 
 namespace yang {
 
@@ -34,24 +34,26 @@ Program::Program(const Context& context, const std::string& name,
   , _engine(nullptr)
 {
   // TODO: instantiating Program leaks a small amount of memory somehow, but
-  // I'm not entirely sure what the cause is. Maybe down to Flex/BYACC or some
-  // AST issue.
-  internal::ParseGlobals::lexer_input_contents = &contents;
-  internal::ParseGlobals::lexer_input_offset = 0;
-  internal::ParseGlobals::parser_output = nullptr;
-  internal::ParseGlobals::errors.clear();
+  // I'm not entirely sure what the cause is. Maybe down to Flex/BYACC (do we
+  // need to clean up yytext?) or some AST issue (orphans?).
+  internal::ParseData data;
+  yyscan_t scan = nullptr;
 
-  yang_lineno = 0;
-  yang_restart(nullptr);
-  yang_parse();
-  std::unique_ptr<internal::Node> output(internal::ParseGlobals::parser_output);
+  yang_lex_init(&scan);
+  yang_set_extra(&data, scan);
+  auto buffer = yang__scan_string(contents.c_str(), scan);
+  yang_parse(scan);
+  yang__delete_buffer(buffer, scan);
+  yang_lex_destroy(scan);
+
+  std::unique_ptr<internal::Node> output(data.parser_output);
   internal::Node::orphans.erase(output.get());
   for (internal::Node* node : internal::Node::orphans) {
     std::unique_ptr<internal::Node>{node};
   }
   internal::Node::orphans.clear();
 
-  for (const std::string& err : internal::ParseGlobals::errors) {
+  for (const std::string& err : data.errors) {
     if (error_output) {
       *error_output += err + '\n';
     }
@@ -59,7 +61,7 @@ Program::Program(const Context& context, const std::string& name,
       log_err(err);
     }
   }
-  if (internal::ParseGlobals::errors.size()) {
+  if (data.errors.size()) {
     return;
   }
 

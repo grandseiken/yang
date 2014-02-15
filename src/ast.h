@@ -11,6 +11,8 @@
 #include <vector>
 #include <yang/typedefs.h>
 
+typedef void* scan_t;
+
 namespace yang {
 namespace internal {
 
@@ -101,17 +103,18 @@ struct Node {
     VECTOR_INDEX,
   };
 
+  Node(std::size_t line, const std::string& text, node_type type);
   // Child nodes passed to constructors or add transfer ownership, and are
   // destroyed when the parent is destroyed. These would take explicit
   // unique_ptr<Node> parameters but for sake of brevity in the parser.
-  Node(node_type type);
-  Node(node_type type, Node* a);
-  Node(node_type type, Node* a, Node* b);
-  Node(node_type type, Node* a, Node* b, Node* c);
+  Node(scan_t scan, node_type type);
+  Node(scan_t scan, node_type type, Node* a);
+  Node(scan_t scan, node_type type, Node* a, Node* b);
+  Node(scan_t scan, node_type type, Node* a, Node* b, Node* c);
 
-  Node(node_type type, yang::int_t value);
-  Node(node_type type, yang::float_t value);
-  Node(node_type type, const std::string& value);
+  Node(scan_t scan, node_type type, yang::int_t value);
+  Node(scan_t scan, node_type type, yang::float_t value);
+  Node(scan_t scan, node_type type, const std::string& value);
 
   // Clone an entire tree.
   Node* clone(bool clone_children = true) const;
@@ -147,14 +150,12 @@ struct Node {
   static std::unordered_set<Node*> orphans;
 };
 
-struct ParseGlobals {
-  static const std::string* lexer_input_contents;
-  static std::size_t lexer_input_offset;
+std::string format_error(
+    std::size_t line, const std::string& token, const std::string& message);
 
-  static Node* parser_output;
-  static std::vector<std::string> errors;
-  static std::string error(
-      std::size_t line, const std::string& token, const std::string& message);
+struct ParseData {
+  Node* parser_output = nullptr;
+  std::vector<std::string> errors;
 };
 
 // End namespace yang::internal.
