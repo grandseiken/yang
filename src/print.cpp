@@ -29,7 +29,7 @@ void AstPrinter::infix(const Node&, const result_list&)
 
 std::string AstPrinter::visit(const Node& node, const result_list& results)
 {
-  std::string s = Node::op_string(node.type);
+  std::string s = node_op_string(node.type);
   std::string type_id =
       node.string_value.length() ? " " + node.string_value : "";
 

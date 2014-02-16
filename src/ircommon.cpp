@@ -679,10 +679,11 @@ YangTrampolineGlobals& YangTrampolineGlobals::get_instance()
   return instance;
 }
 
-llvm::Module* YangTrampolineGlobals::create_module() const
+llvm::Module* YangTrampolineGlobals::create_module()
 {
+  // Make sure to initialise native target first!
   llvm::InitializeNativeTarget();
-  return new llvm::Module("!trampoline_globals", llvm::getGlobalContext());
+  return new llvm::Module("!trampoline_globals", _context);
 }
 
 // End namespace yang::internal.

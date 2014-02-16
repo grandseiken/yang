@@ -99,6 +99,18 @@
 // TODO: possibly allow ref-counted user types. Set up some template that
 // mirrors the mechanics of Function.
 // TODO: make sure everything is (possibly optionally?) thread-safe.
+// Things that aren't thread-safe (and need locking):
+// - YangTrampolineGlobals
+// - possibly cpp_trampoline_lookup_map
+// - global data / closure data structure access. Both for concurrent invocation
+//   of functions from the same Instance, and concurrent invocation of functions
+//   from different Instances where one happens to hold a reference to a
+//   function from the other.
+// The last is the trickiest bit and should probably be optional. Clients must
+// also follow this rule for thread-safety:
+// - Context should not be modified after it has been used (i.e. passed to
+//   Function::get_type or Program::Program)! This could be enforced by making
+//   Contexts immutable which might be a good idea anyway.
 // TODO: hex literals, scientific notation float literals, etc.
 //
 // Further off (helpful stuff that can be emulated without needing to be built-

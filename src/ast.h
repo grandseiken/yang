@@ -103,10 +103,12 @@ struct Node {
     VECTOR_INDEX,
   };
 
-  Node(std::size_t line, const std::string& text, node_type type);
   // Child nodes passed to constructors or add transfer ownership, and are
   // destroyed when the parent is destroyed. These would take explicit
   // unique_ptr<Node> parameters but for sake of brevity in the parser.
+  Node(scan_t scan, std::size_t line,
+       const std::string& text, node_type type);
+
   Node(scan_t scan, node_type type);
   Node(scan_t scan, node_type type, Node* a);
   Node(scan_t scan, node_type type, Node* a, Node* b);
@@ -121,6 +123,9 @@ struct Node {
 
   void add_front(Node* node);
   void add(Node* node);
+
+  // Pointer to the Flex scanner structure.
+  scan_t scan;
 
   // Information about the location of this Node in the source text, for
   // diagnostic purposes.
@@ -140,22 +145,23 @@ struct Node {
   // checker and the IR generator, except when dealing with user types (whose
   // names are erased in LLVM). We can store them here when necessary.
   mutable std::string user_type_name;
-
-  // Get the human-readable text of an operator.
-  static std::string op_string(node_type t);
-
-  // If parsing aborts half-way due to a syntax error, Nodes allocated by the
-  // parser will leak. To avoid this, we keep a set of Nodes which have been
-  // allocated but not inserted as children so they can be freed later.
-  static std::unordered_set<Node*> orphans;
 };
 
+// Get the human-readable text of an operator.
+std::string node_op_string(Node::node_type t);
+
+// Make an error look nice for printing.
 std::string format_error(
     std::size_t line, const std::string& token, const std::string& message);
 
 struct ParseData {
   Node* parser_output = nullptr;
   std::vector<std::string> errors;
+
+  // If parsing aborts half-way due to a syntax error, Nodes allocated by the
+  // parser will leak. To avoid this, we keep a set of Nodes which have been
+  // allocated but not inserted as children so they can be freed later.
+  std::unordered_set<Node*> orphans;
 };
 
 // End namespace yang::internal.

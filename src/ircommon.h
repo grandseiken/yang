@@ -6,6 +6,7 @@
 #define YANG_SRC_IRCOMMON_H
 
 #include <unordered_map>
+#include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/IRBuilder.h>
 #include <yang/type.h>
 #include <yang/typedefs.h>
@@ -123,9 +124,10 @@ private:
   ~YangTrampolineGlobals();
 
   static YangTrampolineGlobals& get_instance();
-  llvm::Module* create_module() const;
+  llvm::Module* create_module();
 
   std::string _error;
+  llvm::LLVMContext _context;
   llvm::Module* _module;
   std::unique_ptr<llvm::ExecutionEngine> _engine;
   IrCommon _common;

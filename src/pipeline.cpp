@@ -30,12 +30,10 @@ Program::Program(const Context& context, const std::string& name,
   : _context(context)
   , _name(name)
   , _ast(nullptr)
+  , _llvm_context(new llvm::LLVMContext)
   , _module(nullptr)
   , _engine(nullptr)
 {
-  // TODO: instantiating Program leaks a small amount of memory somehow, but
-  // I'm not entirely sure what the cause is. Maybe down to Flex/BYACC (do we
-  // need to clean up yytext?) or some AST issue (orphans?).
   internal::ParseData data;
   yyscan_t scan = nullptr;
 
@@ -47,11 +45,10 @@ Program::Program(const Context& context, const std::string& name,
   yang_lex_destroy(scan);
 
   std::unique_ptr<internal::Node> output(data.parser_output);
-  internal::Node::orphans.erase(output.get());
-  for (internal::Node* node : internal::Node::orphans) {
+  data.orphans.erase(output.get());
+  for (internal::Node* node : data.orphans) {
     std::unique_ptr<internal::Node>{node};
   }
-  internal::Node::orphans.clear();
 
   for (const std::string& err : data.errors) {
     if (error_output) {
@@ -131,10 +128,12 @@ void Program::generate_ir(bool optimise)
   std::string error;
   llvm::InitializeNativeTarget();
 
+  // We need to use a different LLVMContext for each program, to avoid using
+  // unbounded memory for all the LLVM structure types we create.
+  _module = new llvm::Module(_name, *_llvm_context);
   // The ExecutionEngine takes ownership of the LLVM module (and by extension
-  // everything else we created during codegen). So the engine alone must be
+  // most other things we create during codegen). So the engine alone must be
   // uniqued and deleted.
-  _module = new llvm::Module(_name, llvm::getGlobalContext());
   _engine = std::unique_ptr<llvm::ExecutionEngine>(
       llvm::EngineBuilder(_module).setErrorStr(&error).create());
   if (!_engine) {

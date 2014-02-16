@@ -238,7 +238,7 @@ void StaticChecker::infix(const Node& node, const result_list& results)
 
 Type StaticChecker::visit(const Node& node, const result_list& results)
 {
-  std::string s = "`" + Node::op_string(node.type) + "`";
+  std::string s = "`" + node_op_string(node.type) + "`";
   std::vector<std::string> rs;
   for (const Type& t : results) {
     rs.push_back(t.string());

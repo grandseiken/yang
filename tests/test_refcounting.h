@@ -86,7 +86,6 @@ TEST_F(YangTest, FunctionRefCounting)
 {
   auto& inst = instance(TestFunctionRefCountingStr);
   typedef Function<int_t()> intf_t;
-
   // No refcounting necessary.
   auto f = make_fn([]()
   {

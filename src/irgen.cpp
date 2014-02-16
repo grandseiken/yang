@@ -752,8 +752,11 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // environment is null. If so, call trampoline looked up from
       // _reverse_trampoline_map; otherwise, call target directly and pass
       // environment.
-      // Then we can get rid of the global yang trampolines entirely. I'm not
-      // sure why I thought those were necessary.
+      // We can then get rid of the global Yang reverse trampolines, but we
+      // still need global Yang *forward* trampolines, I think (to call Yang
+      // functions from C++), and we maybe don't need per-module forward
+      // trampolines any more either. That seems to make sense: global forward
+      // trampolines, and per-module reverse trampolines only.
       std::vector<llvm::Value*> args;
       llvm::Value* genf = results[0];
 

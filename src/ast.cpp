@@ -11,24 +11,27 @@
 namespace yang {
 namespace internal {
 
-Node::Node(std::size_t line, const std::string& text, node_type type)
-  : line(line)
+Node::Node(scan_t scan, std::size_t line,
+           const std::string& text, node_type type)
+  : scan(scan)
+  , line(line)
   , text(text)
   , type(type)
   , int_value(0)
   , float_value(0)
 {
-  orphans.insert(this);
+  ((ParseData*)yang_get_extra(scan))->orphans.insert(this);
 }
 
 Node::Node(scan_t scan, node_type type)
-  : line(yang_get_lineno(scan))
+  : scan(scan)
+  , line(yang_get_lineno(scan))
   , text(yang_get_text(scan) ? yang_get_text(scan) : "")
   , type(type)
   , int_value(0)
   , float_value(0)
 {
-  orphans.insert(this);
+  ((ParseData*)yang_get_extra(scan))->orphans.insert(this);
 }
 
 Node::Node(scan_t scan, node_type type, Node* a)
@@ -53,39 +56,42 @@ Node::Node(scan_t scan, node_type type, Node* a, Node* b, Node* c)
 }
 
 Node::Node(scan_t scan, node_type type, yang::int_t value)
-  : line(yang_get_lineno(scan))
+  : scan(scan)
+  , line(yang_get_lineno(scan))
   , text(yang_get_text(scan) ? yang_get_text(scan) : "")
   , type(type)
   , int_value(value)
   , float_value(0)
 {
-  orphans.insert(this);
+  ((ParseData*)yang_get_extra(scan))->orphans.insert(this);
 }
 
 Node::Node(scan_t scan, node_type type, yang::float_t value)
-  : line(yang_get_lineno(scan))
+  : scan(scan)
+  , line(yang_get_lineno(scan))
   , text(yang_get_text(scan) ? yang_get_text(scan) : "")
   , type(type)
   , int_value(0)
   , float_value(value)
 {
-  orphans.insert(this);
+  ((ParseData*)yang_get_extra(scan))->orphans.insert(this);
 }
 
 Node::Node(scan_t scan, node_type type, const std::string& value)
-  : line(yang_get_lineno(scan))
+  : scan(scan)
+  , line(yang_get_lineno(scan))
   , text(yang_get_text(scan) ? yang_get_text(scan) : "")
   , type(type)
   , int_value(0)
   , float_value(0)
   , string_value(value)
 {
-  orphans.insert(this);
+  ((ParseData*)yang_get_extra(scan))->orphans.insert(this);
 }
 
 Node* Node::clone(bool clone_children) const
 {
-  Node* node = new Node(line, text, type);
+  Node* node = new Node(scan, line, text, type);
   node->int_value = int_value;
   node->float_value = float_value;
   node->string_value = string_value;
@@ -112,17 +118,17 @@ Node* Node::clone(bool clone_children) const
 
 void Node::add_front(Node* node)
 {
-  orphans.erase(node);
+  ((ParseData*)yang_get_extra(scan))->orphans.erase(node);
   children.insert(children.begin(), std::unique_ptr<Node>(node));
 }
 
 void Node::add(Node* node)
 {
-  orphans.erase(node);
+  ((ParseData*)yang_get_extra(scan))->orphans.erase(node);
   children.push_back(std::unique_ptr<Node>(node));
 }
 
-std::string Node::op_string(node_type t)
+std::string node_op_string(Node::node_type t)
 {
   return
       t == Node::TERNARY ? "?:" :
@@ -176,8 +182,6 @@ std::string Node::op_string(node_type t)
       t == Node::SCOPE_RESOLUTION ? "::" :
       "unknown operator";
 }
-
-std::unordered_set<Node*> Node::orphans;
 
 std::string format_error(
     std::size_t line, const std::string& token, const std::string& message)

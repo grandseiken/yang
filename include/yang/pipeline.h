@@ -17,6 +17,7 @@
 namespace llvm {
   class ExecutionEngine;
   class Function;
+  class LLVMContext;
   class Module;
 }
 
@@ -66,6 +67,7 @@ private:
   symbol_table _functions;
   symbol_table _globals;
 
+  std::unique_ptr<llvm::LLVMContext> _llvm_context;
   llvm::Module* _module;
   std::unique_ptr<llvm::ExecutionEngine> _engine;
   std::unordered_map<Type, llvm::Function*> _trampoline_map;
