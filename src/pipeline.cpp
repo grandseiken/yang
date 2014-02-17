@@ -34,8 +34,21 @@ Program::Program(const Context& context, const std::string& name,
   , _module(nullptr)
   , _engine(nullptr)
 {
-  internal::ParseData data;
+  internal::ParseData data(name, contents);
   yyscan_t scan = nullptr;
+
+  auto log_errors = [&]()
+  {
+    for (const std::string& err : data.errors) {
+      if (error_output) {
+        *error_output += err + '\n';
+      }
+      else {
+        log_err(err);
+      }
+    }
+    return bool(data.errors.size());
+  };
 
   yang_lex_init(&scan);
   yang_set_extra(&data, scan);
@@ -49,22 +62,14 @@ Program::Program(const Context& context, const std::string& name,
   for (internal::Node* node : data.orphans) {
     std::unique_ptr<internal::Node>{node};
   }
-
-  for (const std::string& err : data.errors) {
-    if (error_output) {
-      *error_output += err + '\n';
-    }
-    else {
-      log_err(err);
-    }
-  }
-  if (data.errors.size()) {
+  if (log_errors()) {
     return;
   }
 
-  internal::StaticChecker checker(_context, error_output, _functions, _globals);
+  internal::StaticChecker checker(
+      _context, data, _functions, _globals);
   checker.walk(*output);
-  if (checker.errors()) {
+  if (log_errors()) {
     _functions.clear();
     _globals.clear();
     return;

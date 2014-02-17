@@ -8,14 +8,23 @@
 #include "yang.y.h"
 
 typedef yang::internal::Node Node;
+typedef yang::internal::ParseData ParseData;
+
+void* yang_get_extra(yyscan_t);
 int yang_error(yyscan_t scan, const char* message);
+
+// Character counting.
+#define YY_USER_ACTION \
+    ((ParseData*)yang_get_extra(yyscanner))->column += yang_get_leng(yyscanner);
+#define LVAL (yang_get_lval(yyscanner)->node)
+#define TEXT (yang_get_text(yyscanner))
+#define TOKEN LVAL = new Node(yyscanner, Node::ERROR)
 
 %}
 
 %option bison-bridge
 %option reentrant
 %option noyywrap
-%option yylineno
 %x line_comment
 %x long_comment
 
@@ -50,6 +59,7 @@ vector_size [1-9]{digit}*
 <long_comment><<EOF>> {
   yang_error(yyscanner, "end-of-input inside comment");
   BEGIN(INITIAL);
+  TOKEN;
   return T_EOF;
 }
 <INITIAL>{line_comment_begin} {BEGIN(line_comment);}
@@ -61,127 +71,120 @@ vector_size [1-9]{digit}*
 
   /* Keywords. */
 
-global {return T_GLOBAL;}
-export {return T_EXPORT;}
-var {return T_VAR;}
-const {return T_CONST;}
-if {return T_IF;}
-else {return T_ELSE;}
-for {return T_FOR;}
-while {return T_WHILE;}
-do {return T_DO;}
-break {return T_BREAK;}
-continue {return T_CONTINUE;}
-return {return T_RETURN;}
+global {TOKEN; return T_GLOBAL;}
+export {TOKEN; return T_EXPORT;}
+var {TOKEN; return T_VAR;}
+const {TOKEN; return T_CONST;}
+if {TOKEN; return T_IF;}
+else {TOKEN; return T_ELSE;}
+for {TOKEN; return T_FOR;}
+while {TOKEN; return T_WHILE;}
+do {TOKEN; return T_DO;}
+break {TOKEN; return T_BREAK;}
+continue {TOKEN; return T_CONTINUE;}
+return {TOKEN; return T_RETURN;}
 
   /* Types. */
 
 void {
-  yang_get_lval(yyscanner)->node = new Node(yyscanner, Node::TYPE_VOID);
+  LVAL = new Node(yyscanner, Node::TYPE_VOID);
   return T_TYPE_LITERAL;
 }
 int {
-  yang_get_lval(yyscanner)->node = new Node(yyscanner, Node::TYPE_INT, 1);
+  LVAL = new Node(yyscanner, Node::TYPE_INT, 1);
   return T_TYPE_LITERAL;
 }
 int0 {
-  yang_get_lval(yyscanner)->node = new Node(yyscanner, Node::TYPE_VOID);
+  LVAL = new Node(yyscanner, Node::TYPE_VOID);
   return T_TYPE_LITERAL;
 }
 int{vector_size} {
-  yang_get_lval(yyscanner)->node =
-      new Node(yyscanner, Node::TYPE_INT,
-               std::stoi(3 + yang_get_text(yyscanner)));
+  LVAL = new Node(yyscanner, Node::TYPE_INT, std::stoi(3 + TEXT));
   return T_TYPE_LITERAL;
 }
 float {
-  yang_get_lval(yyscanner)->node = new Node(yyscanner, Node::TYPE_FLOAT, 1);
+  LVAL = new Node(yyscanner, Node::TYPE_FLOAT, 1);
   return T_TYPE_LITERAL;
 }
 float0 {
-  yang_get_lval(yyscanner)->node = new Node(yyscanner, Node::TYPE_VOID);
+  LVAL = new Node(yyscanner, Node::TYPE_VOID);
   return T_TYPE_LITERAL;
 }
 float{vector_size} {
-  yang_get_lval(yyscanner)->node =
-      new Node(yyscanner, Node::TYPE_FLOAT,
-               std::stoi(5 + yang_get_text(yyscanner)));
+  LVAL = new Node(yyscanner, Node::TYPE_FLOAT, std::stoi(5 + TEXT));
   return T_TYPE_LITERAL;
 }
 
   /* Operators. */
 
-"?" {return T_TERNARY_L;}
-":" {return T_TERNARY_R;}
-"!" {return T_LOGICAL_NEGATION;}
-"||" {return T_LOGICAL_OR;}
-"&&" {return T_LOGICAL_AND;}
-"~" {return T_BITWISE_NEGATION;}
-"|" {return T_BITWISE_OR;}
-"&" {return T_BITWISE_AND;}
-"^" {return T_BITWISE_XOR;}
-"<<" {return T_BITWISE_LSHIFT;}
-">>" {return T_BITWISE_RSHIFT;}
-"**" {return T_POW;}
-"%" {return T_MOD;}
-"+" {return T_ADD;}
-"-" {return T_SUB;}
-"*" {return T_MUL;}
-"/" {return T_DIV;}
-"==" {return T_EQ;}
-"!=" {return T_NE;}
-">=" {return T_GE;}
-"<=" {return T_LE;}
-">" {return T_GT;}
-"<" {return T_LT;}
-"$" {return T_FOLD;}
-"::" {return T_SCOPE_RESOLUTION;}
+"?" {TOKEN; return T_TERNARY_L;}
+":" {TOKEN; return T_TERNARY_R;}
+"!" {TOKEN; return T_LOGICAL_NEGATION;}
+"||" {TOKEN; return T_LOGICAL_OR;}
+"&&" {TOKEN; return T_LOGICAL_AND;}
+"~" {TOKEN; return T_BITWISE_NEGATION;}
+"|" {TOKEN; return T_BITWISE_OR;}
+"&" {TOKEN; return T_BITWISE_AND;}
+"^" {TOKEN; return T_BITWISE_XOR;}
+"<<" {TOKEN; return T_BITWISE_LSHIFT;}
+">>" {TOKEN; return T_BITWISE_RSHIFT;}
+"**" {TOKEN; return T_POW;}
+"%" {TOKEN; return T_MOD;}
+"+" {TOKEN; return T_ADD;}
+"-" {TOKEN; return T_SUB;}
+"*" {TOKEN; return T_MUL;}
+"/" {TOKEN; return T_DIV;}
+"==" {TOKEN; return T_EQ;}
+"!=" {TOKEN; return T_NE;}
+">=" {TOKEN; return T_GE;}
+"<=" {TOKEN; return T_LE;}
+">" {TOKEN; return T_GT;}
+"<" {TOKEN; return T_LT;}
+"$" {TOKEN; return T_FOLD;}
+"::" {TOKEN; return T_SCOPE_RESOLUTION;}
 
   /* Assignment operators. */
 
-"=" {return T_ASSIGN;}
-"||=" {return T_ASSIGN_LOGICAL_OR;}
-"&&=" {return T_ASSIGN_LOGICAL_AND;}
-"|=" {return T_ASSIGN_BITWISE_OR;}
-"&=" {return T_ASSIGN_BITWISE_AND;}
-"^=" {return T_ASSIGN_BITWISE_XOR;}
-"<<=" {return T_ASSIGN_BITWISE_LSHIFT;}
-">>=" {return T_ASSIGN_BITWISE_RSHIFT;}
-"**=" {return T_ASSIGN_POW;}
-"%=" {return T_ASSIGN_MOD;}
-"+=" {return T_ASSIGN_ADD;}
-"-=" {return T_ASSIGN_SUB;}
-"*=" {return T_ASSIGN_MUL;}
-"/=" {return T_ASSIGN_DIV;}
-"++" {return T_INCREMENT;}
-"--" {return T_DECREMENT;}
+"=" {TOKEN; return T_ASSIGN;}
+"||=" {TOKEN; return T_ASSIGN_LOGICAL_OR;}
+"&&=" {TOKEN; return T_ASSIGN_LOGICAL_AND;}
+"|=" {TOKEN; return T_ASSIGN_BITWISE_OR;}
+"&=" {TOKEN; return T_ASSIGN_BITWISE_AND;}
+"^=" {TOKEN; return T_ASSIGN_BITWISE_XOR;}
+"<<=" {TOKEN; return T_ASSIGN_BITWISE_LSHIFT;}
+">>=" {TOKEN; return T_ASSIGN_BITWISE_RSHIFT;}
+"**=" {TOKEN; return T_ASSIGN_POW;}
+"%=" {TOKEN; return T_ASSIGN_MOD;}
+"+=" {TOKEN; return T_ASSIGN_ADD;}
+"-=" {TOKEN; return T_ASSIGN_SUB;}
+"*=" {TOKEN; return T_ASSIGN_MUL;}
+"/=" {TOKEN; return T_ASSIGN_DIV;}
+"++" {TOKEN; return T_INCREMENT;}
+"--" {TOKEN; return T_DECREMENT;}
 
   /* Identifiers and literals. */
 
 true {
-  yang_get_lval(yyscanner)->node = new Node(yyscanner, Node::INT_LITERAL, 1);
+  LVAL = new Node(yyscanner, Node::INT_LITERAL, 1);
   return T_INT_LITERAL;
 }
 false {
-  yang_get_lval(yyscanner)->node = new Node(yyscanner, Node::INT_LITERAL, 0);
+  LVAL = new Node(yyscanner, Node::INT_LITERAL, 0);
   return T_INT_LITERAL;
 }
 {identifier} {
-  yang_get_lval(yyscanner)->node =
-      new Node(yyscanner, Node::IDENTIFIER, yang_get_text(yyscanner));
+  LVAL = new Node(yyscanner, Node::IDENTIFIER, TEXT);
   return T_IDENTIFIER;
 }
 {int_literal} {
-  yang_get_lval(yyscanner)->node =
-      new Node(yyscanner, Node::INT_LITERAL, std::stoi(yang_get_text(yyscanner)));
+  LVAL = new Node(yyscanner, Node::INT_LITERAL, std::stoi(TEXT));
   return T_INT_LITERAL;
 }
 {float_literal} {
-  yang_get_lval(yyscanner)->node =
-      new Node(yyscanner, Node::FLOAT_LITERAL, std::stod(yang_get_text(yyscanner)));
+  LVAL = new Node(yyscanner, Node::FLOAT_LITERAL, std::stod(TEXT));
   return T_FLOAT_LITERAL;
 }
 
   /* Default. */
 
-{default} {return yang_get_text(yyscanner)[0];}
+{default} {TOKEN; return yang_get_text(yyscanner)[0];}

@@ -11,87 +11,108 @@
 namespace yang {
 namespace internal {
 
-Node::Node(scan_t scan, std::size_t line,
-           const std::string& text, node_type type)
+namespace {
+  ParseData& data(scan_t scan)
+  {
+    return *(ParseData*)yang_get_extra(scan);
+  }
+}
+
+Node::Node(scan_t scan, const Node* inner, node_type type)
   : scan(scan)
-  , line(line)
-  , text(text)
+  , left_index(inner->left_tree_index)
+  , right_index(inner->right_tree_index)
+  , left_tree_index(left_index)
+  , right_tree_index(right_index)
   , type(type)
   , int_value(0)
   , float_value(0)
 {
-  ((ParseData*)yang_get_extra(scan))->orphans.insert(this);
+  data(scan).orphans.insert(this);
 }
 
-Node::Node(scan_t scan, node_type type)
-  : scan(scan)
-  , line(yang_get_lineno(scan))
-  , text(yang_get_text(scan) ? yang_get_text(scan) : "")
-  , type(type)
-  , int_value(0)
-  , float_value(0)
-{
-  ((ParseData*)yang_get_extra(scan))->orphans.insert(this);
-}
-
-Node::Node(scan_t scan, node_type type, Node* a)
-  : Node(scan, type)
+Node::Node(scan_t scan, const Node* inner, node_type type, Node* a)
+  : Node(scan, inner, type)
 {
   add(a);
 }
 
-Node::Node(scan_t scan, node_type type, Node* a, Node* b)
-  : Node(scan, type)
+Node::Node(scan_t scan, const Node* inner, node_type type, Node* a, Node* b)
+  : Node(scan, inner, type)
 {
   add(a);
   add(b);
 }
 
-Node::Node(scan_t scan, node_type type, Node* a, Node* b, Node* c)
-  : Node(scan, type)
+Node::Node(scan_t scan, const Node* inner,
+           node_type type, Node* a, Node* b, Node* c)
+  : Node(scan, inner, type)
 {
   add(a);
   add(b);
   add(c);
 }
 
+Node::Node(scan_t scan, node_type type)
+  : scan(scan)
+  , left_index(data(scan).column - yang_get_leng(scan))
+  , right_index(data(scan).column)
+  , left_tree_index(left_index)
+  , right_tree_index(right_index)
+  , type(type)
+  , int_value(0)
+  , float_value(0)
+{
+  data(scan).orphans.insert(this);
+}
+
 Node::Node(scan_t scan, node_type type, yang::int_t value)
   : scan(scan)
-  , line(yang_get_lineno(scan))
-  , text(yang_get_text(scan) ? yang_get_text(scan) : "")
+  , left_index(data(scan).column - yang_get_leng(scan))
+  , right_index(data(scan).column)
+  , left_tree_index(left_index)
+  , right_tree_index(right_index)
   , type(type)
   , int_value(value)
   , float_value(0)
 {
-  ((ParseData*)yang_get_extra(scan))->orphans.insert(this);
+  data(scan).orphans.insert(this);
 }
 
 Node::Node(scan_t scan, node_type type, yang::float_t value)
   : scan(scan)
-  , line(yang_get_lineno(scan))
-  , text(yang_get_text(scan) ? yang_get_text(scan) : "")
+  , left_index(data(scan).column - yang_get_leng(scan))
+  , right_index(data(scan).column)
+  , left_tree_index(left_index)
+  , right_tree_index(right_index)
   , type(type)
   , int_value(0)
   , float_value(value)
 {
-  ((ParseData*)yang_get_extra(scan))->orphans.insert(this);
+  data(scan).orphans.insert(this);
 }
 
 Node::Node(scan_t scan, node_type type, const std::string& value)
   : scan(scan)
-  , line(yang_get_lineno(scan))
-  , text(yang_get_text(scan) ? yang_get_text(scan) : "")
+  , left_index(data(scan).column - yang_get_leng(scan))
+  , right_index(data(scan).column)
+  , left_tree_index(left_index)
+  , right_tree_index(right_index)
   , type(type)
   , int_value(0)
   , float_value(0)
   , string_value(value)
 {
-  ((ParseData*)yang_get_extra(scan))->orphans.insert(this);
+  data(scan).orphans.insert(this);
 }
 
 Node* Node::clone(bool clone_children) const
 {
-  Node* node = new Node(scan, line, text, type);
+  Node* node = new Node(scan, type);
+  node->left_index = left_index;
+  node->right_index = right_index;
+  node->left_tree_index = left_tree_index;
+  node->right_tree_index = right_tree_index;
   node->int_value = int_value;
   node->float_value = float_value;
   node->string_value = string_value;
@@ -120,12 +141,38 @@ void Node::add_front(Node* node)
 {
   ((ParseData*)yang_get_extra(scan))->orphans.erase(node);
   children.insert(children.begin(), std::unique_ptr<Node>(node));
+  left_tree_index = std::min(left_tree_index, node->left_tree_index);
+  right_tree_index = std::max(right_tree_index, node->right_tree_index);
 }
 
 void Node::add(Node* node)
 {
   ((ParseData*)yang_get_extra(scan))->orphans.erase(node);
   children.push_back(std::unique_ptr<Node>(node));
+  left_tree_index = std::min(left_tree_index, node->left_tree_index);
+  right_tree_index = std::max(right_tree_index, node->right_tree_index);
+}
+
+void Node::set_inner_bounds(const Node* node)
+{
+  left_index = node->left_tree_index;
+  right_index = node->right_tree_index;
+  left_tree_index = std::min(left_tree_index, left_index);
+  right_tree_index = std::max(right_tree_index, right_index);
+}
+
+void Node::extend_inner_bounds(const Node* node)
+{
+  left_index = std::min(left_tree_index, node->left_tree_index);
+  right_index = std::max(right_tree_index, node->right_tree_index);
+  left_tree_index = std::min(left_tree_index, node->left_tree_index);
+  right_tree_index = std::max(right_tree_index, node->right_tree_index);
+}
+
+void Node::extend_bounds(const Node* node)
+{
+  left_tree_index = std::min(left_tree_index, node->left_tree_index);
+  right_tree_index = std::max(right_tree_index, node->right_tree_index);
 }
 
 std::string node_op_string(Node::node_type t)
@@ -183,31 +230,88 @@ std::string node_op_string(Node::node_type t)
       "unknown operator";
 }
 
-std::string format_error(
-    std::size_t line, const std::string& token, const std::string& message)
+ParseData::ParseData(const std::string& name, const std::string& contents)
+  : name(name)
+  , column(0)
+  , parser_output(nullptr)
 {
-  bool replace = false;
-  std::string t = token;
-  std::size_t it;
-  while ((it = t.find('\n')) != std::string::npos) {
-    t.replace(it, 1 + it, "");
-    replace = true;
+  lines.emplace_back();
+  std::size_t line_position = 0;
+
+  for (std::size_t i = 0; i < contents.length(); ++i) {
+    char c = contents[i];
+    char_to_line.push_back(lines.size() - 1);
+    char_to_line_position.push_back(line_position);
+    ++line_position;
+
+    if (c == '\n') {
+      lines.emplace_back();
+      line_position = 0;
+      continue;
+    }
+    if (c == '\t') {
+      lines.back() += " ";
+      continue;
+    }
+    lines.back() += c;
   }
-  while ((it = t.find('\r')) != std::string::npos) {
-    t.replace(it, 1 + it, "");
-    replace = true;
-  }
-  while ((it = t.find('\t')) != std::string::npos) {
-    t.replace(it, 1 + it, " ");
-  }
-  if (replace) {
-    --line;
-  }
+  char_to_line.push_back(lines.size() - 1);
+  char_to_line_position.push_back(line_position);
+}
+
+void ParseData::add_error(
+    std::size_t left_index, std::size_t right_index,
+    std::size_t left_tree_index, std::size_t right_tree_index,
+    const std::string& message)
+{
+  auto left_tree_line = char_to_line[left_tree_index];
+  auto right_tree_line = char_to_line[right_tree_index - 1];
+  auto left_line = char_to_line[left_index];
+  auto right_line = char_to_line[right_index - 1];
+  auto left = char_to_line_position[left_index];
+  auto right = char_to_line_position[right_index - 1];
+  auto left_tree = char_to_line_position[left_tree_index];
+  auto right_tree = char_to_line_position[right_tree_index - 1];
 
   std::stringstream ss;
-  ss << "Error at line " << line <<
-      ", near `" << t << "`:\n\t" << message;
-  return ss.str();
+
+  ss << "error in program `" + name + "`, at ";
+  if (left_tree_line == right_tree_line) {
+    ss << "line " << (1 + left_tree_line);
+  }
+  else {
+    ss << "lines " << (1 + left_tree_line) << "-" << (1 + right_tree_line);
+  }
+
+  ss << ":\n\t" << message << "\n";
+  std::size_t length = 0;
+  for (std::size_t i = left_tree_line; i <= right_tree_line; ++i) {
+    ss << lines[i] << "\n";
+    length = std::max(length, lines[i].length());
+  }
+
+  for (std::size_t i = 0; i < length; ++i) {
+    bool err = right_line - left_line > 1;
+    bool err_tree = right_tree_line - left_tree_line > 1;
+
+    if (right_line - left_line == 1) {
+      err = i >= left || i <= right;
+    }
+    if (right_tree_line - left_tree_line == 1) {
+      err_tree = i >= left_tree || i <= right_tree;
+    }
+
+    if (right_line == left_line) {
+      err = i >= left && i <= right;
+    }
+    if (right_tree_line == left_tree_line) {
+      err_tree = i >= left_tree && i <= right_tree;
+    }
+
+    ss << (err ? "^" : err_tree ? "~" : " ");
+  }
+  ss << "\n";
+  errors.push_back(ss.str());
 }
 
 // End namespace yang::internal.

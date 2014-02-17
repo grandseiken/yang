@@ -4,13 +4,30 @@
 //============================================================================//
 TEST_F(YangTest, FailureTest)
 {
-  auto& success_prog = program_suppress_errors("works = void() {};");
+  auto& success_prog = program_suppress_errors("works = void() {}");
   EXPECT_TRUE(success_prog.success());
   EXPECT_NO_THROW(instance(success_prog));
-  auto& failure_prog = program_suppress_errors("broken;");
+  auto& failure_prog = program_suppress_errors("broken");
   EXPECT_FALSE(failure_prog.success());
   EXPECT_THROW(instance(failure_prog), runtime_error);
 }
+
+const std::string TestMultilineErrorStrA = R"(
+export x = int()
+{
+  if (1) {
+    return 1;
+  }
+}
+)";
+
+const std::string TestMultilineErrorStrB = R"(
+x = void()
+{
+  return 0 +
+  0.;
+}
+)";
 
 TEST_F(YangTest, ErrorTest)
 {
@@ -52,6 +69,7 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() };");
   err("x = () {};");
   err("x = void() {if ();}");
+  err("x = void() {0, 0;}");
 
   // Type / expression mismatches.
   err("x = 0() {}");
@@ -82,6 +100,7 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {if (return 0;);}");
   err("x = void() {for (0; (0, 0); 0);}");
   err("x = void() {while (x);}");
+  err("x = void() {do; while((0, 0));}");
   err("x = void() {break;}");
   err("x = void() {continue;}");
   err("x = void() {int::foo();}");
@@ -119,7 +138,8 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {1. >> 1.;}");
   err("x = void() {1. + (1). + 1;}");
   err("x = void() {(1. == 1.) + 1.;}");
-  err("x = void() {$==(1., 1.) * 1;}");
+  err("x = void() {$==(1., 1.) * 1.;}");
+  err("x = void() {$&&(1., 1.);}");
   err("x = void() {!1.;}");
   err("x = void() {-1 - 1.;}");
   err("x = void() {(1, 1, 1, 1.);}");
@@ -168,4 +188,9 @@ TEST_F(YangTest, ErrorTest)
   err("global if (var a = 0); x = void() {a;}");
   err("global if (1) {var a = 0;} x = void() {a;}");
   err("global void() {var a = 0;}; x = void() {a;}");
+
+  // Some multi-line errors, just for fun.
+  err(TestMultilineErrorStrA);
+  err(TestMultilineErrorStrB);
+  err("x = void()\n{\n\treturn;  \n}");
 }

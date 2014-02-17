@@ -23,13 +23,13 @@ namespace yang {
 namespace internal {
 
 StaticChecker::StaticChecker(
-    const yang::Context& context, std::string* error_output,
+    const yang::Context& context, ParseData& data,
     symbol_frame& functions_output, symbol_frame& globals_output)
   : _errors(false)
   , _metadata(Type::VOID)
   , _symbol_table(Type::VOID)
   , _context(context)
-  , _error_output(error_output)
+  , _data(data)
   , _functions_output(functions_output)
   , _globals_output(globals_output)
 {
@@ -300,7 +300,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       Type t(Type::FUNCTION, results[0]);
       for (std::size_t i = 1; i < results.size(); ++i) {
         if (!results[i].not_void()) {
-          error(node, "function type with `void` argument type");
+          error(*node.children[i], "function type with `void` argument type");
         }
         if (results[i].is_error()) {
           err = true;
@@ -318,7 +318,9 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     case Node::GLOBAL_ASSIGN:
     {
       if (node.children[0]->type != Node::IDENTIFIER) {
-        error(node, "assignments must be directly to an identifier");
+        if (!results[0].is_error()) {
+          error(node, "assignments must be directly to an identifier");
+        }
         return Type::VOID;
       }
       const std::string& s = node.children[0]->string_value;
@@ -376,15 +378,17 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
       const Type& current_return = current_return_type();
       if (!t.is(current_return)) {
-        error(node, "returning " + t.string() + " from " +
-                    current_return.string() + " function");
+        const auto& n = node.type == Node::RETURN_STMT ?
+            *node.children[0] : node;
+        error(n, "returning " + t.string() + " from " +
+                 current_return.string() + " function");
       }
       return t;
     }
     case Node::IF_STMT:
     {
       if (!results[0].is(Type::INT)) {
-        error(node, "branching on " + rs[0]);
+        error(*node.children[0], "branching on " + rs[0]);
       }
       // An IF_STMT definitely returns a value only if both branches definitely
       // return a value.
@@ -395,7 +399,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     case Node::DO_WHILE_STMT:
     case Node::FOR_STMT:
       if (!results[1].is(Type::INT)) {
-        error(node, "branching on " + rs[1]);
+        error(*node.children[1], "branching on " + rs[1]);
       }
       return Type::VOID;
     case Node::BREAK_STMT:
@@ -518,7 +522,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
 
       if (results[0].is_vector() && !err &&
-          (!results[1].is_vector() || results[0].count() != results[1].count())) {
+          (!results[1].is_vector() ||
+           results[0].count() != results[1].count())) {
         error(node, "length-" + std::to_string(results[0].count()) +
                     " vectorised branch applied to " +
                     rs[1] + " and " + rs[2]);
@@ -661,7 +666,9 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     case Node::ASSIGN:
     {
       if (node.children[0]->type != Node::IDENTIFIER) {
-        error(node, "assignments must be directly to an identifier");
+        if (!results[0].is_error()) {
+          error(node, "assignments must be directly to an identifier");
+        }
         return results[1];
       }
       const std::string& s = node.children[0]->string_value;
@@ -679,10 +686,6 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         return results[1];
       }
       Type& t = _symbol_table[s];
-      if (t == Type::ENCLOSING_FUNCTION) {
-        error(node, "reference to `" + s + "` in enclosing function");
-        return Type::ERROR;
-      }
       if (!t.is(results[1])) {
         error(node, rs[1] + " assigned to `" + s + "` of type " + t.string());
         t = results[1];
@@ -873,13 +876,9 @@ void StaticChecker::error(const Node& node, const std::string& message)
   if (_current_function.length()) {
     m = "in function `" + _current_function + "`: " + m;
   }
-  std::string full_message = format_error(node.line, node.text, m);
-  if (_error_output) {
-    *_error_output += full_message + '\n';
-  }
-  else {
-    log_err(full_message);
-  }
+  _data.add_error(
+      node.left_index, node.right_index,
+      node.left_tree_index, node.right_tree_index, m);
 }
 
 // End namespace yang::internal.

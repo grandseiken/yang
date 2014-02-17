@@ -17,12 +17,13 @@ namespace yang {
 class Context;
 
 namespace internal {
+struct ParseData;
 
 class StaticChecker : public ConstAstWalker<Type> {
 public:
 
   typedef std::unordered_map<std::string, yang::Type> symbol_frame;
-  StaticChecker(const yang::Context& context, std::string* error_output,
+  StaticChecker(const yang::Context& context, ParseData& data,
                 symbol_frame& functions_output, symbol_frame& globals_output);
   ~StaticChecker();
 
@@ -78,7 +79,7 @@ private:
   SymbolTable<std::string, Type> _symbol_table;
 
   const yang::Context& _context;
-  std::string* _error_output;
+  ParseData& _data;
   symbol_frame& _functions_output;
   symbol_frame& _globals_output;
 

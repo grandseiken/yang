@@ -106,14 +106,16 @@ struct Node {
   // Child nodes passed to constructors or add transfer ownership, and are
   // destroyed when the parent is destroyed. These would take explicit
   // unique_ptr<Node> parameters but for sake of brevity in the parser.
-  Node(scan_t scan, std::size_t line,
-       const std::string& text, node_type type);
 
+  // Construct nodes with source indices based on an inner node.
+  Node(scan_t scan, const Node* inner, node_type type);
+  Node(scan_t scan, const Node* inner, node_type type, Node* a);
+  Node(scan_t scan, const Node* inner, node_type type, Node* a, Node* b);
+  Node(scan_t scan, const Node* inner,
+       node_type type, Node* a, Node* b, Node* c);
+
+  // Construct nodes with source indices based on current scan position.
   Node(scan_t scan, node_type type);
-  Node(scan_t scan, node_type type, Node* a);
-  Node(scan_t scan, node_type type, Node* a, Node* b);
-  Node(scan_t scan, node_type type, Node* a, Node* b, Node* c);
-
   Node(scan_t scan, node_type type, yang::int_t value);
   Node(scan_t scan, node_type type, yang::float_t value);
   Node(scan_t scan, node_type type, const std::string& value);
@@ -123,14 +125,20 @@ struct Node {
 
   void add_front(Node* node);
   void add(Node* node);
+  void set_inner_bounds(const Node* node);
+  void extend_inner_bounds(const Node* node);
+  void extend_bounds(const Node* node);
 
-  // Pointer to the Flex scanner structure.
+  // Pointer to the Flex scanner data structure.
   scan_t scan;
 
   // Information about the location of this Node in the source text, for
   // diagnostic purposes.
-  std::size_t line;
-  std::string text;
+  std::size_t left_index;
+  std::size_t right_index;
+  // Position of entire substree, rather than just the token.
+  std::size_t left_tree_index;
+  std::size_t right_tree_index;
 
   // Type and children.
   node_type type;
@@ -150,12 +158,28 @@ struct Node {
 // Get the human-readable text of an operator.
 std::string node_op_string(Node::node_type t);
 
-// Make an error look nice for printing.
-std::string format_error(
-    std::size_t line, const std::string& token, const std::string& message);
-
 struct ParseData {
-  Node* parser_output = nullptr;
+  ParseData(const std::string& name, const std::string& contents);
+
+  // Make an error look nice for printing.
+  void add_error(std::size_t left_index, std::size_t right_index,
+                 std::size_t left_tree_index, std::size_t right_tree_index,
+                 const std::string& message);
+
+  // User-supplied name of the program we're parsing.
+  std::string name;
+  // Current character count in lexer.
+  std::size_t column;
+
+  // Precomputed lookup data for error-printing. Respectively, we have: a map
+  // from column number to line number; a map from column number to position
+  // within that line; and a vector of split lines.
+  std::vector<std::size_t> char_to_line;
+  std::vector<std::size_t> char_to_line_position;
+  std::vector<std::string> lines;
+
+  // Parse output.
+  Node* parser_output;
   std::vector<std::string> errors;
 
   // If parsing aborts half-way due to a syntax error, Nodes allocated by the
