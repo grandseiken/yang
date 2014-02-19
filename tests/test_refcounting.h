@@ -4,7 +4,7 @@
 //============================================================================//
 const std::string TestFunctionRefCountingStr = R"(
 export global {
-  var noop = int()
+  const noop = int()
   {
     return 0;
   };
@@ -42,7 +42,7 @@ export pass_through = int()(int()() x)
 
 export store_in_local = void()
 {
-  var temp = stored;
+  const temp = stored;
   var i = 0;
   for (const v = temp; i < 10; ++i) {
     const t = v;
@@ -60,7 +60,7 @@ export store_in_local = void()
 
 export store_in_local_callout = void(void()() x)
 {
-  var temp = stored;
+  const temp = stored;
   if (1) {
     const t = stored;
     t;
@@ -86,7 +86,7 @@ export store_in_local_callout = void(void()() x)
 
 export overwrite_and_return = int()()
 {
-  var temp = stored;
+  const temp = stored;
   stored = noop;
   return temp;
 }

@@ -61,13 +61,6 @@ Program::Program(const Context& context, const std::string& name,
     //
     // This sort of structured error-reporting would also let us unit-test
     // errors more properly.
-    //
-    // TODO: warnings for:
-    // - var locals/globals that are never written to;
-    // - dead code;
-    // - no-op code, maybe? For example: if-statements with empty-statement
-    //   bodies, void functions which don't modify state somehow (maybe that's
-    //   hard/halting problem to detect, just thinking up things).
     for (const std::string& warning : data.warnings) {
       print(warning);
     }

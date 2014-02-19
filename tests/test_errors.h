@@ -211,11 +211,36 @@ TEST_F(YangTest, WarningTest)
         "Should have " << count << " warning(s):\n" << str << std::endl;
   };
 
+  // Avoid warnings.
   warn("export x = void(int) {}", 0);
+  warn("export x = void(int a) {a;}", 0);
+  warn("export x = void() {const a = 0; a;}", 0);
+  warn("export x = void() {var a = 0; a = a;}", 0);
+  warn("export global {var a = 0; const b = 0;}", 0);
+  warn("export global {var f = void() {};}", 0);
+
+  // Warnings.
   warn("export x = void() {const a = 0;}", 1);
   warn("export x = void() {var a = 0; a = 1;}", 1);
   warn("export x = void(int a) {}", 1);
   warn("x = void() {}", 1);
   warn("global {const a = 0;}", 1);
   warn("global {var a = 0;} export x = void() {a = 1;}", 1);
+  warn("export x = void() {var f = void() {}; f;}", 1);
+  warn("global {var a = 0;}", 1);
+
+  // Empty if-statements.
+  warn("export x = void() {if (1);}", 1);
+  warn("export x = void() {if (1) 0; else;}", 1);
+  warn("export x = void() {if (1); else;}", 1);
+  warn("export x = void() {if (1); else 0;}", 0);
+
+  // Dead code.
+  warn("export x = void() {return; 0;}", 1);
+  warn("export x = int() {return 0; return 0;}", 1);
+  warn("export x = void() {if (1) {return; return;}}", 1);
+  warn("export x = void() {if (1) {return; return;} return; return;}", 2);
+  warn("export x = void() {if (1) return; else return; return;}", 1);
+  warn("export x = void() {if (1) return; else {return; return;} return;}", 2);
+  warn("export x = void() {if (1) return; return;}", 0);
 }

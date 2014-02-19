@@ -100,8 +100,12 @@ private:
   // It has to be a pair, rather than removing from the table on finding a
   // reference, or else a reference might remove a warning about an unrelated
   // symbol from an outer scope.
-  typedef std::pair<const Node*, bool> unreferenced_pair;
-  SymbolTable<std::string, unreferenced_pair> _unreferenced_warnings;
+  struct unreferenced_t {
+    const Node* declaration;
+    bool warn_writes;
+    bool warn_reads;
+  };
+  SymbolTable<std::string, unreferenced_t> _unreferenced_warnings;
 
 };
 

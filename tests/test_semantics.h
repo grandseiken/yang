@@ -19,7 +19,7 @@ export daft_fib = int(int n)
 }
 
 export global {
-  var global_inner = int()
+  const global_inner = int()
   {
     return 42;
   }();
@@ -65,17 +65,17 @@ export shadowing = int(int a)
 {
   var shadowing = 0;
   {
-    var a = 0;
-    while ((var a = 4) && !shadowing) {
+    const a = 0;
+    while ((const a = 4) && !shadowing) {
       shadowing += a;
     }
     if (a == 0) {
-      var a = 1;
+      const a = 1;
       shadowing += a;
     }
   }
   shadowing += a;
-  var a = 8;
+  const a = 8;
   shadowing += a;
   return shadowing;
 }

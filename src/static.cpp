@@ -103,7 +103,7 @@ void StaticChecker::preorder(const Node& node)
       if (node.children[0]->type == Node::IDENTIFIER) {
         add_symbol(node, node.children[0]->string_value, Type::VOID, false);
       }
-      // Fallthrough to override identifiers as non-referencing.
+      break;
     case Node::ASSIGN:
       _metadata.push();
       _metadata.add(ASSIGN_LHS_CONTEXT, Type::VOID);
@@ -210,9 +210,10 @@ void StaticChecker::infix(const Node& node, const result_list& results)
           if (arg_names.find(name) != arg_names.end()) {
             error(*ptr, "duplicate argument name `" + name + "`");
           }
-          add_symbol(*ptr, name, t.elements(elem));
           // Arguments are implicitly const!
-          _symbol_table[name].set_const(true);
+          Type u = t.elements(elem);
+          u.set_const(true);
+          add_symbol(*ptr, name, u);
           arg_names.insert(name);
           ++elem;
         }
@@ -230,6 +231,7 @@ void StaticChecker::infix(const Node& node, const result_list& results)
     case Node::ASSIGN_CONST:
       // Remove temporary reference to identifier on the left.
       pop_symbol_tables();
+      break;
     case Node::ASSIGN:
       // Remove temporary treatment of identifier as non-referencing for warning
       // purposes.
@@ -254,6 +256,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     rs.push_back(t.string());
   }
 
+
   // Pop the correct tables before returning an error. Make sure to do this
   // before checking for context error; otherwise we might still think we're
   // in a type-context when we aren't.
@@ -264,7 +267,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
   }
   else if (node.type == Node::FUNCTION) {
     // FUNCTION needs to do some logic before popping the tables.
-    if (!current_return_type().is_void() && !results[1].not_void()) {
+    if (!current_return_type().is_void() &&
+        (results[1].is_error() || !results[1].not_void())) {
       error(node, "not all code paths return a value");
     }
     pop_symbol_tables();
@@ -281,6 +285,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     _metadata.pop();
   }
 
+  // See preorder for error.
   bool context_err = !valid_all_contexts(node) &&
       inside_type_context() != is_type_expression(node);
   if (context_err) {
@@ -348,8 +353,9 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       // automatically assumed to be referenced.
       if (!t.is_error() && node.int_value) {
         _functions_output.emplace(s, t.external(true));
-        _unreferenced_warnings[s].second = false;
+        _unreferenced_warnings[s].warn_reads = false;
       }
+      _unreferenced_warnings[s].declaration = &node;
       _current_function = "";
       return Type::VOID;
     }
@@ -368,20 +374,29 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
 
     case Node::BLOCK:
     {
+      // Check for dead code.
+      bool dead = false;
+      for (std::size_t i = 0; i < results.size(); ++i) {
+        if (dead) {
+          error(*node.children[i], "dead code", false);
+          break;
+        }
+        dead |= !results[i].is_error();
+      }
       // The code for RETURN_STMT checks return values against the function's
       // return type. We don't really care what types might be here, just any
       // non-void as a marker for ensuring all code paths return a value.
       for (const Type& t : results) {
-        if (t.not_void()) {
+        if (!t.is_error()) {
           return t;
         }
       }
-      return Type::VOID;
+      return Type::ERROR;
     }
 
     case Node::EMPTY_STMT:
     case Node::EXPR_STMT:
-      return Type::VOID;
+      return Type::ERROR;
     case Node::RETURN_VOID_STMT:
     case Node::RETURN_STMT:
     {
@@ -405,28 +420,36 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       if (!results[0].is(Type::INT)) {
         error(*node.children[0], "branching on " + rs[0]);
       }
+      if (results.size() > 2) {
+        if (node.children[2]->type == Node::EMPTY_STMT) {
+          error(*node.children[2], "empty statement in `else`", false);
+        }
+      }
+      else if (node.children[1]->type == Node::EMPTY_STMT) {
+        error(*node.children[1], "empty statement in `if`", false);
+      }
       // An IF_STMT definitely returns a value only if both branches definitely
       // return a value.
       Type left = results[1];
-      Type right = results.size() > 2 ? results[2] : Type::VOID;
-      return left.not_void() && right.not_void() ? left : Type::VOID;
+      Type right = results.size() > 2 ? results[2] : Type::ERROR;
+      return !left.is_error() && !right.is_error() ? left : Type::ERROR;
     }
     case Node::DO_WHILE_STMT:
     case Node::FOR_STMT:
       if (!results[1].is(Type::INT)) {
         error(*node.children[1], "branching on " + rs[1]);
       }
-      return Type::VOID;
+      return Type::ERROR;
     case Node::BREAK_STMT:
       if (!_metadata.has(LOOP_BODY)) {
         error(node, "`break` outside of loop body");
       }
-      return Type::VOID;
+      return Type::ERROR;
     case Node::CONTINUE_STMT:
       if (!_metadata.has(LOOP_BODY)) {
         error(node, "`continue` outside of loop body");
       }
-      return Type::VOID;
+      return Type::ERROR;
 
     case Node::SCOPE_RESOLUTION:
     {
@@ -510,8 +533,11 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
                     "` in enclosing function");
         return Type::ERROR;
       }
-      if (!_metadata.has(ASSIGN_LHS_CONTEXT)) {
-        _unreferenced_warnings[node.string_value].second = false;
+      if (_metadata.has(ASSIGN_LHS_CONTEXT)) {
+        _unreferenced_warnings[node.string_value].warn_writes = false;
+      }
+      else {
+        _unreferenced_warnings[node.string_value].warn_reads = false;
       }
       return _symbol_table[node.string_value];
     }
@@ -714,7 +740,6 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
       else if (t.is_const()) {
         error(node, "assignment to `" + s + "` of type " + t.string());
-        t.set_const(false);
       }
       return results[1];
     }
@@ -733,10 +758,15 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
 
       auto add_global = [&]()
       {
+        bool exported = _metadata.has(EXPORT_GLOBAL);
         const Type& t = _symbol_table.get(s, 0);
         if (!t.is_error()) {
-          bool exported = _metadata.has(EXPORT_GLOBAL);
           _globals_output.emplace(s, t.external(exported));
+        }
+        if (exported) {
+          auto& t = _unreferenced_warnings.get(s, 0);
+          t.warn_writes = false;
+          t.warn_reads = false;
         }
       };
       bool global = !inside_function() && _symbol_table.size() <= 3;
@@ -746,7 +776,16 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         // hack. But, we may need to make it non-const and enter it in the
         // global symbol table.
         std::size_t index = inside_function() * (_symbol_table.size() - 1);
-        _symbol_table.get(s, index).set_const(node.type == Node::ASSIGN_CONST);
+        std::size_t warn_index =
+            inside_function() * (_unreferenced_warnings.size() - 1);
+
+        auto& t = _unreferenced_warnings.get(s, warn_index);
+        t.declaration = &node;
+        if (node.type == Node::ASSIGN_VAR &&
+            _symbol_table.get(s, index).is_const()) {
+          _symbol_table.get(s, index).set_const(false);
+          t.warn_writes = true;
+        }
         if (global) {
           add_global();
         }
@@ -871,14 +910,23 @@ void StaticChecker::pop_symbol_tables()
 {
   _symbol_table.pop();
 
-  typedef std::pair<std::string, std::pair<const Node*, bool>> pair;
+  typedef std::pair<std::string, unreferenced_t> pair;
   std::vector<pair> unreferenced;
   std::size_t size = _unreferenced_warnings.size();
   _unreferenced_warnings.get_symbols(unreferenced, size - 1, size);
 
   for (const auto& p : unreferenced) {
-    if (p.second.second) {
-      error(*p.second.first, "symbol `" + p.first + "` is never read", false);
+    if (p.second.warn_writes && p.second.warn_reads) {
+      error(*p.second.declaration,
+            "symbol `" + p.first + "` is never referenced", false);
+    }
+    else if (p.second.warn_writes) {
+      error(*p.second.declaration,
+            "symbol `" + p.first + "` is never written to", false);
+    }
+    else if (p.second.warn_reads) {
+      error(*p.second.declaration,
+            "symbol `" + p.first + "` is never read", false);
     }
   }
   _unreferenced_warnings.pop();
@@ -890,7 +938,10 @@ void StaticChecker::add_symbol(
 {
   _symbol_table.add(name, index, type);
   if (unreferenced_warning) {
-    _unreferenced_warnings.add(name, index, std::make_pair(&node, true));
+    // We don't care if there are no writes to a const symbol, so we just set
+    // warn_writes to false.
+    _unreferenced_warnings.add(
+        name, index, {&node, !type.is_const(), true});
   }
 }
 

@@ -95,7 +95,7 @@ g = int(int a)
 
 // Avoid warnings.
 global {
-  a; b; c; d; g;
+  a = a; b; c = c; d; g;
 }
 )";
 
