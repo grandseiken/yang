@@ -16,6 +16,8 @@ template<typename K, typename V>
 class SymbolTable {
 public:
 
+  typedef std::pair<K, V> pair;
+
   SymbolTable();
   explicit SymbolTable(const V& default_value);
 
@@ -25,7 +27,7 @@ public:
   // Depth of frames in the symbol table. Guaranteed to be at least 1.
   std::size_t size() const;
 
-  // Add or remove from the top frame.
+  // Add to the top frame, or remove from the top frame in which it appears.
   void add(const K& symbol, const V& v);
   void remove(const K& symbol);
 
@@ -38,7 +40,7 @@ public:
   bool has(const K& symbol, std::size_t frame) const;
 
   // Get list of symbols in a particular frame-range [min_frame, max_frame).
-  void get_symbols(std::unordered_set<K>& output,
+  void get_symbols(std::vector<pair>& output,
                    std::size_t min_frame, std::size_t max_frame) const;
 
   // Get index of the topmost frame in which the symbol is defined.
@@ -100,7 +102,13 @@ void SymbolTable<K, V>::add(const K& symbol, const V& v)
 template<typename K, typename V>
 void SymbolTable<K, V>::remove(const K& symbol)
 {
-  _stack.back().erase(symbol);
+  for (auto it = _stack.rbegin(); it != _stack.rend(); ++it) {
+    auto jt = it->find(symbol);
+    if (jt != it->end()) {
+      it->erase(jt);
+      return;
+    }
+  }
 }
 
 template<typename K, typename V>
@@ -138,12 +146,12 @@ bool SymbolTable<K, V>::has(const K& symbol, std::size_t frame) const
 
 template<typename K, typename V>
 void SymbolTable<K, V>::get_symbols(
-    std::unordered_set<K>& output,
+    std::vector<pair>& output,
     std::size_t min_frame, std::size_t max_frame) const
 {
   for (std::size_t i = min_frame; i < max_frame && i < size(); ++i) {
     for (const auto& pair : _stack[i]) {
-      output.insert(pair.first);
+      output.push_back(pair);
     }
   }
 }

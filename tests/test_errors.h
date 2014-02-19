@@ -35,10 +35,11 @@ TEST_F(YangTest, ErrorTest)
   auto err = [&](const std::string& str)
   {
 #ifdef DEBUG
-    EXPECT_FALSE(program(ctxt, str).success()) <<
+    auto& prog = program(ctxt, str, true);
 #else
-    EXPECT_FALSE(program_suppress_errors(ctxt, str).success()) <<
+    auto& prog = program_suppress_errors(ctxt, str);
 #endif
+    EXPECT_FALSE(prog.success()) <<
         "Should fail to compile:\n" << str << std::endl;
   };
 
@@ -82,7 +83,6 @@ TEST_F(YangTest, ErrorTest)
   err("int = void() {}");
   err("global {return 0;}");
   err("x = void {}");
-  err("x = void(int) {}");
   err("x = void(int a, int a) {}");
   err("x = void(void a) {}");
   err("x = void() {return 0;}");
@@ -183,7 +183,7 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {do 0; while (var a = 0); a;}");
   err("x = void() {for (0; 0; var a = 0) {a;}}");
   err("x = void() {var a = a;}");
-  err("x = void() {{var a = a;} a;}");
+  err("x = void() {{var a = 0;} a;}");
   err("global{{const a = 0;}} x = void() {a;}");
   err("global if (var a = 0); x = void() {a;}");
   err("global if (1) {var a = 0;} x = void() {a;}");
@@ -193,4 +193,29 @@ TEST_F(YangTest, ErrorTest)
   err(TestMultilineErrorStrA);
   err(TestMultilineErrorStrB);
   err("x = void()\n{\n\treturn;  \n}");
+}
+
+TEST_F(YangTest, WarningTest)
+{
+  auto& ctxt = context();
+  auto warn = [&](const std::string& str, std::size_t count)
+  {
+#ifdef DEBUG
+    auto& prog = program(ctxt, str, true);
+#else
+    auto& prog = program_suppress_errors(ctxt, str);
+#endif
+    EXPECT_TRUE(prog.success()) <<
+        "Should compile successfully:\n" << str << std::endl;
+    EXPECT_EQ(prog.get_warning_count(), count) <<
+        "Should have " << count << " warning(s):\n" << str << std::endl;
+  };
+
+  warn("export x = void(int) {}", 0);
+  warn("export x = void() {const a = 0;}", 1);
+  warn("export x = void() {var a = 0; a = 1;}", 1);
+  warn("export x = void(int a) {}", 1);
+  warn("x = void() {}", 1);
+  warn("global {const a = 0;}", 1);
+  warn("global {var a = 0;} export x = void() {a = 1;}", 1);
 }

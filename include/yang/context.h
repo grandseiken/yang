@@ -93,7 +93,6 @@
 // complicated trampolining back and forth).
 // TODO: vectorised assignment, or pattern-matching assignment? Also, indexed
 // assignment.
-// TODO: warnings: for example, unused variables.
 // TODO: code hot-swapping. Careful with pointer values (e.g. functions) in
 // global data struct which probably need to be left as default values.
 // TODO: possibly allow ref-counted user types. Set up some template that

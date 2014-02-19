@@ -48,13 +48,22 @@ private:
   bool valid_all_contexts(const Node& node) const;
   bool inside_type_context() const;
 
+  // Symbol table management that also tracks unreferenced symbols for warnings.
+  void push_symbol_tables();
+  void pop_symbol_tables();
+  void add_symbol(const Node& node, const std::string& name, std::size_t index,
+                  const Type& type, bool unreferenced_warning = true);
+  void add_symbol(const Node& node, const std::string& name, const Type& type,
+                  bool unreferenced_warning = true);
+
   bool use_function_immediate_assign_hack(const Node& node) const;
   void add_symbol_checking_collision(
-      const Node& node, const std::string& name, const Type& type);
+      const Node& node, const std::string& name, const Type& type,
+      bool unreferenced_warning = true);
   void add_symbol_checking_collision(
       const Node& node, const std::string& name,
-      std::size_t index, const Type& type);
-  void error(const Node& node, const std::string& message);
+      std::size_t index, const Type& type, bool unreferenced_warning = true);
+  void error(const Node& node, const std::string& message, bool error = true);
 
   struct function {
     Type return_type;
@@ -72,6 +81,7 @@ private:
     TYPE_EXPR_CONTEXT,
     ERR_EXPR_CONTEXT,
     CALLEE_CONTEXT,
+    ASSIGN_LHS_CONTEXT,
   };
   friend std::hash<metadata>;
 
@@ -82,6 +92,16 @@ private:
   ParseData& _data;
   symbol_frame& _functions_output;
   symbol_frame& _globals_output;
+
+  // We can store a bit indicating whether a symbol has been referenced
+  // since it was defined here, for the purposes of warning about unused
+  // constructs.
+  //
+  // It has to be a pair, rather than removing from the table on finding a
+  // reference, or else a reference might remove a warning about an unrelated
+  // symbol from an outer scope.
+  typedef std::pair<const Node*, bool> unreferenced_pair;
+  SymbolTable<std::string, unreferenced_pair> _unreferenced_warnings;
 
 };
 

@@ -160,11 +160,11 @@ std::string node_op_string(Node::node_type t);
 
 struct ParseData {
   ParseData(const std::string& name, const std::string& contents);
-
-  // Make an error look nice for printing.
-  void add_error(std::size_t left_index, std::size_t right_index,
-                 std::size_t left_tree_index, std::size_t right_tree_index,
-                 const std::string& message);
+  // Format a nice error or warning string for printing.
+  std::string format_error(
+      std::size_t left_index, std::size_t right_index,
+      std::size_t left_tree_index, std::size_t right_tree_index,
+      const std::string& message, bool error = true);
 
   // User-supplied name of the program we're parsing.
   std::string name;
@@ -181,6 +181,7 @@ struct ParseData {
   // Parse output.
   Node* parser_output;
   std::vector<std::string> errors;
+  std::vector<std::string> warnings;
 
   // If parsing aborts half-way due to a syntax error, Nodes allocated by the
   // parser will leak. To avoid this, we keep a set of Nodes which have been

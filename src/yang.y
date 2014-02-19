@@ -16,7 +16,7 @@ int yang_error(yyscan_t scan, const char* message)
   ParseData* data = (ParseData*)yang_get_extra(scan);
   std::size_t left = data->column - yang_get_leng(scan);
   std::size_t right = data->column;
-  data->add_error(left, right, left, right, message);
+  data->errors.push_back(data->format_error(left, right, left, right, message));
   return 0;
 }
 

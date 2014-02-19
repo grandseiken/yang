@@ -259,10 +259,10 @@ ParseData::ParseData(const std::string& name, const std::string& contents)
   char_to_line_position.push_back(line_position);
 }
 
-void ParseData::add_error(
+std::string ParseData::format_error(
     std::size_t left_index, std::size_t right_index,
     std::size_t left_tree_index, std::size_t right_tree_index,
-    const std::string& message)
+    const std::string& message, bool error)
 {
   auto left_tree_line = char_to_line[left_tree_index];
   auto right_tree_line = char_to_line[right_tree_index - 1];
@@ -275,7 +275,8 @@ void ParseData::add_error(
 
   std::stringstream ss;
 
-  ss << "error in program `" + name + "`, at ";
+  ss << (error ? "error" : "warning");
+  ss << " in program `" + name + "`, at ";
   if (left_tree_line == right_tree_line) {
     ss << "line " << (1 + left_tree_line);
   }
@@ -311,7 +312,7 @@ void ParseData::add_error(
     ss << (err ? "^" : err_tree ? "~" : " ");
   }
   ss << "\n";
-  errors.push_back(ss.str());
+  return ss.str();
 }
 
 // End namespace yang::internal.

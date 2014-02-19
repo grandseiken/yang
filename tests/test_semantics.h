@@ -39,6 +39,7 @@ global
 if (true) {
   const one = 1;
   global_i += one;
+  global_inner;
 }
 
 export ternary_fun = int()
@@ -89,6 +90,7 @@ export global {
 
 export again_mod = void(int a)
 {
+  ten; // Avoid warnings.
   if (a) {
     ++again;
     return;

@@ -28,8 +28,9 @@ protected:
   Program& program_suppress_errors(const std::string& contents);
   Program& program_suppress_errors(const Context& context,
                                    const std::string& contents);
-  Program& program(const std::string& contents);
-  Program& program(const Context& context, const std::string& contents);
+  Program& program(const std::string& contents, bool allow_errors = false);
+  Program& program(const Context& context, const std::string& contents,
+                   bool allow_errors = false);
 
   Instance& instance(const std::string& contents);
   Instance& instance(const Context& context, const std::string& contents);
@@ -93,11 +94,7 @@ Context& YangTest::context()
 
 Program& YangTest::program_suppress_errors(const std::string& contents)
 {
-  std::string suppress_errors;
-  _programs.emplace_back(
-      new Program(context(), "test" + std::to_string(_program_id++),
-                  contents, true, &suppress_errors));
-  return *_programs.back();
+  return program_suppress_errors(context(), contents);
 }
 
 Program& YangTest::program_suppress_errors(const Context& context,
@@ -110,31 +107,35 @@ Program& YangTest::program_suppress_errors(const Context& context,
   return *_programs.back();
 }
 
-Program& YangTest::program(const std::string& contents)
+Program& YangTest::program(const std::string& contents, bool allow_errors)
 {
-  _programs.emplace_back(
-      new Program(context(), "test" + std::to_string(_program_id++), contents));
-  return *_programs.back();
+  return program(context(), contents, allow_errors);
 }
 
-Program& YangTest::program(const Context& context, const std::string& contents)
+Program& YangTest::program(const Context& context, const std::string& contents,
+                           bool allow_errors)
 {
-  _programs.emplace_back(
-      new Program(context, "test" + std::to_string(_program_id++), contents));
-  return *_programs.back();
+  Program* prog =
+      new Program(context, "test" + std::to_string(_program_id++), contents);
+  _programs.emplace_back(prog);
+  if (!allow_errors) {
+    EXPECT_EQ(prog->get_error_count(), 0) <<
+        "Should compile successfully:\n" << contents << std::endl;
+    EXPECT_EQ(prog->get_warning_count(), 0) <<
+        "Should compile without warnings:\n" << contents << std::endl;
+  }
+  return *prog;
 }
 
 Instance& YangTest::instance(const std::string& contents)
 {
-  _instances.emplace_back(new Instance(program(contents)));
-  return *_instances.back();
+  return instance(context(), contents);
 }
 
 Instance& YangTest::instance(
     const Context& context, const std::string& contents)
 {
-  _instances.emplace_back(new Instance(program(context, contents)));
-  return *_instances.back();
+  return instance(program(context, contents));
 }
 
 Instance& YangTest::instance(const Program& program)

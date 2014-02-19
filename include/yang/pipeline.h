@@ -42,6 +42,9 @@ public:
   Program(Program&) = delete;
   Program& operator=(Program&) = delete;
 
+  std::size_t get_error_count() const;
+  std::size_t get_warning_count() const;
+
   const Context& get_context() const;
   const std::string& get_name() const;
 
@@ -71,6 +74,9 @@ private:
   llvm::Module* _module;
   std::unique_ptr<llvm::ExecutionEngine> _engine;
   std::unordered_map<Type, llvm::Function*> _trampoline_map;
+
+  std::size_t _error_count;
+  std::size_t _warning_count;
 
 };
 

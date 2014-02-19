@@ -25,6 +25,7 @@ const std::string TestUserTypesStrB = R"(
 export global {
   var u = get_user_type();
   const v = u;
+  v;
 }
 export returns_user_type = UserType()
 {

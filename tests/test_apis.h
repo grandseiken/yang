@@ -92,6 +92,11 @@ g = int(int a)
 {
   return a * 3;
 }
+
+// Avoid warnings.
+global {
+  a; b; c; d; g;
+}
 )";
 
 TEST_F(YangTest, ProgramTest)

@@ -70,7 +70,7 @@ void StaticChecker::preorder(const Node& node)
   switch (node.type) {
     case Node::GLOBAL:
       _current_function = ".global";
-      _symbol_table.push();
+      push_symbol_tables();
       _metadata.push();
       if (node.int_value) {
         _metadata.add(EXPORT_GLOBAL, Type::VOID);
@@ -99,10 +99,14 @@ void StaticChecker::preorder(const Node& node)
       }
       // Add the identifier to the table temporarily to avoid lookup errors on
       // the name.
-      _symbol_table.push();
+      push_symbol_tables();
       if (node.children[0]->type == Node::IDENTIFIER) {
-        _symbol_table.add(node.children[0]->string_value, Type::VOID);
+        add_symbol(node, node.children[0]->string_value, Type::VOID, false);
       }
+      // Fallthrough to override identifiers as non-referencing.
+    case Node::ASSIGN:
+      _metadata.push();
+      _metadata.add(ASSIGN_LHS_CONTEXT, Type::VOID);
       break;
     case Node::FUNCTION:
     case Node::SCOPE_RESOLUTION:
@@ -111,11 +115,11 @@ void StaticChecker::preorder(const Node& node)
       break;
     case Node::BLOCK:
     case Node::IF_STMT:
-      _symbol_table.push();
+      push_symbol_tables();
       break;
     case Node::DO_WHILE_STMT:
     case Node::FOR_STMT:
-      _symbol_table.push();
+      push_symbol_tables();
       _metadata.push();
       // Insert a marker into the symbol table that break and continue
       // statements can check for.
@@ -156,7 +160,8 @@ void StaticChecker::infix(const Node& node, const result_list& results)
       // Functions need three symbol table frames: one to store the function's
       // enclosing-function-reference overrides; one for arguments; and one for
       // the body. The immediate-name-assign hack goes in the previous frame.
-      std::unordered_set<std::string> locals;
+      typedef std::pair<std::string, Type> pair;
+      std::vector<pair> locals;
       _symbol_table.get_symbols(locals, 1, _symbol_table.size());
       // Do the recursive hack.
       if (_immediate_left_assign.length()) {
@@ -164,29 +169,31 @@ void StaticChecker::infix(const Node& node, const result_list& results)
             node, _immediate_left_assign,
             inside_function() * (_symbol_table.size() - 1), t);
       }
-      _symbol_table.push();
+      push_symbol_tables();
       // We currently don't implement closures at all, so we need to stick a
       // bunch of overrides into an intermediate stack frame to avoid the locals
       // from the enclosing scope being referenced, if any.
       // Starting at frame 1 finds all names except globals.
       // TODO: get rid of all this nonsense.
-      for (const std::string& s : locals) {
-        _symbol_table.add(s, Type::ENCLOSING_FUNCTION);
+      for (const auto& p : locals) {
+        add_symbol(node, p.first, Type::ENCLOSING_FUNCTION, false);
       }
       // We also need to make sure top-level function names get overridden in
       // inner scopes, until closures are implemented.
       if (_immediate_left_assign.length()) {
         if (!_symbol_table.has(_immediate_left_assign,
                                _symbol_table.size() - 1)) {
-          _symbol_table.add(_immediate_left_assign,
-                            _symbol_table[_immediate_left_assign]);
+          // Turn off unreferenced warnings, since these entries are duplicated.
+          // It's bad, but this should be gone soon.
+          add_symbol(node, _immediate_left_assign,
+                     _symbol_table[_immediate_left_assign], false);
         }
         // Move this back to the place above when closures are in.
         _immediate_left_assign = "";
       }
 
       // Do the arguments.
-      _symbol_table.push();
+      push_symbol_tables();
       if (!t.is_error()) {
         std::unordered_set<std::string> arg_names;
         std::size_t elem = 0;
@@ -196,15 +203,14 @@ void StaticChecker::infix(const Node& node, const result_list& results)
             continue;
           }
           if (ptr->type != Node::NAMED_EXPRESSION) {
-            // TODO: this shouldn't be an error if the argument isn't used.
-            error(*ptr, "unnamed argument in function definition");
+            // Don't add to the symbol table.
             continue;
           }
           const std::string& name = ptr->string_value;
           if (arg_names.find(name) != arg_names.end()) {
             error(*ptr, "duplicate argument name `" + name + "`");
           }
-          _symbol_table.add(name, t.elements(elem));
+          add_symbol(*ptr, name, t.elements(elem));
           // Arguments are implicitly const!
           _symbol_table[name].set_const(true);
           arg_names.insert(name);
@@ -215,7 +221,7 @@ void StaticChecker::infix(const Node& node, const result_list& results)
       // inside a function.
       _metadata.push();
       enter_function(t.elements(0));
-      _symbol_table.push();
+      push_symbol_tables();
       break;
     }
 
@@ -223,7 +229,11 @@ void StaticChecker::infix(const Node& node, const result_list& results)
     case Node::ASSIGN_VAR:
     case Node::ASSIGN_CONST:
       // Remove temporary reference to identifier on the left.
-      _symbol_table.pop();
+      pop_symbol_tables();
+    case Node::ASSIGN:
+      // Remove temporary treatment of identifier as non-referencing for warning
+      // purposes.
+      _metadata.pop();
       break;
 
     case Node::CALL:
@@ -250,20 +260,20 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
   if (node.type == Node::GLOBAL ||
       node.type == Node::DO_WHILE_STMT || node.type == Node::FOR_STMT) {
     _metadata.pop();
-    _symbol_table.pop();
+    pop_symbol_tables();
   }
   else if (node.type == Node::FUNCTION) {
     // FUNCTION needs to do some logic before popping the tables.
     if (!current_return_type().is_void() && !results[1].not_void()) {
       error(node, "not all code paths return a value");
     }
-    _symbol_table.pop();
-    _symbol_table.pop();
-    _symbol_table.pop();
+    pop_symbol_tables();
+    pop_symbol_tables();
+    pop_symbol_tables();
     _metadata.pop();
   }
   else if (node.type == Node::BLOCK || node.type == Node::IF_STMT) {
-    _symbol_table.pop();
+    pop_symbol_tables();
   }
   // Make sure to pop callee context on nullary calls.
   else if (node.type == Node::SCOPE_RESOLUTION ||
@@ -311,6 +321,9 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     }
 
     case Node::PROGRAM:
+      // Make sure to warn on unused top-level elements. This doesn't actually
+      // pop anything, since it's the last frame.
+      pop_symbol_tables();
       return Type::VOID;
     case Node::GLOBAL:
       _current_function = "";
@@ -326,14 +339,16 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       const std::string& s = node.children[0]->string_value;
       if (!results[1].function()) {
         error(node, "global assignment of type " + rs[1]);
-        add_symbol_checking_collision(node, s, results[1]);
+        add_symbol_checking_collision(node, s, results[1], false);
       }
       // Otherwise, the symbol already exists by the immediate-name-assign
       // recursion hack.
       const Type& t = _symbol_table.get(s, 0);
-      // Only export functions get added to the function table.
+      // Only export functions get added to the function table. They also are
+      // automatically assumed to be referenced.
       if (!t.is_error() && node.int_value) {
         _functions_output.emplace(s, t.external(true));
+        _unreferenced_warnings[s].second = false;
       }
       _current_function = "";
       return Type::VOID;
@@ -488,12 +503,15 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       // Regular program symbols.
       if (!has) {
         error(node, "undeclared identifier `" + node.string_value + "`");
-        _symbol_table.add(node.string_value, Type::ERROR);
+        add_symbol(node, node.string_value, Type::ERROR, false);
       }
       else if (_symbol_table[node.string_value] == Type::ENCLOSING_FUNCTION) {
         error(node, "reference to `" + node.string_value +
                     "` in enclosing function");
         return Type::ERROR;
+      }
+      if (!_metadata.has(ASSIGN_LHS_CONTEXT)) {
+        _unreferenced_warnings[node.string_value].second = false;
       }
       return _symbol_table[node.string_value];
     }
@@ -682,10 +700,13 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         else {
           error(node, "undeclared identifier `" + s + "`");
         }
-        _symbol_table.add(s, results[1]);
+        add_symbol(node, s, results[1], false);
         return results[1];
       }
-      Type& t = _symbol_table[s];
+      Type t = _symbol_table[s];
+      if (t == Type::ENCLOSING_FUNCTION) {
+        t = Type::ERROR;
+      }
       if (!t.is(results[1])) {
         error(node, rs[1] + " assigned to `" + s + "` of type " + t.string());
         t = results[1];
@@ -840,6 +861,46 @@ bool StaticChecker::inside_type_context() const
   return _metadata.has(TYPE_EXPR_CONTEXT);
 }
 
+void StaticChecker::push_symbol_tables()
+{
+  _symbol_table.push();
+  _unreferenced_warnings.push();
+}
+
+void StaticChecker::pop_symbol_tables()
+{
+  _symbol_table.pop();
+
+  typedef std::pair<std::string, std::pair<const Node*, bool>> pair;
+  std::vector<pair> unreferenced;
+  std::size_t size = _unreferenced_warnings.size();
+  _unreferenced_warnings.get_symbols(unreferenced, size - 1, size);
+
+  for (const auto& p : unreferenced) {
+    if (p.second.second) {
+      error(*p.second.first, "symbol `" + p.first + "` is never read", false);
+    }
+  }
+  _unreferenced_warnings.pop();
+}
+
+void StaticChecker::add_symbol(
+    const Node& node, const std::string& name, std::size_t index,
+    const Type& type, bool unreferenced_warning)
+{
+  _symbol_table.add(name, index, type);
+  if (unreferenced_warning) {
+    _unreferenced_warnings.add(name, index, std::make_pair(&node, true));
+  }
+}
+
+void StaticChecker::add_symbol(
+    const Node& node, const std::string& name, const Type& type,
+    bool unreferenced_warning)
+{
+  add_symbol(node, name, _symbol_table.size() - 1, type, unreferenced_warning);
+}
+
 bool StaticChecker::use_function_immediate_assign_hack(const Node& node) const
 {
   // Node should be type GLOBAL_ASSIGN, ASSIGN_VAR or ASSIGN_CONST.
@@ -848,37 +909,41 @@ bool StaticChecker::use_function_immediate_assign_hack(const Node& node) const
 }
 
 void StaticChecker::add_symbol_checking_collision(
-    const Node& node, const std::string& name, const Type& type)
+    const Node& node, const std::string& name, const Type& type,
+    bool unreferenced_warning)
 {
-  add_symbol_checking_collision(node, name, _symbol_table.size() - 1, type);
+  add_symbol_checking_collision(node, name, _symbol_table.size() - 1, type,
+                                unreferenced_warning);
 }
 
 void StaticChecker::add_symbol_checking_collision(
     const Node& node, const std::string& name, std::size_t index,
-    const Type& type)
+    const Type& type, bool unreferenced_warning)
 {
   if (_symbol_table.has(name, index)) {
     // Skipping on error is debatable as to whether it really skips
     // unnecessary messages, or rather hides real name collisions.
     if (!_symbol_table.get(name, index).is_error()) {
-      error(node, (index ? "" : "global ") +
+      error(node, (index ? "symbol" : "global ") +
                   ("`" + name + "` redefined"));
     }
     _symbol_table.remove(name, index);
   }
-  _symbol_table.add(name, index, type);
+  add_symbol(node, name, index, type, unreferenced_warning);
 }
 
-void StaticChecker::error(const Node& node, const std::string& message)
+void StaticChecker::error(
+    const Node& node, const std::string& message, bool error)
 {
   _errors = true;
   std::string m = message;
   if (_current_function.length()) {
     m = "in function `" + _current_function + "`: " + m;
   }
-  _data.add_error(
+  std::string format_text = _data.format_error(
       node.left_index, node.right_index,
-      node.left_tree_index, node.right_tree_index, m);
+      node.left_tree_index, node.right_tree_index, m, error);
+  (error ? _data.errors : _data.warnings).push_back(format_text);
 }
 
 // End namespace yang::internal.

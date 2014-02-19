@@ -33,20 +33,46 @@ Program::Program(const Context& context, const std::string& name,
   , _llvm_context(new llvm::LLVMContext)
   , _module(nullptr)
   , _engine(nullptr)
+  , _error_count(0)
+  , _warning_count(0)
 {
   internal::ParseData data(name, contents);
   yyscan_t scan = nullptr;
 
   auto log_errors = [&]()
   {
-    for (const std::string& err : data.errors) {
+    auto print = [&](const std::string& message)
+    {
       if (error_output) {
-        *error_output += err + '\n';
+        *error_output += message + '\n';
       }
       else {
-        log_err(err);
+        log_err(message);
       }
+    };
+
+    for (const std::string& error : data.errors) {
+      print(error);
     }
+    // Warnings are still printed, but they don't cause any failures. We should
+    // probably look into better warning handling: access errors and warnings
+    // separately and counts of each; access error/warning data structures with
+    // source text indicators so that tools can be written; and so on.
+    //
+    // This sort of structured error-reporting would also let us unit-test
+    // errors more properly.
+    //
+    // TODO: warnings for:
+    // - var locals/globals that are never written to;
+    // - dead code;
+    // - no-op code, maybe? For example: if-statements with empty-statement
+    //   bodies, void functions which don't modify state somehow (maybe that's
+    //   hard/halting problem to detect, just thinking up things).
+    for (const std::string& warning : data.warnings) {
+      print(warning);
+    }
+    _error_count += data.errors.size();
+    _warning_count += data.warnings.size();
     return bool(data.errors.size());
   };
 
@@ -81,6 +107,16 @@ Program::Program(const Context& context, const std::string& name,
 
 Program::~Program()
 {
+}
+
+std::size_t Program::get_error_count() const
+{
+  return _error_count;
+}
+
+std::size_t Program::get_warning_count() const
+{
+  return _warning_count;
 }
 
 const Context& Program::get_context() const
