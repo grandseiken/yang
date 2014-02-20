@@ -9,6 +9,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include <yang/error.h>
 #include <yang/typedefs.h>
 
 typedef void* scan_t;
@@ -161,27 +162,29 @@ std::string node_op_string(Node::node_type t);
 struct ParseData {
   ParseData(const std::string& name, const std::string& contents);
   // Format a nice error or warning string for printing.
-  std::string format_error(
+  yang::ErrorInfo format_error(
       std::size_t left_index, std::size_t right_index,
       std::size_t left_tree_index, std::size_t right_tree_index,
-      const std::string& message, bool error = true);
+      const std::string& message, bool error = true) const;
 
   // User-supplied name of the program we're parsing.
   std::string name;
-  // Current character count in lexer.
-  std::size_t column;
+  // Current character index in lexer.
+  std::size_t character;
 
   // Precomputed lookup data for error-printing. Respectively, we have: a map
-  // from column number to line number; a map from column number to position
-  // within that line; and a vector of split lines.
+  // from character index to line number; a map from character index to column
+  // number; and a vector of split lines.
+  const std::string& source_text;
   std::vector<std::size_t> char_to_line;
-  std::vector<std::size_t> char_to_line_position;
+  std::vector<std::size_t> char_to_column;
   std::vector<std::string> lines;
 
   // Parse output.
   Node* parser_output;
-  std::vector<std::string> errors;
-  std::vector<std::string> warnings;
+  // Structured error reporting.
+  std::vector<yang::ErrorInfo> errors;
+  std::vector<yang::ErrorInfo> warnings;
 
   // If parsing aborts half-way due to a syntax error, Nodes allocated by the
   // parser will leak. To avoid this, we keep a set of Nodes which have been

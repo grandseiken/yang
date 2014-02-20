@@ -11,7 +11,6 @@
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/TargetSelect.h>
 
-#include <yang/error.h>
 #include "ast.h"
 #include "irgen.h"
 #include "log.h"
@@ -26,46 +25,38 @@ namespace yang {
 
 Program::Program(const Context& context, const std::string& name,
                  const std::string& contents, bool optimise,
-                 std::string* error_output)
+                 std::string* diagnostic_output)
   : _context(context)
   , _name(name)
   , _ast(nullptr)
   , _llvm_context(new llvm::LLVMContext)
   , _module(nullptr)
   , _engine(nullptr)
-  , _error_count(0)
-  , _warning_count(0)
 {
   internal::ParseData data(name, contents);
   yyscan_t scan = nullptr;
 
   auto log_errors = [&]()
   {
-    auto print = [&](const std::string& message)
+    auto print = [&](const yang::ErrorInfo& error)
     {
-      if (error_output) {
-        *error_output += message + '\n';
+      if (diagnostic_output) {
+        *diagnostic_output += error.formatted_message + '\n';
       }
       else {
-        log_err(message);
+        log_err(error.formatted_message);
       }
     };
 
-    for (const std::string& error : data.errors) {
+    for (const auto& error : data.errors) {
       print(error);
+      _errors.push_back(error);
     }
-    // Warnings are still printed, but they don't cause any failures. We should
-    // probably look into better warning handling: access errors and warnings
-    // separately and counts of each; access error/warning data structures with
-    // source text indicators so that tools can be written; and so on.
-    //
-    // This sort of structured error-reporting would also let us unit-test
-    // errors more properly.
-    for (const std::string& warning : data.warnings) {
+    // Warnings are still printed, but they don't cause anything to fail.
+    for (const auto& warning : data.warnings) {
       print(warning);
+      _warnings.push_back(warning);
     }
-    _error_count += data.errors.size();
-    _warning_count += data.warnings.size();
     return bool(data.errors.size());
   };
 
@@ -102,14 +93,14 @@ Program::~Program()
 {
 }
 
-std::size_t Program::get_error_count() const
+const Program::error_list& Program::get_errors() const
 {
-  return _error_count;
+  return _errors;
 }
 
-std::size_t Program::get_warning_count() const
+const Program::error_list& Program::get_warnings() const
 {
-  return _warning_count;
+  return _warnings;
 }
 
 const Context& Program::get_context() const

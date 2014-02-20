@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "error.h"
 #include "type.h"
 #include "type_info.h"
 #include "typedefs.h"
@@ -31,25 +32,34 @@ namespace internal {
 class Program {
 public:
 
-  // Errors will be appended to the error_output string if the pointer is non-
-  // -null; otherwise, they will go to stderr.
+  // Errors and warnings will be appended to the diagnostic_output string if
+  // the pointer is non-null; otherwise, they will go to stderr.
   Program(const Context& context, const std::string& name,
           const std::string& contents, bool optimise = true,
-          std::string* error_output = nullptr);
+          std::string* diagnostic_output = nullptr);
   ~Program();
 
   // Noncopyable.
   Program(Program&) = delete;
   Program& operator=(Program&) = delete;
 
-  std::size_t get_error_count() const;
-  std::size_t get_warning_count() const;
+  // By default, errors and warnings will be printed to standard error. By
+  // passing diagnostic_output to the Program constructor, this behaviour can be
+  // overridden, and something else can be done with the diagnostic information.
+  //
+  // For even finer-grained control, these data structures can be accessed for
+  // raw error message strings and detailed information about the position of
+  // errors in the source text. See error.h for more information.
+  typedef std::vector<ErrorInfo> error_list;
+  const error_list& get_errors() const;
+  const error_list& get_warnings() const;
 
   const Context& get_context() const;
   const std::string& get_name() const;
 
-  // Returns true if the contents parsed and checked successfully. Otherwise,
-  // none of the following functions will do anything useful.
+  // Returns true if the contents parsed and checked successfully (i.e., if
+  // get_errors().size() is zero). Otherwise, none of the following functions
+  // will do anything useful.
   bool success() const;
   std::string print_ast() const;
   std::string print_ir() const;
@@ -75,8 +85,8 @@ private:
   std::unique_ptr<llvm::ExecutionEngine> _engine;
   std::unordered_map<Type, llvm::Function*> _trampoline_map;
 
-  std::size_t _error_count;
-  std::size_t _warning_count;
+  error_list _errors;
+  error_list _warnings;
 
 };
 

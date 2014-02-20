@@ -824,17 +824,18 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       Type t = results[0];
       std::string ts;
       bool unify_error = false;
+      std::unordered_set<Type> bad_types;
       for (std::size_t i = 0; i < results.size(); ++i) {
         if (node.children[i]->type == Node::NAMED_EXPRESSION) {
           error(*node.children[i],
                 s + ": named argument in vector construction");
         }
-        if (!results[i].primitive()) {
-          // Could potentially store the bad types we saw already so as not to
-          // repeat the error.
+        if (!results[i].primitive() && !bad_types.count(results[i])) {
+          // Store the bad types we saw already so as not to repeat the error.
           error(*node.children[i], s + ": element with non-primitive type " +
                                    rs[i] + " in vector construction");
           t = Type::ERROR;
+          bad_types.insert(results[i]);
         }
         if (i) {
           bool error = t.is_error();
@@ -991,10 +992,10 @@ void StaticChecker::error(
   if (_current_function.length()) {
     m = "in function `" + _current_function + "`: " + m;
   }
-  std::string format_text = _data.format_error(
+  auto error_info = _data.format_error(
       node.left_index, node.right_index,
       node.left_tree_index, node.right_tree_index, m, error);
-  (error ? _data.errors : _data.warnings).push_back(format_text);
+  (error ? _data.errors : _data.warnings).push_back(error_info);
 }
 
 // End namespace yang::internal.

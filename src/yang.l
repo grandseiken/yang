@@ -15,7 +15,8 @@ int yang_error(yyscan_t scan, const char* message);
 
 // Character counting.
 #define YY_USER_ACTION \
-    ((ParseData*)yang_get_extra(yyscanner))->column += yang_get_leng(yyscanner);
+    ((ParseData*)yang_get_extra(yyscanner))->character += \
+        yang_get_leng(yyscanner);
 #define LVAL (yang_get_lval(yyscanner)->node)
 #define TEXT (yang_get_text(yyscanner))
 #define TOKEN LVAL = new Node(yyscanner, Node::ERROR)

@@ -119,9 +119,9 @@ Program& YangTest::program(const Context& context, const std::string& contents,
       new Program(context, "test" + std::to_string(_program_id++), contents);
   _programs.emplace_back(prog);
   if (!allow_errors) {
-    EXPECT_EQ(prog->get_error_count(), 0) <<
+    EXPECT_EQ(prog->get_errors().size(), 0) <<
         "Should compile successfully:\n" << contents << std::endl;
-    EXPECT_EQ(prog->get_warning_count(), 0) <<
+    EXPECT_EQ(prog->get_warnings().size(), 0) <<
         "Should compile without warnings:\n" << contents << std::endl;
   }
   return *prog;

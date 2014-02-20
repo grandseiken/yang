@@ -113,6 +113,7 @@ public:
 private:
 
   std::string string_internal() const;
+  friend struct std::hash<Type>;
 
   type_base _base;
   std::size_t _count;
@@ -124,6 +125,31 @@ private:
 
 // End namespace yang::internal.
 }
+}
+
+namespace {
+  // Taken from boost.
+  void hash_combine(std::size_t& seed, std::size_t v)
+  {
+    seed ^= v + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+  }
+}
+
+namespace std {
+  template<>
+  struct hash<yang::internal::Type> {
+    std::size_t operator()(const yang::internal::Type& t) const
+    {
+      std::size_t seed = 0;
+      hash_combine(seed, t._base);
+      hash_combine(seed, t._count);
+      hash_combine(seed, std::hash<std::string>()(t._user_type_name));
+      for (const yang::internal::Type& u : t._elements) {
+        hash_combine(seed, operator()(u));
+      }
+      return seed;
+    }
+  };
 }
 
 #endif

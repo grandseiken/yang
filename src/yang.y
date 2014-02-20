@@ -14,8 +14,8 @@ typedef yang::internal::ParseData ParseData;
 int yang_error(yyscan_t scan, const char* message)
 {
   ParseData* data = (ParseData*)yang_get_extra(scan);
-  std::size_t left = data->column - yang_get_leng(scan);
-  std::size_t right = data->column;
+  std::size_t left = data->character - yang_get_leng(scan);
+  std::size_t right = data->character;
   data->errors.push_back(data->format_error(left, right, left, right, message));
   return 0;
 }

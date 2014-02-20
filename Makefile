@@ -139,7 +139,7 @@ $(DEP_FILES): $(OUTDIR)/%.deps: \
 	    ./Makedeps $@ $< $$SOURCE_FILE $(OUTDIR) $$?
 .PRECIOUS: $(OUTDIR)/%.build
 $(OUTDIR)/%.build: \
-	./% $(H_FILES) $(OUTDIR)/%.mkdir
+	./% $(OUTDIR)/%.mkdir
 	touch $@
 
 ifneq ('$(MAKECMDGOALS)', 'add')
