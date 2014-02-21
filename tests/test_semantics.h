@@ -97,6 +97,22 @@ export again_mod = void(int a)
   }
   again += 2;
 }
+
+export float_literals = float()
+{
+  return .1 + 1. + 1.1 + .1e0 + 1.E1 + 1.1e-1 +
+      1e0 + .0E0 + 1.e-0 + 1.1e+1 + 0e+0;
+}
+
+export int_literals = int()
+{
+  return 128 + 0xff + 0x0 + 0x001 + 0x100 + 0xE;
+}
+
+export big_int_literals = int()
+{
+  return 0xffffffff;
+}
 )";
 
 TEST_F(YangTest, SemanticsTest)
@@ -120,5 +136,10 @@ TEST_F(YangTest, SemanticsTest)
   EXPECT_EQ(inst.get_global<int_t>("again"), 12);
   inst.call<void>("again_mod", 1);
   EXPECT_EQ(inst.get_global<int_t>("again"), 13);
+
+  EXPECT_EQ(inst.call<float_t>("float_literals"), 25.41);
+  EXPECT_EQ(inst.call<int_t>("int_literals"), 654);
+  EXPECT_EQ(inst.call<int_t>("big_int_literals"), 0xffffffff);
+  EXPECT_EQ(inst.call<int_t>("big_int_literals"), -1);
   // TODO: just getting started. Need way more semantic tests.
 }

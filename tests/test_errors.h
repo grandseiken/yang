@@ -131,6 +131,23 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {if ();}", ")");
   err("x = void() {0, 0;}", ",");
 
+  // Literal syntax errors.
+  err("x = void() {0.0.0;}", ".0");
+  err("x = void() {0ee0;}", "ee0");
+  err("x = void() {0e++0;}", "e");
+  err("x = void() {0e--0;}", "e");
+  err("x = void() {e0;}", "e0");
+  err("x = void() {0..0;}", ".0");
+  err("x = void() {0e;}", "e");
+  err("x = void() {1e1.0;}", ".0");
+  err("x = void() {0x;}", "x");
+  err("x = void() {x0;}", "x0");
+  err("x = void() {1x0;}", "x0");
+  err("x = void() {0xg;}", "xg");
+  err("x = void() {0xH;}", "xH");
+  err("x = void() {0y0;}", "y0");
+  err("x = void() {0x100000000;}", "0x100000000");
+
   // Type / expression mismatches.
   err("x = 0() {}", "0");
   err("x = void(0 a) {}", "0");

@@ -13,6 +13,43 @@ typedef yang::internal::ParseData ParseData;
 void* yang_get_extra(yyscan_t);
 int yang_error(yyscan_t scan, const char* message);
 
+namespace {
+
+yang::int_t parse_int(const char* str, scan_t scan)
+{
+  try {
+    // Must use string-to-unsigned to handle extreme cases like 0xffffffff
+    // sensibly.
+    unsigned long val = std::stoul(str);
+    if (strlen(str) > 2 && str[0] == '0' && str[1] == 'x') {
+      val = std::stoul(str, nullptr, 16);
+    }
+    // Make sure it fits in a yang::int_t.
+    if (val > 0xffffffff) {
+      throw std::exception();
+    }
+    return val;
+  }
+  catch (std::exception&) {
+    yang_error(scan, "invalid integer literal");
+    return 0;
+  }
+}
+
+yang::float_t parse_float(const char* str, scan_t scan)
+{
+  try {
+    return std::stod(str);
+  }
+  catch (std::exception&) {
+    yang_error(scan, "invalid floating-point literal");
+    return 0;
+  }
+}
+
+// End anonymous namespace.
+}
+
 // Character counting.
 #define YY_USER_ACTION \
     ((ParseData*)yang_get_extra(yyscanner))->character += \
@@ -43,8 +80,14 @@ default .|\n|\r
 alpha [A-Za-z_]
 digit [0-9]
 identifier {alpha}({alpha}|{digit})*
-int_literal {digit}+
-float_literal ({digit}+)?\.{digit}+
+  /* Handle hex literals as well as decimal integers. */
+num_literal {digit}+
+int_literal {num_literal}|0x[A-Fa-f0-9]+
+  /* Float literals carefully avoid matching "{num_literal}.", since that's an
+     operator anyway (and leads to nicer parsing. */
+exponent [eE][+-]?{num_literal}
+decimal_literal ({num_literal}?\.{num_literal})
+float_literal {decimal_literal}{exponent}?|{num_literal}(\.)?{exponent}
 vector_size [1-9]{digit}*
 
 %%
@@ -178,11 +221,11 @@ false {
   return T_IDENTIFIER;
 }
 {int_literal} {
-  LVAL = new Node(yyscanner, Node::INT_LITERAL, std::stoi(TEXT));
+  LVAL = new Node(yyscanner, Node::INT_LITERAL, parse_int(TEXT, yyscanner));
   return T_INT_LITERAL;
 }
 {float_literal} {
-  LVAL = new Node(yyscanner, Node::FLOAT_LITERAL, std::stod(TEXT));
+  LVAL = new Node(yyscanner, Node::FLOAT_LITERAL, parse_float(TEXT, yyscanner));
   return T_FLOAT_LITERAL;
 }
 

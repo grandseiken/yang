@@ -110,7 +110,6 @@
 // - Context should not be modified after it has been used (i.e. passed to
 //   Function::get_type or Program::Program)! This could be enforced by making
 //   Contexts immutable which might be a good idea anyway.
-// TODO: hex literals, scientific notation float literals, etc.
 //
 // Further off (helpful stuff that can be emulated without needing to be built-
 // -in right away):
