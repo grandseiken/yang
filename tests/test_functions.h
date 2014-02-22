@@ -177,3 +177,58 @@ TEST_F(YangTest, HighOrderFunctions)
   auto in = inst.get_function<int4f_t>("in");
   EXPECT_EQ(in(in_in), 2);
 }
+
+const std::string TestFunctionClosuresStr = R"(
+global {
+  const global_a = 33;
+  const global_b = int()
+  {
+    const a = 11;
+    return int()
+    {
+      return a + global_a;
+    }();
+  }();
+}
+
+export internal = int(int a)
+{
+  var result = 0;
+
+  const b = 4;
+  if (true) {
+    const b = 8;
+    const f = int() {return b;};
+    result += f();
+  }
+  {
+    const b = 1;
+    result += int() {return b * 2;}();
+  }
+  result += int() {return a + b;}();
+
+  const c = 5;
+  result += int()
+  {
+    return int()
+    {
+      const d = 4;
+      return c + int()
+      {
+        return int()
+        {
+          return d + c + global_b;
+        }();
+      }();
+    }();
+  }();
+
+  return result;
+}
+)";
+
+TEST_F(YangTest, FunctionClosures)
+{
+  auto& inst = instance(TestFunctionClosuresStr);
+  EXPECT_EQ(inst.call<int_t>("internal", 3), 75);
+}

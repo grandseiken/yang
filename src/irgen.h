@@ -61,6 +61,17 @@ protected:
 
 private:
 
+  typedef std::unordered_map<std::string, std::size_t> structure_numbering;
+  void init_structure_type(
+      llvm::Type*& output_type, structure_numbering& output_numbering,
+      const symbol_frame& symbols, const std::string& name) const;
+  llvm::Value* allocate_structure_value(
+      llvm::Type* type, const structure_numbering& numbering);
+  llvm::Value* allocate_closure_struct(
+      const symbol_frame& symbols, llvm::Value* parent_ptr);
+  llvm::Value* get_parent_struct(std::size_t parent_steps, llvm::Value* v);
+  llvm::Value* get_variable_ptr(const std::string& name);
+
   void create_function(
       const Node& node, llvm::FunctionType* function_type);
 
@@ -69,9 +80,10 @@ private:
   llvm::Value* i2w(llvm::Value* v);
   llvm::Value* w2i(llvm::Value* v);
 
-  // Indexing the global data structure.
-  llvm::Value* global_ptr(llvm::Value* ptr, std::size_t index);
+  // Indexing global and closure data structures.
+  llvm::Value* structure_ptr(llvm::Value* ptr, std::size_t index);
   llvm::Value* global_ptr(const std::string& name);
+  llvm::Value* global_ptr();
 
   // Storing to some structure (global data or closure) with refcounting.
   llvm::Value* memory_load(llvm::Value* ptr);
@@ -100,6 +112,7 @@ private:
   // Metadata symbols.
   enum metadata {
     ENVIRONMENT_PTR,
+    CLOSURE_PTR,
     GLOBAL_INIT_FUNCTION,
     FUNCTION,
     PARENT_BLOCK,
@@ -130,7 +143,7 @@ private:
   // List of static initialisation functions.
   std::vector<llvm::Function*> _global_inits;
   // Map from global name to index in the global structure.
-  std::unordered_map<std::string, std::size_t> _global_numbering;
+  structure_numbering _global_numbering;
   // Type of the global structure.
   llvm::Type* _global_data;
 
@@ -142,6 +155,27 @@ private:
   SymbolTable<metadata, llvm::Value*> _metadata;
   // Metadata that isn't an llvm::Value.
   std::string _immediate_left_assign;
+  // Maps general scope indices to function scope indices, so that variable
+  // accesses know how many global pointer dereferences to do.
+  std::map<std::size_t, std::size_t> _scope_to_function_map;
+  std::size_t _function_scope;
+  // To look up a value in a closure, the flow is:
+  // [std::string identifier] through _symbol_table to
+  // [llvm::Value* value (in defining function)] through
+  // _value_to_unique_name_map to [std::string unique_identifier].
+  //
+  // The scope index of the identifier then gives us the closure scope index via
+  // _scope_to_function_map. This lets us look up the correct closure structure
+  // via the environment pointer and index it using scope_closures[closure index]
+  // and unique_identifier.
+  //
+  // TODO: clean up these data structures if possible, it's kind of awkward.
+  struct closure_t {
+    llvm::Type* type;
+    structure_numbering numbering;
+  };
+  std::vector<closure_t> _scope_closures;
+  std::unordered_map<llvm::Value*, std::string> _value_to_unique_name_map;
 
   // List of local variables in scope, for refcounting.
   std::vector<std::vector<std::vector<llvm::Value*>>> _refcount_locals;

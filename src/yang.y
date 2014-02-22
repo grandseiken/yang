@@ -140,6 +140,21 @@ int yang_error(yyscan_t scan, const char* message)
 %%
 
   /* Language grammar. */
+  /* TODO: we could require variables referenced in inner functions be declared
+     with a keyword like "closed" or similar. This seems like a pretty great
+     idea; the only problem is how to handle arguments cleanly:
+     - also allow "closed" in argument lists?
+     - make arguments implicitly "closed"?
+     - make *all* const variables implicitly "closed"?
+     We can then also warn when a closed variable is never referenced in an
+     inner scope. */
+  /* TODO: for better error-reporting, some nodes (e.g. WHILE and
+     shortcut-assigns should really be nodes in their own right rather than
+     specialisations of other nodes.
+     Conversely, it would be nice if we could unify the codegen for top-level
+     functions and globals. It may be possible to achieve all of this in a nice
+     way by introducing another treewalk between static and irgen that expands
+     certain nodes. */
 
 program
   : elem_list T_EOF
@@ -448,6 +463,7 @@ expr
   | expr T_ASSIGN_DIV expr
 {$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
                new Node(scan, $2, Node::DIV, $1, $3));}
+    /* TODO: increment/decrement should parse on expressions. */
   | T_INCREMENT T_IDENTIFIER %prec P_UNARY_L
 {$$ = new Node(
      scan, $1, Node::ASSIGN, $2->clone(),

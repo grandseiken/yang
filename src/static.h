@@ -5,6 +5,7 @@
 #ifndef YANG_SRC_STATIC_H
 #define YANG_SRC_STATIC_H
 
+#include <map>
 #include <string>
 #include <unordered_map>
 
@@ -85,27 +86,36 @@ private:
   };
   friend std::hash<metadata>;
 
-  SymbolTable<metadata, Type> _metadata;
-  SymbolTable<std::string, Type> _symbol_table;
-
-  const yang::Context& _context;
-  ParseData& _data;
-  symbol_frame& _functions_output;
-  symbol_frame& _globals_output;
-
-  // We can store a bit indicating whether a symbol has been referenced
-  // since it was defined here, for the purposes of warning about unused
-  // constructs.
-  //
-  // It has to be a pair, rather than removing from the table on finding a
-  // reference, or else a reference might remove a warning about an unrelated
-  // symbol from an outer scope.
+  // We store a few bits indicating whether a symbol has been referenced
+  // since it was defined, for the purposes of warning about unused variables.
   struct unreferenced_t {
     const Node* declaration;
     bool warn_writes;
     bool warn_reads;
   };
-  SymbolTable<std::string, unreferenced_t> _unreferenced_warnings;
+  // Along with the type, we need to store the subscope number for
+  // disambiguating identically-named closed variables in different subscopes.
+  struct symbol_t {
+    Type type;
+    std::size_t scope_number;
+    unreferenced_t unreferenced;
+  };
+
+  SymbolTable<metadata, Type> _metadata;
+  SymbolTable<std::string, symbol_t> _symbol_table;
+
+  // For computing closed environments, we also need a map from symbol table
+  // scope indices to the function node they're contained in. For each function,
+  // we also need to number its scopes uniquely, so that we can distinguish
+  // identically-named variables in the closure structure.
+  std::map<std::size_t, const Node*> _scope_to_function_map;
+  std::vector<std::size_t> _scope_numbering;
+  std::size_t _scope_numbering_next;
+
+  const yang::Context& _context;
+  ParseData& _data;
+  symbol_frame& _functions_output;
+  symbol_frame& _globals_output;
 
 };
 

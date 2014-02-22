@@ -166,11 +166,6 @@ TEST_F(YangTest, ErrorTest)
   err("x = int() {return 1.;}", ".");
   err_count("x = int() {return;}", "return;", 2);
 
-  // Nested function errors.
-  err("x = void() {var a = 0; void() {a;};}", "a");
-  err("x = void() {void() {x;};}", "x");
-  err("x = void() {var y = void() {void() {y;};};}", "y");
-
   // Statement errors.
   err("x = void() {if (0.);}", ".");
   err("x = void() {if (return 0;);}", "return");
@@ -239,7 +234,6 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {var a = 0; a = 0.;}", "=");
   err("x = void() {var a = 0; var a = 0;}", "=");
   err("x = void() {const a = 0; a = 0;}", "=");
-  err("x = void() {var a = 0; void() {a = 1;};}", "a");
   err("x = void() {UserType = get_user_type();}", "UserType");
   err("x = UserType() {get_user_type = x; return get_user_type();}", "=");
   err("global {var a = 0;} global {var a = 0;}", "=");
@@ -251,6 +245,7 @@ TEST_F(YangTest, ErrorTest)
   // Name resolution / scope errors.
   err("x = void() {y;}", "y");
   err("x = void() {y();} y = void() {}", "y");
+  err("x = void() {{const a = 0;} void() {a;};}", "a");
   err("global {const a = 0;}; global {a = 0;}", "=");
   err("x = void() {const a = 0;} y = void() {a = 0;}", "a");
   err("x = void() {if (var a = 1); a;}", "a");

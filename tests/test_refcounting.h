@@ -157,3 +157,5 @@ TEST_F(YangTest, FunctionRefCounting)
   // It'd be nice to test memory usage and that everything is actually getting
   // destroyed at the end, but it's not clear how to do that unintrusively.
 }
+
+// TODO: implement and test closure refcounting.

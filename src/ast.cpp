@@ -116,12 +116,14 @@ Node* Node::clone(bool clone_children) const
   node->int_value = int_value;
   node->float_value = float_value;
   node->string_value = string_value;
-  node->user_type_name = user_type_name;
+  node->static_info = static_info;
   if (!clone_children) {
     return node;
   }
 
   // Paranoid: avoid blowing the stack on deep AST trees.
+  // TODO: I guess we need to do the same thing in the destructor (rather than
+  // using unique_ptr).
   std::vector<std::pair<const Node*, Node*>> stack;
   stack.emplace_back(this, node);
   while (!stack.empty()) {

@@ -8,9 +8,11 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
+#include <unordered_map>
 #include <vector>
 #include <yang/error.h>
 #include <yang/typedefs.h>
+#include <yang/type.h>
 
 typedef void* scan_t;
 
@@ -150,10 +152,16 @@ struct Node {
   yang::float_t float_value;
   std::string string_value;
 
-  // We almost always don't need to pass any type information between the type
+  // We mostly don't need to pass any type information between the static
   // checker and the IR generator, except when dealing with user types (whose
-  // names are erased in LLVM). We can store them here when necessary.
-  mutable std::string user_type_name;
+  // names are erased in LLVM), and for closure scope information.
+  typedef std::unordered_map<std::string, yang::Type> symbol_frame;
+  struct mutable_struct {
+    std::string user_type_name;
+    std::size_t scope_number = 0;
+    symbol_frame closed_environment;
+  };
+  mutable mutable_struct static_info;
 };
 
 // Get the human-readable text of an operator.

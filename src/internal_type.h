@@ -28,9 +28,6 @@ public:
   // - all the other obvious places. There are definitely a lot.
   enum type_base {
     ERROR,
-    // Temporary type to indicate a name is in scope, but inaccessible as it
-    // lives in an enclosing function (and closures are not implemented).
-    ENCLOSING_FUNCTION,
     VOID,
     INT,
     FLOAT,

@@ -54,9 +54,8 @@ private:
   // up. There are good reasons not to delete a NativeFunction as soon as its
   // reference count reaches zero; particularly, it would require extra special-
   // -case logic for handling return of refcounted values from one function to
-  // another. So we don't do refcounting directly on return values, and we don't
-  // do refcounting on arguments either (they are const and must be referenced
-  // in the calling context).
+  // another. So we don't do refcounting directly on return values.
+  // TODO: is this still OK for Yang-allocated refcounts?
   //
   // This isn't thread-safe as-is. We need to properly handle return values for
   // that (which would mean we could delete immediately).

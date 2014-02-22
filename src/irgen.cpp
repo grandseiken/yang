@@ -71,6 +71,8 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   , _context(context)
   , _symbol_table(nullptr)
   , _metadata(nullptr)
+  , _scope_to_function_map{{0, 0}}
+  , _function_scope(0)
   , _refcount_function(get_native_function(
       "refcount_function", (void_fp)&refcount_function,
       llvm::FunctionType::get(
@@ -83,26 +85,7 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // define a structure type with a field for each global variable. Each
   // function will take a pointer to the global data structure as an implicit
   // final parameter.
-  std::vector<llvm::Type*> type_list;
-  std::size_t number = 0;
-  // The first element in the global data structure is always a pointer to the
-  // Yang program instance with which the data is associated.
-  type_list.push_back(void_ptr_type());
-  ++number;
-  // Since the global data structure may contain pointers to functions which
-  // themselves take said implicit argument, we need to use an opaque named
-  // struct create the potentially-recursive type.
-  auto global_struct =
-      llvm::StructType::create(module.getContext(), "global_data");
-  _global_data = llvm::PointerType::get(global_struct, 0);
-  for (const auto& pair : globals) {
-    // Type-calculation must be kept up-to-date with new types, or globals of
-    // that type will fail.
-    llvm::Type* t = get_llvm_type(pair.second);
-    type_list.push_back(t);
-    _global_numbering[pair.first] = number++;
-  }
-  global_struct->setBody(type_list, false);
+  init_structure_type(_global_data, _global_numbering, globals, "global_data");
 
   // We need to generate a reverse trampoline function for each function in the
   // Context. User type member functions are present in the context function map
@@ -119,13 +102,7 @@ IrGenerator::~IrGenerator()
 
 void IrGenerator::emit_global_functions()
 {
-  llvm::Type* llvm_size_t =
-      llvm::IntegerType::get(b().getContext(), 8 * sizeof(std::size_t));
-
-  // Register malloc and free.
-  auto malloc_ptr = get_native_function(
-      "malloc", (yang::void_fp)&malloc,
-      llvm::FunctionType::get(_global_data, llvm_size_t, false));
+  // Register free.
   auto free_ptr = get_native_function(
       "free", (yang::void_fp)&free,
       llvm::FunctionType::get(void_type(), _global_data, false));
@@ -139,20 +116,8 @@ void IrGenerator::emit_global_functions()
       b().getContext(), "entry", alloc);
   b().SetInsertPoint(alloc_block);
 
-  // Compute sizeof(_global_data) by indexing one past the null pointer.
-  llvm::Value* size_of = b().CreateIntToPtr(
-      constant_int(0), _global_data, "null");
-  size_of = b().CreateGEP(
-      size_of, constant_int(1), "sizeof");
-  size_of = b().CreatePtrToInt(size_of, llvm_size_t, "size");
-  // Call malloc, set instance pointer, call each of the global initialisation
-  // functions, and return the pointer.
-  llvm::Value* v = b().CreateCall(malloc_ptr, size_of, "call");
-  // Make sure refcounted memory is initialised.
-  for (const auto& pair : _global_numbering) {
-    memory_init(b(), global_ptr(v, pair.second));
-  }
-  memory_store(alloc->arg_begin(), global_ptr(v, 0));
+  llvm::Value* v = allocate_structure_value(_global_data, _global_numbering);
+  memory_store(alloc->arg_begin(), structure_ptr(v, 0));
   for (llvm::Function* f : _global_inits) {
     b().CreateCall(f, v);
   }
@@ -171,7 +136,7 @@ void IrGenerator::emit_global_functions()
   // Make sure to decrement the reference count on each global variable on
   // destruction.
   for (const auto pair : _global_numbering) {
-    llvm::Value* old = memory_load(global_ptr(it, pair.second));
+    llvm::Value* old = memory_load(structure_ptr(it, pair.second));
     update_reference_count(old, -1);
   }
   b().CreateCall(free_ptr, it);
@@ -196,7 +161,7 @@ void IrGenerator::emit_global_functions()
     // Loads out of the global data structure must be byte-aligned! I don't
     // entirely understand why, but leaving the default will segfault at random
     // sometimes for certain types (e.g. float vectors).
-    b().CreateRet(memory_load(global_ptr(it, pair.second)));
+    b().CreateRet(memory_load(structure_ptr(it, pair.second)));
 
     name = "!global_set_" + pair.first;
     std::vector<llvm::Type*> setter_args{t, _global_data};
@@ -213,7 +178,7 @@ void IrGenerator::emit_global_functions()
     ++jt;
     jt->setName("global");
     b().SetInsertPoint(setter_block);
-    memory_store(it, global_ptr(jt, pair.second));
+    memory_store(it, structure_ptr(jt, pair.second));
     b().CreateRetVoid();
   }
 }
@@ -237,10 +202,11 @@ void IrGenerator::preorder(const Node& node)
       // Store a special entry in the symbol table for the implicit global
       // structure pointer.
       auto it = function->arg_begin();
-      it->setName("global");
+      it->setName("env");
       _metadata.add(ENVIRONMENT_PTR, it);
       _metadata.add(FUNCTION, function);
       _metadata.add(PARENT_BLOCK, b().GetInsertBlock());
+      allocate_closure_struct(node.static_info.closed_environment, it);
 
       _metadata.add(GLOBAL_INIT_FUNCTION, function);
       b().SetInsertPoint(block);
@@ -530,10 +496,13 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     }
 
     case Node::GLOBAL:
+      dereference_scoped_locals(true);
+      if (!node.static_info.closed_environment.empty()) {
+        _scope_closures.pop_back();
+      }
       b().CreateRetVoid();
       _symbol_table.pop();
       _metadata.pop();
-      // There can't be any locals to dereference in this scope.
       _refcount_locals.pop_back();
       return results[0];
     case Node::GLOBAL_ASSIGN:
@@ -566,9 +535,18 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       }
       auto parent_block = (llvm::BasicBlock*)_metadata[PARENT_BLOCK];
 
+      if (!node.static_info.closed_environment.empty()) {
+        _scope_closures.pop_back();
+      }
       _symbol_table.pop();
       _symbol_table.pop();
       _metadata.pop();
+      // After metadata pop, function created closure iff closure pointer
+      // exists.
+      if (_metadata[CLOSURE_PTR]) {
+        --_function_scope;
+        _scope_to_function_map.erase(--_scope_to_function_map.end());
+      }
       _refcount_locals.pop_back();
       if (!_metadata.has(FUNCTION)) {
         return parent;
@@ -576,7 +554,15 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // If this was a nested function, set the insert point back to the last
       // block in the enclosing function and make the proper expression value.
       b().SetInsertPoint(parent_block);
-      return generic_function_value(parent, _metadata[ENVIRONMENT_PTR]);
+      // If the current function created a closure, we have to pass the new
+      // environment pointer (which has a parent pointer to the old one)
+      // instead. There is some potential for optimisation if an entire tree
+      // of inner functions never creates a closure, where we could instead
+      // dereference and pass only the closure scopes they actually access; it's
+      // kind of complicated and not really a huge optimisation, though.
+      auto closure = _metadata[CLOSURE_PTR];
+      return generic_function_value(
+          parent, closure ? closure : _metadata[ENVIRONMENT_PTR]);
     }
     case Node::NAMED_EXPRESSION:
       return results[0];
@@ -661,7 +647,8 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     case Node::SCOPE_RESOLUTION:
     {
       // Scope resolution always refers to a context function.
-      std::string s = node.user_type_name + "::" + node.string_value;
+      std::string s =
+          node.static_info.user_type_name + "::" + node.string_value;
       auto it = _context.get_functions().find(s);
       return generic_function_value(it->second);
     }
@@ -680,7 +667,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // Load the local variable, if it's there.
       if (_symbol_table.has(node.string_value) &&
           _symbol_table.index(node.string_value)) {
-        return memory_load(_symbol_table[node.string_value]);
+        return memory_load(get_variable_ptr(node.string_value));
       }
       // Otherwise it's a top-level function, global, or context function. We
       // must be careful to only return globals/functions *after* they have been
@@ -691,8 +678,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
         // get the value.
         if (_symbol_table.get(node.string_value, 0)) {
           return generic_function_value(
-              _symbol_table.get(node.string_value, 0),
-              _metadata[ENVIRONMENT_PTR]);
+              _symbol_table.get(node.string_value, 0), global_ptr());
         }
         // Otherwise it's a global, so look up in the global structure with a
         // byte-aligned load.
@@ -761,8 +747,9 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       llvm::Value* genf = results[0];
 
       // Special logic for member-function calling.
+      // TODO: get rid of this now that we have closures.
       if (node.children[0]->type == Node::MEMBER_SELECTION) {
-        std::string s = node.children[0]->user_type_name +
+        std::string s = node.children[0]->static_info.user_type_name +
             "::" + node.children[0]->string_value;
         auto it = _context.get_functions().find(s);
         genf = generic_function_value(it->second);
@@ -933,7 +920,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // See Node::IDENTIFIER.
       const std::string& s = node.children[0]->string_value;
       if (_symbol_table[s]) {
-        memory_store(results[1], _symbol_table[s]);
+        memory_store(results[1], get_variable_ptr(s));
       }
       // We can't store values for globals in the symbol table since the lookup
       // depends on the current function's environment pointer argument.
@@ -956,17 +943,28 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
         return results[1];
       }
 
-      // Optimisation passes such as mem2reg work much better when memory
-      // locations are declared in the entry block (so they are guaranteed to
-      // execute once).
-      auto& entry_block =
-          ((llvm::Function*)b().GetInsertPoint()->getParent())->getEntryBlock();
-      llvm::IRBuilder<> entry(&entry_block, entry_block.begin());
-      llvm::Value* v = entry.CreateAlloca(types[1], nullptr, s);
-      memory_init(entry, v);
-      memory_store(results[1], v);
-      _refcount_locals.back().back().push_back(v);
-      _symbol_table.add(s, v);
+      const std::string& unique_name =
+          s + "/" + std::to_string(node.static_info.scope_number);
+
+      llvm::Value* storage = nullptr;
+      if (_symbol_table.has(unique_name)) {
+        storage = _symbol_table[unique_name];
+        _value_to_unique_name_map.emplace(storage, unique_name);
+      }
+      else {
+        // Optimisation passes such as mem2reg work much better when memory
+        // locations are declared in the entry block (so they are guaranteed to
+        // execute once).
+        auto& entry_block =
+            ((llvm::Function*)b().GetInsertPoint()->getParent())->getEntryBlock();
+        llvm::IRBuilder<> entry(&entry_block, entry_block.begin());
+        storage = entry.CreateAlloca(types[1], nullptr, s);
+        memory_init(entry, storage);
+      }
+
+      memory_store(results[1], storage);
+      _symbol_table.add(s, storage);
+      _refcount_locals.back().back().push_back(storage);
       return results[1];
     }
 
@@ -1005,6 +1003,133 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
   }
 }
 
+void IrGenerator::init_structure_type(
+    llvm::Type*& output_type, structure_numbering& output_numbering,
+    const symbol_frame& symbols, const std::string& name) const
+{
+  std::vector<llvm::Type*> type_list;
+  // The first element in any structure is always some pointer. For the global
+  // data structure it's a pointer to Yang program instance with which the data
+  // is associated; for closure structures it's a pointer to the parent
+  // structure.
+  // TODO: do we even need the Yang instance pointer any more?
+  // TODO: also, global data structure should now be refcounted like closure
+  // structures instead of destroyed when the Instance is!
+  type_list.push_back(void_ptr_type());
+  std::size_t number = 1;
+  // Since the global data structure may contain pointers to functions which
+  // themselves take said implicit argument, the global_data variable must be
+  // set (to an opaque type) before we call get_llvm_type.
+  auto struct_type =
+      llvm::StructType::create(_module.getContext(), name);
+  output_type = llvm::PointerType::get(struct_type, 0);
+  for (const auto& pair : symbols) {
+    // Type-calculation must be kept up-to-date with new types, or globals of
+    // that type will fail.
+    llvm::Type* t = get_llvm_type(pair.second);
+    type_list.push_back(t);
+    output_numbering[pair.first] = number++;
+  }
+  struct_type->setBody(type_list, false);
+}
+
+llvm::Value* IrGenerator::allocate_structure_value(
+    llvm::Type* type, const structure_numbering& numbering)
+{
+  llvm::Type* llvm_size_t =
+      llvm::IntegerType::get(b().getContext(), 8 * sizeof(std::size_t));
+
+  auto malloc_ptr = get_native_function(
+      "malloc", (yang::void_fp)&malloc,
+      llvm::FunctionType::get(type, llvm_size_t, false));
+
+  // Compute sizeof(type) by indexing one past the null pointer.
+  llvm::Value* size_of = b().CreateIntToPtr(constant_int(0), type, "null");
+  size_of = b().CreateGEP(size_of, constant_int(1), "sizeof");
+  size_of = b().CreatePtrToInt(size_of, llvm_size_t, "size");
+
+  // Call malloc, make sure refcounted memory is initialised, and return the
+  // pointer.
+  llvm::Value* v = b().CreateCall(malloc_ptr, size_of, "call");
+  for (const auto& pair : numbering) {
+    memory_init(b(), structure_ptr(v, pair.second));
+  }
+  return v;
+}
+
+llvm::Value* IrGenerator::get_parent_struct(
+    std::size_t parent_steps, llvm::Value* v)
+{
+  llvm::Type* void_ptr_ptr = llvm::PointerType::get(
+      llvm::StructType::create(b().getContext(), void_ptr_type()), 0);
+  for (std::size_t i = 0; i < parent_steps; ++i) {
+    v = memory_load(structure_ptr(b().CreateBitCast(v, void_ptr_ptr), 0));
+  }
+  return v;
+}
+
+llvm::Value* IrGenerator::get_variable_ptr(const std::string& name)
+{
+  // See notes in header file about the flow here.
+  auto it = _scope_to_function_map.upper_bound(_symbol_table.index(name));
+  llvm::Value* v = _symbol_table[name];
+
+  if (it == _scope_to_function_map.begin() ||
+      it == _scope_to_function_map.end()) {
+    return v;
+  }
+
+  // These indices now must be different.
+  std::size_t closure_index = (--it)->second;
+  std::size_t current_index = _scope_to_function_map.rbegin()->second;
+
+  const std::string& unique_name = _value_to_unique_name_map[v];
+  llvm::Value* closure_ptr = get_parent_struct(
+      current_index - closure_index - 1, _metadata[ENVIRONMENT_PTR]);
+  llvm::Type* closure_type = _scope_closures[closure_index].type;
+  std::size_t struct_index =
+      _scope_closures[closure_index].numbering[unique_name];
+  return structure_ptr(
+      b().CreateBitCast(closure_ptr, closure_type), struct_index);
+}
+
+llvm::Value* IrGenerator::allocate_closure_struct(
+    const symbol_frame& symbols, llvm::Value* parent_ptr)
+{
+  if (symbols.empty()) {
+    // Store a nullptr to be explicit.
+    _metadata.add(CLOSURE_PTR, nullptr);
+    return nullptr;
+  }
+
+  // Handle closure-structure initialisation.
+  llvm::Type* closure_type = nullptr;
+  structure_numbering closure_numbering;
+  init_structure_type(closure_type, closure_numbering, symbols, "closure");
+  llvm::Value* closure_value =
+      allocate_structure_value(closure_type, closure_numbering);
+  // Store in metadata.
+  _metadata.add(CLOSURE_PTR, closure_value);
+  _scope_closures.push_back({closure_type, closure_numbering});
+
+  // Store parent pointer in the first slot.
+  memory_store(b().CreateBitCast(parent_ptr, void_ptr_type()),
+               structure_ptr(closure_value, 0));
+  // Set up the symbol-table for all the rest. If a closed variable "v"
+  // appears in scope #1, for instance, we store "v/1" in the symbol table
+  // with a pointer into the closure-structure.
+  //
+  // Then, when we reach the actual declaration of v in scope #1, we store
+  // into "v/1" and copy the symbol table entry for "v/1" to "v" for that
+  // scope and its children (as in the argument list code below).
+  for (const auto& pair : symbols) {
+    llvm::Value* ptr =
+        structure_ptr(closure_value, closure_numbering[pair.first]);
+    _symbol_table.add(pair.first, ptr);
+  }
+  return closure_value;
+}
+
 void IrGenerator::create_function(
     const Node& node, llvm::FunctionType* function_type)
 {
@@ -1017,6 +1142,8 @@ void IrGenerator::create_function(
 
   // The code for Node::TYPE_FUNCTION in visit() ensures it takes an environment
   // pointer.
+  // TODO: we possibly need to do refcounting on the special function arguments
+  // (environment pointer; self-recursion pointer...)?
   auto eptr = --function->arg_end();
   eptr->setName("env");
   _metadata.add(ENVIRONMENT_PTR, eptr);
@@ -1027,7 +1154,8 @@ void IrGenerator::create_function(
   b().SetInsertPoint(block);
 
   _symbol_table.push();
-  // Recursive lookup handled similarly to arguments below.
+  // Store the function's name in its own scope. Recursive lookup handled
+  // similarly to arguments below.
   if (_immediate_left_assign.length()) {
     llvm::Type* fp_type = llvm::PointerType::get(function_type, 0);
     llvm::Value* v = b().CreateAlloca(
@@ -1036,23 +1164,45 @@ void IrGenerator::create_function(
     _symbol_table.add(_immediate_left_assign, v);
     _immediate_left_assign.clear();
   }
+  // Increase depth of scope pointers if the parent function created a closure.
+  if (_metadata[CLOSURE_PTR]) {
+    _scope_to_function_map.emplace(_symbol_table.size(), ++_function_scope);
+  }
   _symbol_table.push();
+  // Some optimisations may be possible. For example, const variables may not
+  // need to go in the closure structure. Maybe LLVM can handle that anyway?
+  allocate_closure_struct(node.static_info.closed_environment, eptr);
 
   // Set up the arguments.
   std::size_t arg_num = 0;
-  for (auto it = function->arg_begin(); it != --function->arg_end(); ++it) {
+  for (auto it = function->arg_begin();
+       it != --function->arg_end(); ++it, ++arg_num) {
     const std::string& name =
         node.children[0]->children[1 + arg_num]->string_value;
+    const std::string& unique_name =
+        name + "/" + std::to_string(node.static_info.scope_number);
 
-    // Rather than reference argument values directly, we create an alloca
-    // and store the argument in there. This simplifies things, since we
-    // can emit the same IR code when referencing local variables or
-    // function arguments.
-    llvm::Value* alloc = b().CreateAlloca(
-        function_type->getParamType(arg_num), nullptr, name);
-    b().CreateStore(it, alloc);
-    _symbol_table.add(name, alloc);
-    ++arg_num;
+    llvm::Value* storage = nullptr;
+    if (_symbol_table.has(unique_name)) {
+      storage = _symbol_table[unique_name];
+      _value_to_unique_name_map.emplace(storage, unique_name);
+    }
+    else {
+      // Rather than reference argument values directly, we create an alloca
+      // and store the argument in there. This simplifies things, since we
+      // can emit the same IR code when referencing local variables or
+      // function arguments.
+      storage = b().CreateAlloca(
+          function_type->getParamType(arg_num), nullptr, name);
+      memory_init(b(), storage);
+    }
+
+    // It's possible refcounting isn't necessary on arguments, since they're
+    // const and will usually be referenced somewhere up the call stack. I'm not
+    // convinced, though.
+    memory_store(it, storage);
+    _symbol_table.add(name, storage);
+    _refcount_locals.back().back().push_back(storage);
   }
 }
 
@@ -1105,21 +1255,28 @@ llvm::Value* IrGenerator::w2i(llvm::Value* v)
       b2i(b().CreateAnd(a_check, b_check, "int")), "int");
 }
 
-llvm::Value* IrGenerator::global_ptr(llvm::Value* ptr, std::size_t index)
+llvm::Value* IrGenerator::structure_ptr(llvm::Value* ptr, std::size_t index)
 {
-  // The first index indexes the global data pointer itself, i.e. to obtain
+  // The first index indexes the structure data pointer itself, i.e. to obtain
   // the one and only global data structure at that memory location.
   std::vector<llvm::Value*> indexes{constant_int(0), constant_int(index)};
-  llvm::Value* v = b().CreateGEP(ptr, indexes, "global");
+  llvm::Value* v = b().CreateGEP(ptr, indexes, "index");
   return v;
 }
 
 llvm::Value* IrGenerator::global_ptr(const std::string& name)
 {
-  // Bitcast, since it may be a void pointer (which might in the future point to
-  // a closure struct).
-  llvm::Value* v = b().CreateBitCast(_metadata[ENVIRONMENT_PTR], _global_data);
-  return global_ptr(v, _global_numbering[name]);
+  return structure_ptr(global_ptr(), _global_numbering[name]);
+}
+
+llvm::Value* IrGenerator::global_ptr()
+{
+  // This always gets the global pointer, even in inner functions of closure
+  // scopes.
+  llvm::Value* ptr = get_parent_struct(
+      _scope_to_function_map.rbegin()->second, _metadata[ENVIRONMENT_PTR]);
+  // Bitcast, since it's represented as void pointer.
+  return b().CreateBitCast(ptr, _global_data);
 }
 
 llvm::Value* IrGenerator::memory_load(llvm::Value* ptr)

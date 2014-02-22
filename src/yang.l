@@ -93,6 +93,7 @@ vector_size [1-9]{digit}*
 %%
 
   /* Comments and whitespace. */
+  /* TODO: whitespace errors should probably be warnings. */
 
 <*>{tab} {
   yang_error(yyscanner, "tab character");
