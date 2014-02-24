@@ -85,10 +85,6 @@ public:
 
 private:
 
-  // If this is a Yang function, get the program instance it references.
-  // Otherwise, return a null pointer.
-  Instance* get_instance() const;
-
   template<typename...>
   friend struct internal::TrampolineCallArgs;
   template<typename>
@@ -205,22 +201,6 @@ Type Function<R(Args...)>::get_type(const Context& context)
 {
   internal::TypeInfo<Function<R(Args...)>> info;
   return info(context);
-}
-
-template<typename R, typename... Args>
-Instance* Function<R(Args...)>::get_instance() const
-{
-  // Standard guarantees that pointer to structure points to its first member,
-  // and the pointer to the program instance is always the first element of
-  // the global data structure; so, we can just cast it to an instance
-  // pointer.
-  //
-  // This will change when the environment pointer can also point to a closure
-  // structure.
-  if (!_env) {
-    return nullptr;
-  }
-  return *(Instance**)_env;
 }
 
 template<typename R, typename... Args>

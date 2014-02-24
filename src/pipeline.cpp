@@ -196,10 +196,12 @@ Instance::Instance(const Program& program)
   yang::void_fp global_alloc = get_native_fp("!global_alloc");
   typedef void* (*alloc_fp)(void*);
   _global_data = ((alloc_fp)global_alloc)(this);
+  _instance_set.insert(this);
 }
 
 Instance::~Instance()
 {
+  _instance_set.erase(this);
   yang::void_fp global_free = get_native_fp("!global_free");
   typedef void (*free_fp)(void*);
   ((free_fp)global_free)(_global_data);
@@ -261,6 +263,8 @@ void Instance::check_function(const std::string& name, const Type& type) const
         type.string() + "`");
   }
 }
+
+std::unordered_set<Instance*> Instance::_instance_set;
 
 // End namespace yang.
 }

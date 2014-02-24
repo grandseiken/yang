@@ -113,6 +113,25 @@ export big_int_literals = int()
 {
   return 0xffffffff;
 }
+
+export knuth_man_or_boy_test = int(int n)
+{
+  const a = int(int k, int() x1, int() x2, int() x3, int() x4, int() x5)
+  {
+    var kk = k;
+    const b = int()
+    {
+      --kk;
+      return a(kk, b, x1, x2, x3, x4);
+    };
+    return kk <= 0 ? x4() + x5() : b();
+  };
+  const k = int()(int n)
+  {
+    return int() {return n;};
+  };
+  return a(n, k(1), k(-1), k(-1), k(1), k(0));
+}
 )";
 
 TEST_F(YangTest, SemanticsTest)
@@ -141,5 +160,7 @@ TEST_F(YangTest, SemanticsTest)
   EXPECT_EQ(inst.call<int_t>("int_literals"), 654);
   EXPECT_EQ(inst.call<int_t>("big_int_literals"), 0xffffffff);
   EXPECT_EQ(inst.call<int_t>("big_int_literals"), -1);
+
+  EXPECT_EQ(inst.call<int_t>("knuth_man_or_boy_test", 10), -67);
   // TODO: just getting started. Need way more semantic tests.
 }

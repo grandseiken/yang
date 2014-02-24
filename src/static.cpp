@@ -7,7 +7,6 @@
 #include <unordered_set>
 #include <vector>
 #include <yang/context.h>
-#include "log.h"
 
 namespace std {
   template<>
@@ -27,7 +26,7 @@ StaticChecker::StaticChecker(
     symbol_frame& functions_output, symbol_frame& globals_output)
   : _errors(false)
   , _metadata(Type::VOID)
-  , _symbol_table({Type::VOID, 0, {nullptr, false, false}})
+  , _symbol_table({Type::VOID, 0, {nullptr, false, false}, 0})
   , _scope_numbering{0}
   , _scope_numbering_next(1)
   , _context(context)
@@ -166,9 +165,10 @@ void StaticChecker::infix(const Node& node, const result_list& results)
       _scope_to_function_map.emplace(_symbol_table.size(), &node);
       // Do the recursive hack.
       if (_immediate_left_assign.length()) {
-        add_symbol_checking_collision(
-            node, _immediate_left_assign,
-            inside_function() * (_symbol_table.size() - 1), t);
+        std::size_t index = inside_function() * (_symbol_table.size() - 1);
+        add_symbol_checking_collision(node, _immediate_left_assign, index, t);
+        _symbol_table.get(_immediate_left_assign, index).temporary_index =
+            _symbol_table.size();
         _immediate_left_assign = "";
       }
 
@@ -523,7 +523,11 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       // sure we can.
       std::size_t index = _symbol_table.index(node.string_value);
       auto& symbol = _symbol_table[node.string_value];
-      auto it = _scope_to_function_map.upper_bound(index);
+      // Make sure we use the right closure scope for recursive lookup hacks
+      // (which have a different temporary_index while in the function body).
+      std::size_t closure_index =
+          symbol.temporary_index ? symbol.temporary_index : index;
+      auto it = _scope_to_function_map.upper_bound(closure_index);
       if (it != _scope_to_function_map.begin() &&
           it != _scope_to_function_map.end()) {
         const Node* function = (--it)->second;
@@ -773,6 +777,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         std::size_t index = inside_function() * (_symbol_table.size() - 1);
         auto& symbol = _symbol_table.get(s, index);
         symbol.unreferenced.declaration = &node;
+        // Remove the temporary index again.
+        symbol.temporary_index = index;
 
         if (node.type == Node::ASSIGN_VAR && symbol.type.is_const()) {
           symbol.type.set_const(false);
@@ -933,7 +939,7 @@ void StaticChecker::add_symbol(
   // warn_writes to false.
   unreferenced_t unref{
     &node, unreferenced_warning && !type.is_const(), unreferenced_warning};
-  _symbol_table.add(name, index, {type, _scope_numbering[index], unref});
+  _symbol_table.add(name, index, {type, _scope_numbering[index], unref, 0});
 }
 
 void StaticChecker::add_symbol(

@@ -189,6 +189,11 @@ global {
       return a + global_a;
     }();
   }();
+  var global_var = 0;
+  var stored = int()
+  {
+    return 13;
+  };
 }
 
 export internal = int(int a)
@@ -223,12 +228,73 @@ export internal = int(int a)
     }();
   }();
 
+  var d = 1;
+  const f = int()
+  {
+    return d *= 2;
+  };
+  result += f() + f() + f();
+
   return result;
+}
+
+export external = int()(int c)
+{
+  var v = 1;
+  return int()
+  {
+    return v += c + ++global_var;
+  };
+}
+
+export store = void()
+{
+  const t = stored;
+  const v = ++global_var;
+  const f = int()
+  {
+    return v + 2 * t();
+  };
+  stored = f;
+}
+
+export double = int(int n)
+{
+  const fac = int(int n)
+  {
+    const next = int()
+    {
+      return fac(n - 1);
+    };
+    return n ? n * next() : 1;
+  };
+  return int()
+  {
+    return fac(n);
+  }();
 }
 )";
 
 TEST_F(YangTest, FunctionClosures)
 {
   auto& inst = instance(TestFunctionClosuresStr);
-  EXPECT_EQ(inst.call<int_t>("internal", 3), 75);
+  EXPECT_EQ(inst.call<int_t>("internal", 3), 89);
+
+  typedef Function<int_t()> intf_t;
+  auto external = inst.call<intf_t>("external", 4);
+  EXPECT_EQ(external(), 6);
+  EXPECT_EQ(external(), 12);
+  EXPECT_EQ(external(), 19);
+  EXPECT_EQ(inst.call<intf_t>("external", 4)(), 9);
+  EXPECT_EQ(external(), 28);
+  EXPECT_EQ(inst.call<intf_t>("external", 3)(), 10);
+
+  inst.call<void>("store");
+  EXPECT_EQ(inst.get_global<intf_t>("stored")(), 33);
+  inst.call<void>("store");
+  EXPECT_EQ(inst.get_global<intf_t>("stored")(), 74);
+  inst.call<void>("store");
+  EXPECT_EQ(inst.get_global<intf_t>("stored")(), 157);
+
+  EXPECT_EQ(inst.call<int_t>("double", 5), 120);
 }

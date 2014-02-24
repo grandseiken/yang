@@ -124,6 +124,9 @@ private:
   R call_via_trampoline(const std::string& name, const Args&... args) const;
   template<typename R, typename... Args>
   R call_via_trampoline(yang::void_fp target, const Args&... args) const;
+  template<typename R, typename... Args>
+  R call_via_trampoline(
+      yang::void_fp target, void* env, const Args&... args) const;
 
   // Runtime check that global exists and has the correct type and, if it is to
   // be modified, that it is both exported and non-const. Otherwise, throws.
@@ -137,10 +140,19 @@ private:
   const Program& _program;
   void* _global_data;
 
+  // Stupid temprary structure until function representation rework.
+  // TODO: get rid of it.
+  static std::unordered_set<Instance*> _instance_set;
+
 };
 
 // Implementation of Function::operator(), which has to see the defintion of
 // Instance.
+// TODO: after reworking function representation so that we only need global
+// forward trampolines (see irgen.cpp todo), we can move this somewhere more
+// sensible, get rid of the walk to the instance pointer, get rid of the
+// instance pointer from global data structures entirely, and get rid of
+// Instance::call_via_trampoline taking env pointer.
 template<typename R, typename... Args>
 R Function<R(Args...)>::operator()(const Args&... args) const
 {
@@ -149,8 +161,17 @@ R Function<R(Args...)>::operator()(const Args&... args) const
     auto native = (internal::NativeFunction<void>*)_target;
     return native->get<R, Args...>()(args...);
   }
-  Instance* instance = get_instance();
-  return instance->call_via_trampoline<R>(_function, args...);
+
+  // Standard guarantees that pointer to structure points to its first member,
+  // and the pointer to the program instance or parent structure is always the
+  // first element of the environment structur; so, we can just cast and walk
+  // to the top-level.
+  void* s = _env;
+  while (!Instance::_instance_set.count(*(Instance**)s)) {
+    s = *(void**)s;
+  }
+  Instance* instance = *(Instance**)s;
+  return instance->call_via_trampoline<R>(_function, _env, args...);
 }
 
 template<typename T>
@@ -198,6 +219,13 @@ R Instance::call_via_trampoline(
 template<typename R, typename... Args>
 R Instance::call_via_trampoline(yang::void_fp target, const Args&... args) const
 {
+  return call_via_trampoline<R>(target, _global_data, args...);
+}
+
+template<typename R, typename... Args>
+R Instance::call_via_trampoline(
+    yang::void_fp target, void* env, const Args&... args) const
+{
   Type type = Function<R(Args...)>::get_type(_program.get_context());
   // Since we can only obtain a valid Function object referencing a function
   // type for which a trampoline has been generated, there should always be
@@ -209,7 +237,7 @@ R Instance::call_via_trampoline(yang::void_fp target, const Args&... args) const
 
   typedef internal::TrampolineCall<R, Args..., void*, yang::void_fp> call_type;
   auto trampoline_expanded = (typename call_type::fp_type)trampoline;
-  return call_type()(trampoline_expanded, args..., _global_data, target);
+  return call_type()(trampoline_expanded, args..., env, target);
 }
 
 // End namespace yang.

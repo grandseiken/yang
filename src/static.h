@@ -99,6 +99,9 @@ private:
     Type type;
     std::size_t scope_number;
     unreferenced_t unreferenced;
+    // Only to deal with immediate-left-assign-hack names in closures while
+    // inside the function body.
+    std::size_t temporary_index;
   };
 
   SymbolTable<metadata, Type> _metadata;

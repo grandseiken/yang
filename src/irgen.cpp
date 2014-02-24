@@ -960,11 +960,11 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
         llvm::IRBuilder<> entry(&entry_block, entry_block.begin());
         storage = entry.CreateAlloca(types[1], nullptr, s);
         memory_init(entry, storage);
+        _refcount_locals.back().back().push_back(storage);
       }
 
       memory_store(results[1], storage);
       _symbol_table.add(s, storage);
-      _refcount_locals.back().back().push_back(storage);
       return results[1];
     }
 
@@ -1153,17 +1153,6 @@ void IrGenerator::create_function(
   auto block = llvm::BasicBlock::Create(b().getContext(), "entry", function);
   b().SetInsertPoint(block);
 
-  _symbol_table.push();
-  // Store the function's name in its own scope. Recursive lookup handled
-  // similarly to arguments below.
-  if (_immediate_left_assign.length()) {
-    llvm::Type* fp_type = llvm::PointerType::get(function_type, 0);
-    llvm::Value* v = b().CreateAlloca(
-        generic_function_type(fp_type), nullptr, _immediate_left_assign);
-    b().CreateStore(generic_function_value(function, eptr), v);
-    _symbol_table.add(_immediate_left_assign, v);
-    _immediate_left_assign.clear();
-  }
   // Increase depth of scope pointers if the parent function created a closure.
   if (_metadata[CLOSURE_PTR]) {
     _scope_to_function_map.emplace(_symbol_table.size(), ++_function_scope);
@@ -1171,7 +1160,49 @@ void IrGenerator::create_function(
   _symbol_table.push();
   // Some optimisations may be possible. For example, const variables may not
   // need to go in the closure structure. Maybe LLVM can handle that anyway?
+  //
+  // Also, we naively allocate at most one closure structure per function
+  // invocation. Obviously, if we could partition the inner functions such that
+  // the sets of enclosing variables they access are disjoint, we could allocate
+  // separate structures for each (and potentially return unused memory sooner).
   allocate_closure_struct(node.static_info.closed_environment, eptr);
+
+  // Lambda for deciding whether to put an argument in closure or stack.
+  auto assign_storage = [&](
+      llvm::Type* type, const std::string& name, std::int32_t scope_mod)
+  {
+    std::string unique_name =
+        name + "/" + std::to_string(node.static_info.scope_number + scope_mod);
+
+    if (_symbol_table.has(unique_name)) {
+      llvm::Value* v = _symbol_table[unique_name];
+      _value_to_unique_name_map.emplace(v, unique_name);
+      _refcount_locals.back().back().push_back(v);
+      return v;
+    }
+    // Rather than reference argument values directly, we create an alloca
+    // and store the argument in there. This simplifies things, since we
+    // can emit the same IR code when referencing local variables or
+    // function arguments.
+    llvm::Value* v = b().CreateAlloca(type, nullptr, name);
+    memory_init(b(), v);
+    return v;
+  };
+
+  // Store the function's name in its own scope. Recursive lookup handled
+  // similarly to arguments below.
+  if (_immediate_left_assign.length()) {
+    llvm::Type* fp_type =
+        generic_function_type(llvm::PointerType::get(function_type, 0));
+    // The identifier is registered one scope above the function argument scope.
+    // Confusingly, that's two unique scope-numbers back because the LHS of the
+    // assignment has its own scope in-between.
+    llvm::Value* storage = assign_storage(fp_type, _immediate_left_assign, -2);
+    b().CreateStore(generic_function_value(function, eptr), storage);
+    _symbol_table.add(_immediate_left_assign, storage);
+    _immediate_left_assign.clear();
+  }
+  _symbol_table.push();
 
   // Set up the arguments.
   std::size_t arg_num = 0;
@@ -1179,30 +1210,14 @@ void IrGenerator::create_function(
        it != --function->arg_end(); ++it, ++arg_num) {
     const std::string& name =
         node.children[0]->children[1 + arg_num]->string_value;
-    const std::string& unique_name =
-        name + "/" + std::to_string(node.static_info.scope_number);
-
-    llvm::Value* storage = nullptr;
-    if (_symbol_table.has(unique_name)) {
-      storage = _symbol_table[unique_name];
-      _value_to_unique_name_map.emplace(storage, unique_name);
-    }
-    else {
-      // Rather than reference argument values directly, we create an alloca
-      // and store the argument in there. This simplifies things, since we
-      // can emit the same IR code when referencing local variables or
-      // function arguments.
-      storage = b().CreateAlloca(
-          function_type->getParamType(arg_num), nullptr, name);
-      memory_init(b(), storage);
-    }
+    llvm::Value* storage =
+        assign_storage(function_type->getParamType(arg_num), name, 0);
 
     // It's possible refcounting isn't necessary on arguments, since they're
     // const and will usually be referenced somewhere up the call stack. I'm not
     // convinced, though.
     memory_store(it, storage);
     _symbol_table.add(name, storage);
-    _refcount_locals.back().back().push_back(storage);
   }
 }
 
