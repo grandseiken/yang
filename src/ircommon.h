@@ -24,6 +24,8 @@ namespace llvm {
 namespace yang {
 namespace internal {
 
+// This class contains all the codegen functions necessary to generate Yang-side
+// trampolines.
 class IrCommon {
 public:
 
@@ -35,9 +37,18 @@ public:
   // Generate trampoline functions for converting between calling conventions.
   // If the trampoline for the given type doesn't already exist, a new function
   // will be generated and the insert point will need to be reset.
-  llvm::Function* get_trampoline_function(const yang::Type& function_type);
+  //
+  // These functions are a bit subtle: they walk the function type tree,
+  // flipping back and forth (as described in the source file comments), but
+  // only actually generate one type on trampoline (since only one type is ever
+  // needed in each context: forward globally, and reverse in programs).
+  //
+  // If the forward argument doesn't match the function called, the return value
+  // can be null.
+  llvm::Function* get_trampoline_function(
+      const yang::Type& function_type, bool forward);
   llvm::Function* get_reverse_trampoline_function(
-      const yang::Type& function_type);
+      const yang::Type& function_type, bool forward);
 
   typedef std::unordered_map<yang::Type, llvm::Function*> trampoline_map;
   const trampoline_map& get_trampoline_map() const;
@@ -72,8 +83,7 @@ protected:
   llvm::Value* generic_function_value_null(
       llvm::StructType* generic_function_type) const;
   llvm::Value* generic_function_value(
-      llvm::Value* function_ptr, llvm::Value* env_ptr,
-      llvm::Value* target_ptr = nullptr);
+      llvm::Value* function_ptr, llvm::Value* env_ptr);
   llvm::Value* generic_function_value(const GenericFunction& function);
   // Return a function type with extra parameter for the target function when
   // calling a trampoline.
@@ -115,8 +125,6 @@ class YangTrampolineGlobals {
 public:
 
   static yang::void_fp get_trampoline_function(const yang::Type& function_type);
-  static yang::void_fp get_reverse_trampoline_function(
-      const yang::Type& function_type);
 
 private:
 
@@ -131,6 +139,7 @@ private:
   llvm::Module* _module;
   std::unique_ptr<llvm::ExecutionEngine> _engine;
   IrCommon _common;
+  IrCommon::trampoline_map _trampoline_map;
 
 };
 

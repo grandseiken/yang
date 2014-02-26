@@ -14,62 +14,6 @@
 #include "type_info.h"
 
 // Big features:
-// TODO: closures and generally more useful functions. To make this work,
-// function values will need to be represented in IR as (vectors of) three
-// pointers:
-//
-// - first: to the actual C++ or Yang compiled function.
-// - second: to the reverse trampoline (for C++ functions); for Yang functions,
-//   it will be null.
-// - third: to a structure containing the closed-over environment. For C++
-//   functions, this will be null.
-//
-// Any variables in a function referenced by an inner function will be allocated
-// in a new structure instead of on the stack. Inner function-expressions (ones
-// that reference an enclosing variable, anyway) will then create a value with
-// the third pointer pointing to that structure.
-//
-// Nested closures will need to store a pointer to the parent closure in the
-// structure. For example, consider:
-//
-// export f = int()()()
-// {
-//   var v = 0;
-//   return int()()
-//   {
-//     ++v;
-//     var u = 0;
-//     return int()
-//     {
-//       ++v;
-//       ++u;
-//       return v + u;
-//     };
-//   };
-// };
-//
-// Each call f() creates a closure with a slot for v. However, if we take a
-// single invocation g = f(), then each call g() creates a closure with a slot
-// for u and a pointer to the same closure containing v.
-//
-// This will almost certainly necessitate some kind of garbage-collection or
-// reference-counting; particular care must be taken if the values can be passed
-// or returned to C++ and stored.
-//
-// There are many advantages over the current setup. It essentially unifies all
-// the various kinds of function so that there aren't any special rules:
-//
-// - Rather than std::functions being part of the context only, they'll be able
-//   to be passed in to any Yang function.
-// - User-type member functions can be implemented in a much more simple and
-//   useful way; member access creates an implicit inner function which closes
-//   over the value on the left. These can then be invoked or passed around like
-//   any other value.
-// - C++ yang::Function objects, rather than explicitly storing a pointer to the
-//   program instance, can be implemented as closures over the global data
-//   pointer. This means Yang functions can be passed to *other scripts* while
-//   still targeting the script they were retrieved from.
-//
 // TODO: interfaces. For example, it should be possible to define somehow an
 // interface type like:
 //

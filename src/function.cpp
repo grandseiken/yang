@@ -7,9 +7,9 @@
 
 namespace yang {
   namespace internal {
-    yang::void_fp get_global_reverse_trampoline_function(const yang::Type& type)
+    yang::void_fp get_global_trampoline_function(const yang::Type& type)
     {
-      return YangTrampolineGlobals::get_reverse_trampoline_function(type);
+      return YangTrampolineGlobals::get_trampoline_function(type);
     }
   }
 }

@@ -193,18 +193,16 @@ Instance::Instance(const Program& program)
         _program._name +
         ": instantiating program which did not compile successfully");
   }
-  yang::void_fp global_alloc = get_native_fp("!global_alloc");
-  typedef void* (*alloc_fp)(void*);
-  _global_data = ((alloc_fp)global_alloc)(this);
-  _instance_set.insert(this);
+  void* global_alloc = get_native_fp("!global_alloc");
+  typedef void* (*alloc_fp)();
+  _global_data = ((alloc_fp)(std::intptr_t)global_alloc)();
 }
 
 Instance::~Instance()
 {
-  _instance_set.erase(this);
-  yang::void_fp global_free = get_native_fp("!global_free");
+  void* global_free = get_native_fp("!global_free");
   typedef void (*free_fp)(void*);
-  ((free_fp)global_free)(_global_data);
+  ((free_fp)(std::intptr_t)global_free)(_global_data);
 }
 
 const Program& Instance::get_program() const
@@ -212,20 +210,22 @@ const Program& Instance::get_program() const
   return _program;
 }
 
-yang::void_fp Instance::get_native_fp(const std::string& name) const
+void* Instance::get_native_fp(const std::string& name) const
 {
   return get_native_fp(_program._module->getFunction(name));
 }
 
-yang::void_fp Instance::get_native_fp(llvm::Function* ir_fp) const
+void* Instance::get_native_fp(llvm::Function* ir_fp) const
 {
-  void* void_p = _program._engine->getPointerToFunction(ir_fp);
   // ISO C++ forbids casting between pointer-to-function and pointer-to-object!
+  // Most users of this function will eventually cast to a function pointer
+  // type and invoke it at some point.
+  //
   // Unfortunately (due to dependence on dlsym?), there doesn't seem to be any
   // way around this (technically) defined behaviour. I guess it should work
   // in practice since the whole native codegen thing is inherently machine-
-  // -dependent anyway. Also occurs in irgen.cpp.
-  return (yang::void_fp)(std::intptr_t)void_p;
+  // -dependent anyway.
+  return _program._engine->getPointerToFunction(ir_fp);
 }
 
 void Instance::check_global(const std::string& name, const Type& type,
@@ -263,8 +263,6 @@ void Instance::check_function(const std::string& name, const Type& type) const
         type.string() + "`");
   }
 }
-
-std::unordered_set<Instance*> Instance::_instance_set;
 
 // End namespace yang.
 }

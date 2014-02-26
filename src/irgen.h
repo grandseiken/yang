@@ -64,7 +64,8 @@ private:
   typedef std::unordered_map<std::string, std::size_t> structure_numbering;
   void init_structure_type(
       llvm::Type*& output_type, structure_numbering& output_numbering,
-      const symbol_frame& symbols, const std::string& name) const;
+      bool has_parent, const symbol_frame& symbols,
+      const std::string& name) const;
   llvm::Value* allocate_structure_value(
       llvm::Type* type, const structure_numbering& numbering);
   llvm::Value* allocate_closure_struct(

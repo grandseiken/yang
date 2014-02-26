@@ -64,6 +64,9 @@ IrGeneratorUnion::operator llvm::Value*() const
 
 // TODO: this whole file needs refactored, to use a wrapped Value class that
 // knows about Yang types instead of LLVM types.
+// In particular, for example, we could store functions as two void pointers
+// rather than two pointers where the first has type information (even though
+// it might not actually be that type).
 IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
                          symbol_frame& globals, const Context& context)
   : IrCommon(module, engine)
@@ -85,13 +88,14 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // define a structure type with a field for each global variable. Each
   // function will take a pointer to the global data structure as an implicit
   // final parameter.
-  init_structure_type(_global_data, _global_numbering, globals, "global_data");
+  init_structure_type(
+      _global_data, _global_numbering, false, globals, "global_data");
 
   // We need to generate a reverse trampoline function for each function in the
   // Context. User type member functions are present in the context function map
   // as well as free functions.
   for (const auto& pair : context.get_functions()) {
-    get_reverse_trampoline_function(pair.second.type);
+    get_reverse_trampoline_function(pair.second.type, false);
   }
 }
 
@@ -109,15 +113,13 @@ void IrGenerator::emit_global_functions()
 
   // Create allocator function. It takes a pointer to the Yang program instance.
   auto alloc = llvm::Function::Create(
-      llvm::FunctionType::get(_global_data, void_ptr_type(), false),
+      llvm::FunctionType::get(_global_data, false),
       llvm::Function::ExternalLinkage, "!global_alloc", &_module);
-  alloc->arg_begin()->setName("instance");
   auto alloc_block = llvm::BasicBlock::Create(
       b().getContext(), "entry", alloc);
   b().SetInsertPoint(alloc_block);
 
   llvm::Value* v = allocate_structure_value(_global_data, _global_numbering);
-  memory_store(alloc->arg_begin(), structure_ptr(v, 0));
   for (llvm::Function* f : _global_inits) {
     b().CreateCall(f, v);
   }
@@ -151,7 +153,7 @@ void IrGenerator::emit_global_functions()
     auto function_type = llvm::FunctionType::get(t, _global_data, false);
     auto getter = llvm::Function::Create(
         function_type, llvm::Function::ExternalLinkage, name, &_module);
-    get_trampoline_function(get_yang_type(function_type));
+    get_trampoline_function(get_yang_type(function_type), false);
 
     auto getter_block = llvm::BasicBlock::Create(
         b().getContext(), "entry", getter);
@@ -168,7 +170,7 @@ void IrGenerator::emit_global_functions()
     function_type = llvm::FunctionType::get(void_type(), setter_args, false);
     auto setter = llvm::Function::Create(
         function_type, llvm::Function::ExternalLinkage, name, &_module);
-    get_trampoline_function(get_yang_type(function_type));
+    get_trampoline_function(get_yang_type(function_type), false);
 
     auto setter_block = llvm::BasicBlock::Create(
         b().getContext(), "entry", setter);
@@ -510,7 +512,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       auto function = (llvm::Function*)parent;
       auto function_type =
           (llvm::FunctionType*)function->getType()->getPointerElementType();
-      get_trampoline_function(get_yang_type(function_type));
+      get_trampoline_function(get_yang_type(function_type), false);
       // Top-level functions Nodes have their int_value set to 1 when defined
       // using the `export` keyword.
       if (node.int_value) {
@@ -726,23 +728,6 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       if (_metadata.has(TYPE_EXPR_CONTEXT)) {
         goto type_function;
       }
-
-      // TODO: is it true that always either environment or target pointer is
-      // null? If so, can we get rid of get_function_type_with_target and the
-      // branching here, and just call with the final environment/target
-      // pointers OR-ed together?
-      // In fact, it occurs to me that since we always know the type statically,
-      // there isn't actually any need to pass the trampoline around. Instead of
-      // (function/trampoline, environment, target) we could simply use
-      // (target, environment). The logic becomes: do a runtime check to see if
-      // environment is null. If so, call trampoline looked up from
-      // _reverse_trampoline_map; otherwise, call target directly and pass
-      // environment.
-      // We can then get rid of the global Yang reverse trampolines, but we
-      // still need global Yang *forward* trampolines, I think (to call Yang
-      // functions from C++), and we maybe don't need per-module forward
-      // trampolines any more either. That seems to make sense: global forward
-      // trampolines, and per-module reverse trampolines only.
       std::vector<llvm::Value*> args;
       llvm::Value* genf = results[0];
 
@@ -763,7 +748,6 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // Extract pointers from the struct.
       llvm::Value* fptr = b().CreateExtractValue(genf, 0, "fptr");
       llvm::Value* eptr = b().CreateExtractValue(genf, 1, "eptr");
-      llvm::Value* tptr = b().CreateExtractValue(genf, 2, "tptr");
       args.push_back(eptr);
 
       // Switch on the presence of a trampoline function pointer.
@@ -775,26 +759,35 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
           llvm::BasicBlock::Create(b().getContext(), "merge", parent);
 
       auto f_type = get_function_type_with_target(genf->getType());
-      auto fp_type = llvm::PointerType::get(f_type, 0);
-
-      llvm::Value* cmp = b().CreateICmpNE(
-          tptr, llvm::ConstantPointerNull::get(void_ptr_type()));
+      llvm::Value* cmp = b().CreateICmpEQ(
+          eptr, llvm::ConstantPointerNull::get(void_ptr_type()));
       b().CreateCondBr(cmp, cpp_block, yang_block);
 
       b().SetInsertPoint(yang_block);
       llvm::Value* yang_val = b().CreateCall(fptr, args);
       b().CreateBr(merge_block);
 
-      args.push_back(tptr);
+      // Don't bother to generate correct code when the C++ path can never be
+      // taken.
+      llvm::Value* trampoline = get_reverse_trampoline_function(
+          get_yang_type(function_type_from_generic(genf->getType())), false);
+      llvm::Value* cpp_val = nullptr;
       b().SetInsertPoint(cpp_block);
-      llvm::Value* cpp_val =
-          b().CreateCall(b().CreateBitCast(fptr, fp_type, "cast"), args);
-      b().CreateBr(merge_block);
+      if (trampoline) {
+        args.push_back(b().CreateBitCast(fptr, void_ptr_type(), "cast"));
+        cpp_val = b().CreateCall(trampoline, args);
+        b().CreateBr(merge_block);
+      }
+      else {
+        b().CreateBr(yang_block);
+      }
 
       b().SetInsertPoint(merge_block);
       if (!f_type->getReturnType()->isVoidTy()) {
         auto phi = b().CreatePHI(f_type->getReturnType(), 2, "call");
-        phi->addIncoming(cpp_val, cpp_block);
+        if (trampoline) {
+          phi->addIncoming(cpp_val, cpp_block);
+        }
         phi->addIncoming(yang_val, yang_block);
         return phi;
       }
@@ -1005,18 +998,19 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
 
 void IrGenerator::init_structure_type(
     llvm::Type*& output_type, structure_numbering& output_numbering,
-    const symbol_frame& symbols, const std::string& name) const
+    bool has_parent, const symbol_frame& symbols, const std::string& name) const
 {
-  std::vector<llvm::Type*> type_list;
-  // The first element in any structure is always some pointer. For the global
-  // data structure it's a pointer to Yang program instance with which the data
-  // is associated; for closure structures it's a pointer to the parent
-  // structure.
-  // TODO: do we even need the Yang instance pointer any more?
   // TODO: also, global data structure should now be refcounted like closure
   // structures instead of destroyed when the Instance is!
-  type_list.push_back(void_ptr_type());
-  std::size_t number = 1;
+  std::vector<llvm::Type*> type_list;
+  std::size_t number = 0;
+  // The first element in closure structures is a pointer to the parent
+  // structure. Also add it if there isn't anything else, since empty structures
+  // aren't allowed.
+  if (has_parent || symbols.empty()) {
+    type_list.push_back(void_ptr_type());
+    ++number;
+  }
   // Since the global data structure may contain pointers to functions which
   // themselves take said implicit argument, the global_data variable must be
   // set (to an opaque type) before we call get_llvm_type.
@@ -1105,7 +1099,8 @@ llvm::Value* IrGenerator::allocate_closure_struct(
   // Handle closure-structure initialisation.
   llvm::Type* closure_type = nullptr;
   structure_numbering closure_numbering;
-  init_structure_type(closure_type, closure_numbering, symbols, "closure");
+  init_structure_type(
+      closure_type, closure_numbering, true, symbols, "closure");
   llvm::Value* closure_value =
       allocate_structure_value(closure_type, closure_numbering);
   // Store in metadata.
@@ -1326,7 +1321,8 @@ void IrGenerator::update_reference_count(llvm::Value* value, int_t change)
   if (!value->getType()->isStructTy()) {
     return;
   }
-  llvm::Value* tptr = b().CreateExtractValue(value, 2, "tptr");
+  llvm::Value* fptr = b().CreateExtractValue(value, 0, "fptr");
+  llvm::Value* eptr = b().CreateExtractValue(value, 1, "eptr");
 
   auto parent = b().GetInsertBlock()->getParent();
   auto refcount_block =
@@ -1334,12 +1330,16 @@ void IrGenerator::update_reference_count(llvm::Value* value, int_t change)
   auto merge_block =
       llvm::BasicBlock::Create(b().getContext(), "merge", parent);
 
-  llvm::Value* cmp = b().CreateICmpNE(
-      tptr, llvm::ConstantPointerNull::get(void_ptr_type()));
+  llvm::Value* v = llvm::ConstantPointerNull::get(void_ptr_type());
+  llvm::Value* fvoid = b().CreateBitCast(fptr, void_ptr_type(), "cast");
+  llvm::Value* cmp = b().CreateAnd(
+      b().CreateICmpNE(fvoid, v, "fptr"),
+      b().CreateICmpEQ(eptr, v, "eptr"), "and");
   b().CreateCondBr(cmp, refcount_block, merge_block);
 
   b().SetInsertPoint(refcount_block);
-  std::vector<llvm::Value*> args{tptr, constant_int(change)};
+  std::vector<llvm::Value*> args{
+      b().CreateBitCast(fptr, void_ptr_type(), "cast"), constant_int(change)};
   b().CreateCall(_refcount_function, args);
   b().CreateBr(merge_block);
   b().SetInsertPoint(merge_block);

@@ -80,7 +80,7 @@ void IrCommon::optimise_ir(llvm::Function* function) const
 }
 
 llvm::Function* IrCommon::get_trampoline_function(
-    const yang::Type& function_type)
+    const yang::Type& function_type, bool forward)
 {
   // Trampoline functions must be generated for every function type that might
   // be called externally or referenced by valid Function objects; reverse
@@ -97,6 +97,10 @@ llvm::Function* IrCommon::get_trampoline_function(
   // - the return type of any function type whose return type is also a function
   //   type, and for which a trampoline has been generated (transitively). This
   //   includes types of globals that have function type.
+  //
+  // We generate reverse trampolines on a per-program basis for inlining
+  // purposes; forward trampolines are uniqued globally and generated when they
+  // are first needed.
   //
   // Careful! User types have been erased by this point. Clients must erase
   // user types before looking up trampoline functions.
@@ -121,13 +125,17 @@ llvm::Function* IrCommon::get_trampoline_function(
   yang::Type return_type = function_type.get_function_return_type();
   // Handle the transitive closure.
   if (return_type.is_function()) {
-    get_trampoline_function(return_type);
+    get_trampoline_function(return_type, forward);
   }
   for (std::size_t i = 0; i < function_type.get_function_num_args(); ++i) {
     yang::Type t = function_type.get_function_arg_type(i);
     if (t.is_function()) {
-      get_reverse_trampoline_function(t);
+      get_reverse_trampoline_function(t, forward);
     }
+  }
+
+  if (!forward) {
+    return nullptr;
   }
   auto llvm_type = function_type_from_generic(get_llvm_type(function_type));
   auto llvm_return_type = llvm_type->getReturnType();
@@ -173,10 +181,8 @@ llvm::Function* IrCommon::get_trampoline_function(
       llvm::Value* fptr = jt++;
       jt->setName("a" + std::to_string(i) + "_eptr");
       llvm::Value* eptr = jt++;
-      jt->setName("a" + std::to_string(i) + "_tptr");
-      llvm::Value* tptr = jt++;
 
-      call_args.push_back(generic_function_value(fptr, eptr, tptr));
+      call_args.push_back(generic_function_value(fptr, eptr));
       continue;
     }
     // Environment pointer is last parameter.
@@ -198,12 +204,10 @@ llvm::Function* IrCommon::get_trampoline_function(
   else if (llvm_return_type->isStructTy()) {
     llvm::Value* fptr = b().CreateExtractValue(result, 0, "fptr");
     llvm::Value* eptr = b().CreateExtractValue(result, 1, "eptr");
-    llvm::Value* tptr = b().CreateExtractValue(result, 2, "tptr");
 
     auto it = function->arg_begin();
     b().CreateStore(fptr, it++);
     b().CreateStore(eptr, it++);
-    b().CreateStore(tptr, it++);
   }
   else if (!llvm_return_type->isVoidTy()) {
     b().CreateStore(result, function->arg_begin());
@@ -214,7 +218,7 @@ llvm::Function* IrCommon::get_trampoline_function(
 }
 
 llvm::Function* IrCommon::get_reverse_trampoline_function(
-    const yang::Type& function_type)
+    const yang::Type& function_type, bool forward)
 {
   auto it = _reverse_trampoline_map.find(function_type.erase_user_types());
   if (it != _reverse_trampoline_map.end()) {
@@ -222,13 +226,25 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
   }
   // Handle transitive closure.
   if (function_type.get_function_return_type().is_function()) {
-    get_reverse_trampoline_function(function_type.get_function_return_type());
+    get_reverse_trampoline_function(
+        function_type.get_function_return_type(), forward);
   }
   for (std::size_t i = 0; i < function_type.get_function_num_args(); ++i) {
     yang::Type t = function_type.get_function_arg_type(i);
     if (t.is_function()) {
-      get_trampoline_function(t);
+      get_trampoline_function(t, forward);
     }
+  }
+  if (forward) {
+    return nullptr;
+  }
+  // Trampolines on the C++ side have been populated by template instantiations.
+  // We may be providing a null pointer here, if C++ never uses this type, so
+  // don't generate the function which will be unlinkable.
+  yang::void_fp external_trampoline_ptr =
+      get_cpp_trampoline_lookup_map()[function_type.erase_user_types()];
+  if (!external_trampoline_ptr) {
+    return nullptr;
   }
 
   // Construct the type of the trampoline function (with extra argument for
@@ -284,22 +300,13 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
     if (it->getType()->isStructTy()) {
       llvm::Value* fptr = b().CreateExtractValue(it, 0, "fptr");
       llvm::Value* eptr = b().CreateExtractValue(it, 1, "eptr");
-      llvm::Value* tptr = b().CreateExtractValue(it, 2, "tptr");
       args.push_back(fptr);
       args.push_back(eptr);
-      args.push_back(tptr);
       continue;
     }
     args.push_back(it);
   }
 
-  // Trampolines on the C++ side have been populated by template instantiations.
-  // We may be providing a null pointer here, if C++ never uses this type. The
-  // great thing is: LLVM doesn't care until this code is JIT-compiled, and
-  // by construction all compilations are triggered by a mechanism which causes
-  // the correct instantiations.
-  yang::void_fp external_trampoline_ptr =
-      get_cpp_trampoline_lookup_map()[function_type.erase_user_types()];
   auto external_type = get_trampoline_type(internal_type, true);
   auto external_trampoline = get_native_function(
       "external_trampoline", external_trampoline_ptr, external_type);
@@ -321,8 +328,7 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
   else if (return_type->isStructTy()) {
     b().CreateRet(generic_function_value(
         b().CreateLoad(return_allocs[0], "fptr"),
-        b().CreateLoad(return_allocs[1], "eptr"),
-        b().CreateLoad(return_allocs[2], "tptr")));
+        b().CreateLoad(return_allocs[1], "eptr")));
   }
   else {
     b().CreateRet(b().CreateLoad(return_allocs[0], "ret"));
@@ -417,11 +423,11 @@ llvm::Constant* IrCommon::constant_vector(
 llvm::Type* IrCommon::generic_function_type(llvm::Type* type) const
 {
   std::vector<llvm::Type*> types;
-  // Yang function pointer or trampoline pointer.
+  // Yang function pointer or C++ pointer (which is not actually a function
+  // pointer at all, but we have to store the type somehow; this is fairly
+  // hacky).
   types.push_back(type);
   // Pointer to environment (global data structure or closure structure).
-  types.push_back(void_ptr_type());
-  // C++ native target pointer.
   types.push_back(void_ptr_type());
 
   return llvm::StructType::get(b().getContext(), types);
@@ -449,50 +455,39 @@ llvm::Value* IrCommon::generic_function_value_null(
   values.push_back(llvm::ConstantPointerNull::get(
       (llvm::PointerType*)generic_function_type->getElementType(0)));
   values.push_back(llvm::ConstantPointerNull::get(void_ptr_type()));
-  values.push_back(llvm::ConstantPointerNull::get(void_ptr_type()));
   return llvm::ConstantStruct::get(generic_function_type, values);
 }
 
 llvm::Value* IrCommon::generic_function_value(
-    llvm::Value* function_ptr,
-    llvm::Value* env_ptr, llvm::Value* target_ptr)
+    llvm::Value* function_ptr, llvm::Value* env_ptr)
 {
   auto type = (llvm::StructType*)generic_function_type(function_ptr->getType());
   llvm::Value* v = generic_function_value_null(type);
 
   v = b().CreateInsertValue(v, function_ptr, 0, "fptr");
   if (env_ptr) {
-    // Must be bitcast to void pointer, since it may be a global data type.
+    // Must be bitcast to void pointer, since it may be a global data type or
+    // closure data type..
     llvm::Value* cast = b().CreateBitCast(env_ptr, void_ptr_type());
     v = b().CreateInsertValue(v, cast, 1, "eptr");
-  }
-  if (target_ptr) {
-    v = b().CreateInsertValue(v, target_ptr, 2, "tptr");
   }
   return v;
 }
 
 llvm::Value* IrCommon::generic_function_value(const GenericFunction& function)
 {
-  yang::void_fp fptr;
+  void* fptr;
   void* eptr;
-  void* tptr;
-
-  function.ptr->get_representation(&fptr, &eptr, &tptr);
+  function.ptr->get_representation(&fptr, &eptr);
   llvm::Type* ft = llvm::PointerType::get(
       function_type_from_generic(get_llvm_type(function.type)), 0);
 
-  if (tptr) {
-    // Use internal reverse trampoline instead of external one, so it can be
-    // more easily inlined.
-    llvm::Value* v = get_reverse_trampoline_function(function.type);
-    v = b().CreateBitCast(v, ft, "fun");
+  llvm::Value* v = b().CreateBitCast(constant_ptr(fptr), ft, "fun");
+  if (!eptr) {
     // Native functions don't need an environment pointer.
-    return generic_function_value(v, nullptr, constant_ptr(tptr));
+    return generic_function_value(v, nullptr);
   }
-  llvm::Value* v =
-      b().CreateBitCast(constant_ptr((void*)(std::intptr_t)fptr), ft, "fun");
-  return generic_function_value(v, constant_ptr(eptr), nullptr);
+  return generic_function_value(v, constant_ptr(eptr));
 }
 
 llvm::FunctionType* IrCommon::get_function_type_with_target(
@@ -619,7 +614,8 @@ llvm::FunctionType* IrCommon::get_trampoline_type(
   }
 
   if (!reverse) {
-    // Argument is pointer to Yang code function.
+    // Argument is pointer to Yang code function. (For reverse, the C++ function
+    // target argument is implicit in function_type.)
     args.push_back(llvm::PointerType::get(function_type, 0));
   }
   return llvm::FunctionType::get(void_type(), args, false);
@@ -631,28 +627,28 @@ std::size_t IrCommon::get_trampoline_num_return_args(
   return
       return_type->isVoidTy() ? 0 :
       return_type->isVectorTy() ? return_type->getVectorNumElements() :
-      return_type->isStructTy() ? 3 : 1;
+      return_type->isStructTy() ? 2 : 1;
 }
 
 yang::void_fp YangTrampolineGlobals::get_trampoline_function(
     const yang::Type& function_type)
 {
-  return nullptr;
-  llvm::Function* function =
-      get_instance()._common.get_trampoline_function(function_type);
-  get_instance()._common.optimise_ir(function);
-  return (yang::void_fp)(std::intptr_t)
-      get_instance()._engine->getPointerToFunction(function);
-}
+  auto& trampoline_map = get_instance()._trampoline_map;
+  // We need an extra layer of caching to avoid optimising the function
+  // every time we need it.
+  auto it = trampoline_map.find(function_type.erase_user_types());
+  if (it != trampoline_map.end()) {
+    return (yang::void_fp)(std::intptr_t)
+        get_instance()._engine->getPointerToFunction(it->second);
+  }
 
-yang::void_fp YangTrampolineGlobals::get_reverse_trampoline_function(
-    const yang::Type& function_type)
-{
   llvm::Function* function =
-      get_instance()._common.get_reverse_trampoline_function(function_type);
+      get_instance()._common.get_trampoline_function(function_type, true);
   get_instance()._common.optimise_ir(function);
-  return (yang::void_fp)(std::intptr_t)
+  trampoline_map[function_type.erase_user_types()] = function;
+  auto ptr = (yang::void_fp)(std::intptr_t)
       get_instance()._engine->getPointerToFunction(function);
+  return ptr;
 }
 
 YangTrampolineGlobals::YangTrampolineGlobals()

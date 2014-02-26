@@ -55,9 +55,10 @@ export YACC=$(BYACC_DIR)/yacc
 
 C11FLAGS=-std=c++11
 CFLAGS=\
-	$(C11FLAGS) -I$(INCLUDE) \
+	$(CFLAGSEXTRA) $(C11FLAGS) -I$(INCLUDE) \
 	-isystem $(LLVM_DIR)/include -isystem $(GTEST_DIR)/include
-LFLAGS=-L$(LIBDIR) -Wl,-Bstatic -lyang -Wl,-Bdynamic -lpthread -ldl
+LFLAGS=\
+	$(LFLAGSEXTRA) -L$(LIBDIR) -Wl,-Bstatic -lyang -Wl,-Bdynamic -lpthread -ldl
 ifeq ($(DBG), 1)
 CFLAGS+=-Og -g -ggdb -DDEBUG
 WFLAGS=-Werror -Wall -Wextra -Wpedantic
