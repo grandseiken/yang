@@ -24,9 +24,28 @@ namespace llvm {
 
 namespace yang {
 
+typedef std::unordered_map<std::string, Type> symbol_table;
 class Context;
+
 namespace internal {
   struct Node;
+
+  // Data for a Program that is preserved as long as an Instance or some closure
+  // structure needs it.
+  struct ProgramInternals {
+    std::string name;
+    const Context& context;
+    symbol_table functions;
+    symbol_table globals;
+
+    std::unique_ptr<llvm::LLVMContext> llvm_context;
+    llvm::Module* module;
+    std::unique_ptr<llvm::ExecutionEngine> engine;
+  };
+  // Similarly for an Instance.
+  struct InstanceInternals {
+    std::shared_ptr<const internal::ProgramInternals> ptr;
+  };
 }
 
 class Program {
@@ -64,29 +83,19 @@ public:
   std::string print_ast() const;
   std::string print_ir() const;
 
-  typedef std::unordered_map<std::string, Type> symbol_table;
   const symbol_table& get_functions() const;
   const symbol_table& get_globals() const;
 
 private:
 
-  friend class Instance;
   void generate_ir(bool optimise);
 
-  const Context& _context;
-  std::string _name;
   std::unique_ptr<internal::Node> _ast;
-
-  symbol_table _functions;
-  symbol_table _globals;
-
-  std::unique_ptr<llvm::LLVMContext> _llvm_context;
-  llvm::Module* _module;
-  std::unique_ptr<llvm::ExecutionEngine> _engine;
-  std::unordered_map<Type, llvm::Function*> _trampoline_map;
-
   error_list _errors;
   error_list _warnings;
+
+  friend class Instance;
+  std::shared_ptr<internal::ProgramInternals> _internals;
 
 };
 
@@ -99,8 +108,6 @@ public:
   // Noncopyable.
   Instance(const Instance&) = delete;
   Instance& operator=(const Instance&) = delete;
-
-  const Program& get_program() const;
 
   template<typename T>
   T get_global(const std::string& name) const;
@@ -129,7 +136,7 @@ private:
   // Similarly for functions.
   void check_function(const std::string& name, const Type& type) const;
 
-  const Program& _program;
+  internal::InstanceInternals* _internals;
   void* _global_data;
 
 };
@@ -140,7 +147,7 @@ T Instance::get_global(const std::string& name) const
   // TypeInfo will fail at compile-time for completely unsupported types; will
   // at runtime for pointers to unregistered user types.
   internal::TypeInfo<T> info;
-  check_global(name, info(_program.get_context()), false);
+  check_global(name, info(_internals->ptr->context), false);
 
   auto fp = (yang::void_fp)
       (std::intptr_t)get_native_fp("!global_get_" + name);
@@ -151,7 +158,7 @@ template<typename T>
 void Instance::set_global(const std::string& name, const T& value)
 {
   internal::TypeInfo<T> info;
-  check_global(name, info(_program.get_context()), true);
+  check_global(name, info(_internals->ptr->context), true);
 
   auto fp = (yang::void_fp)
       (std::intptr_t)get_native_fp("!global_set_" + name);
@@ -162,7 +169,7 @@ template<typename T>
 T Instance::get_function(const std::string& name)
 {
   internal::TypeInfo<T> info;
-  check_function(name, info(_program.get_context()));
+  check_function(name, info(_internals->ptr->context));
   internal::FunctionConstruct<T> construct;
   return construct(get_native_fp(name), _global_data);
 }

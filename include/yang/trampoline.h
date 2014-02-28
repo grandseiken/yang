@@ -284,6 +284,7 @@ struct TrampolineCall {
     R result;
     list_call(function, join(TrampolineCallReturn<R>()(result),
                              TrampolineCallArgs<Args...>()(args...)));
+    internal::FunctionInitialise<R>()(result);
     return result;
   }
 };
@@ -350,10 +351,7 @@ struct ReverseTrampolineCallArgs<
   List<Function<S(Crgs...)>, Args...> operator()(
       const List<Brgs...>& brgs) const
   {
-    Function<S(Crgs...)> fn_object;
-    fn_object._function = std::get<0>(brgs);
-    fn_object._env = std::get<1>(brgs);
-
+    Function<S(Crgs...)> fn_object(std::get<0>(brgs), std::get<1>(brgs));
     typedef typename IndexRange<2, sizeof...(Brgs) - 2>::type range;
     return join(list(fn_object),
                 rtcall_args<List<Args...>>(sublist<range>(brgs)));

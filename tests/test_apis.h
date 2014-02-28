@@ -169,7 +169,6 @@ TEST_F(YangTest, InstanceTest)
   typedef Function<void()> voidf_t;
   auto& prog = program(TestApisStr);
   auto& inst = instance(prog);
-  EXPECT_EQ(&inst.get_program(), &prog);
 
   // Non-existent name.
   EXPECT_THROW(inst.get_function<intf_t>("nonexistent"), runtime_error);

@@ -183,7 +183,7 @@ global {
   const global_a = 33;
   const global_b = int()
   {
-    const a = 11;
+    const a = global_a / 3;
     return int()
     {
       return a + global_a;

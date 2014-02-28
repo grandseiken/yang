@@ -19,6 +19,8 @@ namespace internal {
 template<typename>
 struct FunctionConstruct;
 template<typename>
+struct FunctionInitialise;
+template<typename>
 struct TypeInfo;
 
 template<typename...>
@@ -35,6 +37,10 @@ struct ReverseTrampolineCallReturn;
 
 template<typename>
 struct GenerateReverseTrampolineLookupTable;
+
+// Structure refcounting.
+std::unordered_set<void*>& get_structure_cleanup_list();
+void update_structure_refcount(void* structure, int_t change);
 
 // End namespace internal.
 }
@@ -118,7 +124,9 @@ public:
   // object.
   typedef std::function<R(Args...)> cpp_type;
   Function(const cpp_type& cpp_function);
-  ~Function() override {}
+  Function(const Function& function);
+  ~Function() override;
+  Function& operator=(const Function& function);
 
   // Get the type corresponding to this function type as a Yang Type object.
   static Type get_type(const Context& context);
@@ -142,14 +150,18 @@ private:
 
   template<typename>
   friend struct internal::FunctionConstruct;
+  template<typename>
+  friend struct internal::FunctionInitialise;
 
   // Invariant: Function objects returned to client code must never be null.
   // They must reference a genuine Yang function or C++ function, so that they
   // can be invoked or passed to Yang code. Library code that returns Functions
   // to client code must throw rather than returning something unusable.
   Function();
+  Function(void* function, void* env);
 
   void get_representation(void** function, void** env) override;
+  void update_env_refcount(int_t change);
 
   // Reference-counted C++ function.
   internal::RefCountedNativeFunction<R(Args...)> _native_ref;
@@ -242,6 +254,31 @@ Function<R(Args...)>::Function(const cpp_type& function)
 }
 
 template<typename R, typename... Args>
+Function<R(Args...)>::Function(const Function& function)
+  : _native_ref(function._native_ref)
+  , _function(function._function)
+  , _env(function._env)
+{
+  update_env_refcount(1);
+}
+
+template<typename R, typename... Args>
+Function<R(Args...)>::~Function()
+{
+  update_env_refcount(-1);
+}
+
+template<typename R, typename... Args>
+Function<R(Args...)>& Function<R(Args...)>::operator=(const Function& function)
+{
+  update_env_refcount(-1);
+  _native_ref = function._native_ref;
+  _function = function._function;
+  _env = function._env;
+  update_env_refcount(1);
+}
+
+template<typename R, typename... Args>
 R Function<R(Args...)>::operator()(const Args&... args) const
 {
   // For C++ functions, just call it directly.
@@ -263,26 +300,26 @@ Function<R(Args...)>::Function()
 }
 
 template<typename R, typename... Args>
+Function<R(Args...)>::Function(void* function, void* env)
+  : _function(function)
+  , _env(env)
+{
+  update_env_refcount(1);
+}
+
+template<typename R, typename... Args>
 void Function<R(Args...)>::get_representation(void** function, void** env)
 {
   *function = _function;
   *env = _env;
 }
 
-// End namespace yang.
-}
-
-// Due to an awkward set of template dependencies, these includes need to come
-// all the way down here so that get_type and call_via_trampoline can be defined
-// without recursively including function.h again.
-#include "trampoline.h"
-
-namespace yang {
-
 template<typename R, typename... Args>
-Type Function<R(Args...)>::get_type(const Context& context)
+void Function<R(Args...)>::update_env_refcount(int_t change)
 {
-  return internal::TypeInfo<Function<R(Args...)>>()(context);
+  if (_env) {
+    internal::update_structure_refcount(_env, change);
+  }
 }
 
 namespace internal {
@@ -299,12 +336,39 @@ template<typename R, typename... Args>
 struct FunctionConstruct<Function<R(Args...)>> {
   Function<R(Args...)> operator()(void* function, void* env) const
   {
-    Function<R(Args...)> f;
-    f._function = function;
-    f._env = env;
-    return f;
+    return Function<R(Args...)>(function, env);
   }
 };
+template<typename T>
+struct FunctionInitialise {
+  void operator()(T&) const {}
+};
+template<typename R, typename... Args>
+struct FunctionInitialise<Function<R(Args...)>> {
+  void operator()(Function<R(Args...)>& function) const
+  {
+    function.update_env_refcount(1);
+  }
+};
+
+// End namespace yang::internal.
+}
+}
+
+// Due to an awkward set of template dependencies, these includes need to come
+// all the way down here so that get_type and call_via_trampoline can be defined
+// without recursively including function.h again.
+#include "trampoline.h"
+
+namespace yang {
+
+template<typename R, typename... Args>
+Type Function<R(Args...)>::get_type(const Context& context)
+{
+  return internal::TypeInfo<Function<R(Args...)>>()(context);
+}
+
+namespace internal {
 
 // Call a Yang function via global trampolines.
 template<typename R, typename... Args>

@@ -90,11 +90,34 @@ export overwrite_and_return = int()()
   stored = noop;
   return temp;
 }
+
+export temporaries = int()
+{
+  const f = int(int() a, int() b)
+  {
+    return a() + b();
+  };
+  const g = int()(int n)
+  {
+    return int()
+    {
+      return n;
+    };
+  };
+  return f(get_fn(), get_fn()) + f(g(3), g(7));
+}
 )";
 
 TEST_F(YangTest, FunctionRefCounting)
 {
-  auto& inst = instance(TestFunctionRefCountingStr);
+  auto& ctxt = context();
+  int_t n = 0;
+  ctxt.register_function("get_fn", make_fn([&]()
+  {
+    return make_fn([&](){return ++n;});
+  }));
+
+  auto& inst = instance(ctxt, TestFunctionRefCountingStr);
   typedef Function<int_t()> intf_t;
   // No refcounting necessary.
   auto f = make_fn([]()
@@ -154,8 +177,11 @@ TEST_F(YangTest, FunctionRefCounting)
   EXPECT_EQ(inst.get_global<intf_t>("stored")(), 110);
 
   EXPECT_EQ(inst.call<intf_t>("overwrite_and_return")(), 111);
+  EXPECT_EQ(inst.call<int_t>("temporaries"), 13);
   // It'd be nice to test memory usage and that everything is actually getting
   // destroyed at the end, but it's not clear how to do that unintrusively.
-}
 
-// TODO: implement and test closure refcounting.
+  // TODO: function values can introduce cycles in the graph. So refcounting
+  // isn't sufficient for structures. Also, need more refcounting tests for
+  // closures.
+}

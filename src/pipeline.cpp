@@ -26,12 +26,11 @@ namespace yang {
 Program::Program(const Context& context, const std::string& name,
                  const std::string& contents, bool optimise,
                  std::string* diagnostic_output)
-  : _context(context)
-  , _name(name)
-  , _ast(nullptr)
-  , _llvm_context(new llvm::LLVMContext)
-  , _module(nullptr)
-  , _engine(nullptr)
+  : _ast(nullptr)
+  , _internals(new internal::ProgramInternals{
+      name, context, {}, {},
+      std::unique_ptr<llvm::LLVMContext>(new llvm::LLVMContext),
+      nullptr, nullptr})
 {
   internal::ParseData data(name, contents);
   yyscan_t scan = nullptr;
@@ -77,11 +76,11 @@ Program::Program(const Context& context, const std::string& name,
   }
 
   internal::StaticChecker checker(
-      _context, data, _functions, _globals);
+      _internals->context, data, _internals->functions, _internals->globals);
   checker.walk(*output);
   if (log_errors()) {
-    _functions.clear();
-    _globals.clear();
+    _internals->functions.clear();
+    _internals->globals.clear();
     return;
   }
   _ast = std::move(output);
@@ -105,23 +104,24 @@ const Program::error_list& Program::get_warnings() const
 
 const Context& Program::get_context() const
 {
-  return _context;
+  return _internals->context;
 }
 
 const std::string& Program::get_name() const
 {
-  return _name;
+  return _internals->name;
 }
 
 bool Program::success() const
 {
-  return bool(_ast) && bool(_module);
+  return bool(_ast) && bool(_internals->module);
 }
 
 std::string Program::print_ast() const
 {
   if (!success()) {
-    throw runtime_error(_name + ": program did not compile successfully");
+    throw runtime_error(_internals->name +
+                        ": program did not compile successfully");
   }
   internal::AstPrinter printer;
   return printer.walk(*_ast) + '\n';
@@ -130,22 +130,23 @@ std::string Program::print_ast() const
 std::string Program::print_ir() const
 {
   if (!success()) {
-    throw runtime_error(_name + ": program did not compile successfully");
+    throw runtime_error(_internals->name +
+                        ": program did not compile successfully");
   }
   std::string output;
   llvm::raw_string_ostream os(output);
-  _module->print(os, nullptr);
+  _internals->module->print(os, nullptr);
   return output;
 }
 
-const Program::symbol_table& Program::get_functions() const
+const symbol_table& Program::get_functions() const
 {
-  return _functions;
+  return _internals->functions;
 }
 
-const Program::symbol_table& Program::get_globals() const
+const symbol_table& Program::get_globals() const
 {
-  return _globals;
+  return _internals->globals;
 }
 
 void Program::generate_ir(bool optimise)
@@ -155,64 +156,65 @@ void Program::generate_ir(bool optimise)
 
   // We need to use a different LLVMContext for each program, to avoid using
   // unbounded memory for all the LLVM structure types we create.
-  _module = new llvm::Module(_name, *_llvm_context);
+  _internals->module = new llvm::Module(
+      _internals->name, *_internals->llvm_context);
   // The ExecutionEngine takes ownership of the LLVM module (and by extension
   // most other things we create during codegen). So the engine alone must be
   // uniqued and deleted.
-  _engine = std::unique_ptr<llvm::ExecutionEngine>(
-      llvm::EngineBuilder(_module).setErrorStr(&error).create());
-  if (!_engine) {
-    delete _module;
-    throw runtime_error(_name + ": couldn't create execution engine: " + error);
+  _internals->engine = std::unique_ptr<llvm::ExecutionEngine>(
+      llvm::EngineBuilder(_internals->module).setErrorStr(&error).create());
+  if (!_internals->engine) {
+    delete _internals->module;
+    throw runtime_error(
+        _internals->name + ": couldn't create execution engine: " + error);
   }
   // Disable implicit searching so we don't accidentally resolve linked-in
   // functions.
-  _engine->DisableSymbolSearching();
+  _internals->engine->DisableSymbolSearching();
 
-  internal::IrGenerator irgen(*_module, *_engine, _globals, _context);
+  internal::IrGenerator irgen(
+      *_internals->module, *_internals->engine,
+      _internals->globals, _internals->context);
   irgen.walk(*_ast);
   irgen.emit_global_functions();
 
-  if (llvm::verifyModule(*_module, llvm::ReturnStatusAction, &error)) {
+  if (llvm::verifyModule(*_internals->module,
+                         llvm::ReturnStatusAction, &error)) {
     // Shouldn't be possible and indicates severe bug, so log the entire IR.
     log_err(print_ir());
-    throw runtime_error(_name + ": couldn't verify module: " + error);
+    throw runtime_error(_internals->name +
+                        ": couldn't verify module: " + error);
   }
   if (optimise) {
     irgen.optimise_ir();
   }
-  _trampoline_map = irgen.get_trampoline_map();
 }
 
 Instance::Instance(const Program& program)
-  : _program(program)
+  : _internals(new internal::InstanceInternals{program._internals})
   , _global_data(nullptr)
 {
-  if (!_program.success()) {
+  if (!program.success()) {
     throw runtime_error(
-        _program._name +
+        _internals->ptr->name +
         ": instantiating program which did not compile successfully");
   }
   void* global_alloc = get_native_fp("!global_alloc");
   typedef void* (*alloc_fp)();
   _global_data = ((alloc_fp)(std::intptr_t)global_alloc)();
+
+  *(void**)_global_data = _internals;
+  internal::update_structure_refcount(_global_data, 1);
 }
 
 Instance::~Instance()
 {
-  void* global_free = get_native_fp("!global_free");
-  typedef void (*free_fp)(void*);
-  ((free_fp)(std::intptr_t)global_free)(_global_data);
-}
-
-const Program& Instance::get_program() const
-{
-  return _program;
+  internal::update_structure_refcount(_global_data, -1);
 }
 
 void* Instance::get_native_fp(const std::string& name) const
 {
-  return get_native_fp(_program._module->getFunction(name));
+  return get_native_fp(_internals->ptr->module->getFunction(name));
 }
 
 void* Instance::get_native_fp(llvm::Function* ir_fp) const
@@ -225,40 +227,44 @@ void* Instance::get_native_fp(llvm::Function* ir_fp) const
   // way around this (technically) defined behaviour. I guess it should work
   // in practice since the whole native codegen thing is inherently machine-
   // -dependent anyway.
-  return _program._engine->getPointerToFunction(ir_fp);
+  return _internals->ptr->engine->getPointerToFunction(ir_fp);
 }
 
 void Instance::check_global(const std::string& name, const Type& type,
                             bool for_modification) const
 {
-  auto it = _program._globals.find(name);
-  if (it == _program._globals.end()) {
+  auto it = _internals->ptr->globals.find(name);
+  if (it == _internals->ptr->globals.end()) {
     throw runtime_error(
-        _program._name + ": requested global `" + name + "` does not exist");
+        _internals->ptr->name +
+        ": requested global `" + name + "` does not exist");
   }
   if (type != it->second) {
     throw runtime_error(
-        _program._name + ": global `" + it->second.string() + " " + name +
+        _internals->ptr->name +
+        ": global `" + it->second.string() + " " + name +
         "` accessed via incompatible type `" + type.string() + "`");
   }
   if (for_modification &&
       (it->second.is_const() || !it->second.is_exported())) {
     throw runtime_error(
-        _program._name + ": global `" + it->second.string() + " " + name +
+        _internals->ptr->name +
+        ": global `" + it->second.string() + " " + name +
         "` cannot be modified externally");
   }
 }
 
 void Instance::check_function(const std::string& name, const Type& type) const
 {
-  auto it = _program._functions.find(name);
-  if (it == _program._functions.end()) {
+  auto it = _internals->ptr->functions.find(name);
+  if (it == _internals->ptr->functions.end()) {
     throw runtime_error(
-        _program._name + ": requested function `" + name + "` does not exist");
+        _internals->ptr->name +
+        ": requested function `" + name + "` does not exist");
   }
   if (type != it->second) {
     throw runtime_error(
-        _program._name + ": function `" + it->second.string() +
+        _internals->ptr->name + ": function `" + it->second.string() +
         " " + name + "` accessed via incompatible type `" +
         type.string() + "`");
   }

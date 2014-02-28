@@ -45,6 +45,7 @@
 // Things that aren't thread-safe (and need locking):
 // - YangTrampolineGlobals
 // - possibly cpp_trampoline_lookup_map
+// - static refcount deletion lists
 // - global data / closure data structure access. Both for concurrent invocation
 //   of functions from the same Instance, and concurrent invocation of functions
 //   from different Instances where one happens to hold a reference to a

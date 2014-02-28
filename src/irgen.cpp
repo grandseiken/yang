@@ -6,6 +6,8 @@
 
 #include <llvm/IR/Module.h>
 #include <yang/context.h>
+#include <yang/function.h>
+#include <yang/pipeline.h>
 
 namespace llvm {
   class LLVMContext;
@@ -22,6 +24,7 @@ namespace std {
 }
 
 namespace {
+
 void refcount_function(void* target, yang::int_t change)
 {
   auto native = (yang::internal::NativeFunction<void>*)target;
@@ -34,6 +37,37 @@ void refcount_function(void* target, yang::int_t change)
     ++change;
   }
 }
+
+void refcount_structure(void* target, yang::int_t change)
+{
+  yang::internal::update_structure_refcount(target, change);
+}
+
+void cleanup_structures()
+{
+  struct prefix {
+    void* parent;
+    yang::int_t refcount;
+    yang::void_fp free;
+  };
+  typedef void (*free_fp)(void*);
+
+  while (!yang::internal::get_structure_cleanup_list().empty()) {
+    std::unordered_set<void*> copy =
+        yang::internal::get_structure_cleanup_list();
+    yang::internal::get_structure_cleanup_list().clear();
+
+    for (void* v : copy) {
+      ((free_fp)((prefix*)v)->free)(v);
+    }
+  }
+}
+
+void destroy_internals(void* global_parent)
+{
+  delete (yang::internal::InstanceInternals*)global_parent;
+}
+
 // End anonymous namespace.
 }
 
@@ -80,16 +114,25 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
       "refcount_function", (void_fp)&refcount_function,
       llvm::FunctionType::get(
           void_type(),
-          std::vector<llvm::Type*>{void_ptr_type(), int_type()},
-          false)))
+          std::vector<llvm::Type*>{void_ptr_type(), int_type()}, false)))
+  , _refcount_structure(get_native_function(
+      "refcount_structure", (void_fp)&refcount_structure,
+      llvm::FunctionType::get(
+          void_type(),
+          std::vector<llvm::Type*>{void_ptr_type(), int_type()}, false)))
+  , _cleanup_structures(get_native_function(
+      "cleanup_structures", (void_fp)&cleanup_structures,
+      llvm::FunctionType::get(void_type(), false)))
+  , _destroy_internals(get_native_function(
+      "destroy_internals", (void_fp)&destroy_internals,
+      llvm::FunctionType::get(void_type(), void_ptr_type(), false)))
 {
   // Set up the global data type. Since each program is designed to support
   // multiple independent instances running simultaeneously, the idea is to
   // define a structure type with a field for each global variable. Each
   // function will take a pointer to the global data structure as an implicit
   // final parameter.
-  init_structure_type(
-      _global_data, _global_numbering, false, globals, "global_data");
+  init_structure_type(_global_data, _global_numbering, globals, "global_data");
 
   // We need to generate a reverse trampoline function for each function in the
   // Context. User type member functions are present in the context function map
@@ -106,11 +149,6 @@ IrGenerator::~IrGenerator()
 
 void IrGenerator::emit_global_functions()
 {
-  // Register free.
-  auto free_ptr = get_native_function(
-      "free", (yang::void_fp)&free,
-      llvm::FunctionType::get(void_type(), _global_data, false));
-
   // Create allocator function. It takes a pointer to the Yang program instance.
   auto alloc = llvm::Function::Create(
       llvm::FunctionType::get(_global_data, false),
@@ -119,30 +157,14 @@ void IrGenerator::emit_global_functions()
       b().getContext(), "entry", alloc);
   b().SetInsertPoint(alloc_block);
 
+  // TODO: here we call the global initialisation functions. It should also be
+  // possible to define custom destructor functions that are called when the
+  // global structure is freed.
   llvm::Value* v = allocate_structure_value(_global_data, _global_numbering);
   for (llvm::Function* f : _global_inits) {
     b().CreateCall(f, v);
   }
   b().CreateRet(v);
-
-  // Create free function.
-  // TODO: this should also be able to call user-defined script destructors.
-  auto free = llvm::Function::Create(
-      llvm::FunctionType::get(void_type(), _global_data, false),
-      llvm::Function::ExternalLinkage, "!global_free", &_module);
-  auto free_block = llvm::BasicBlock::Create(
-      b().getContext(), "entry", free);
-  b().SetInsertPoint(free_block);
-  auto it = free->arg_begin();
-  it->setName("global");
-  // Make sure to decrement the reference count on each global variable on
-  // destruction.
-  for (const auto pair : _global_numbering) {
-    llvm::Value* old = memory_load(structure_ptr(it, pair.second));
-    update_reference_count(old, -1);
-  }
-  b().CreateCall(free_ptr, it);
-  b().CreateRetVoid();
 
   // Create accessor functions for each field of the global structure.
   for (const auto pair : _global_numbering) {
@@ -528,6 +550,12 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
           (llvm::FunctionType*)parent->getType()->getElementType();
       if (function_type->getReturnType()->isVoidTy()) {
         dereference_scoped_locals(true);
+        if (_metadata[CLOSURE_PTR]) {
+          std::vector<llvm::Value*> args{
+              b().CreateBitCast(_metadata[CLOSURE_PTR], void_ptr_type()),
+              constant_int(-1)};
+          b().CreateCall(_refcount_structure, args);
+        }
         b().CreateRetVoid();
       }
       else {
@@ -591,6 +619,12 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       auto dead_block =
           llvm::BasicBlock::Create(b().getContext(), "dead", parent);
       dereference_scoped_locals(true);
+      if (_metadata[CLOSURE_PTR]) {
+        std::vector<llvm::Value*> args{
+            b().CreateBitCast(_metadata[CLOSURE_PTR], void_ptr_type()),
+            constant_int(-1)};
+        b().CreateCall(_refcount_structure, args);
+      }
       llvm::Value* v = node.type == Node::RETURN_STMT ?
           b().CreateRet(results[0]) : b().CreateRetVoid();
       b().SetInsertPoint(dead_block);
@@ -789,6 +823,9 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
           phi->addIncoming(cpp_val, cpp_block);
         }
         phi->addIncoming(yang_val, yang_block);
+        // Reference count the temporary.
+        update_reference_count(phi, 1);
+        _refcount_locals.back().back().push_back(phi);
         return phi;
       }
       return (llvm::Value*)nullptr;
@@ -998,25 +1035,25 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
 
 void IrGenerator::init_structure_type(
     llvm::Type*& output_type, structure_numbering& output_numbering,
-    bool has_parent, const symbol_frame& symbols, const std::string& name) const
+    const symbol_frame& symbols, const std::string& name)
 {
-  // TODO: also, global data structure should now be refcounted like closure
-  // structures instead of destroyed when the Instance is!
-  std::vector<llvm::Type*> type_list;
-  std::size_t number = 0;
-  // The first element in closure structures is a pointer to the parent
-  // structure. Also add it if there isn't anything else, since empty structures
-  // aren't allowed.
-  if (has_parent || symbols.empty()) {
-    type_list.push_back(void_ptr_type());
-    ++number;
-  }
-  // Since the global data structure may contain pointers to functions which
-  // themselves take said implicit argument, the global_data variable must be
-  // set (to an opaque type) before we call get_llvm_type.
+  // Since the structure may contain pointers to functions which take the type
+  // itself as an argument, the variable must be set (to an opaque type).
   auto struct_type =
       llvm::StructType::create(_module.getContext(), name);
   output_type = llvm::PointerType::get(struct_type, 0);
+  auto free_type = llvm::FunctionType::get(void_type(), output_type, false);
+  std::vector<llvm::Type*> type_list;
+
+  // The first element in closure structures is a pointer to the parent
+  // structure. For global data, this will be null.
+  type_list.push_back(void_ptr_type());
+  // The second element is a pointer to the reference counter.
+  type_list.push_back(int_type());
+  // The third is a pointer to the destructor.
+  type_list.push_back(llvm::PointerType::get(free_type, 0));
+
+  std::size_t number = 3;
   for (const auto& pair : symbols) {
     // Type-calculation must be kept up-to-date with new types, or globals of
     // that type will fail.
@@ -1025,6 +1062,38 @@ void IrGenerator::init_structure_type(
     output_numbering[pair.first] = number++;
   }
   struct_type->setBody(type_list, false);
+
+  // Create the destruction function.
+  auto prev_block = b().GetInsertBlock();
+  auto free_ptr = get_native_function(
+      "free", (yang::void_fp)&free,
+      llvm::FunctionType::get(void_type(), output_type, false));
+
+  auto free = llvm::Function::Create(
+      free_type, llvm::Function::ExternalLinkage, "!free_" + name, &_module);
+  auto free_block = llvm::BasicBlock::Create(b().getContext(), "entry", free);
+  b().SetInsertPoint(free_block);
+  auto it = free->arg_begin();
+  it->setName("struct");
+  // Make sure to decrement the reference count on each global variable on
+  // destruction.
+  for (const auto pair : output_numbering) {
+    llvm::Value* old = memory_load(structure_ptr(it, pair.second));
+    update_reference_count(old, -1);
+  }
+  llvm::Value* parent = memory_load(structure_ptr(it, 0));
+  if (name != "global_data") {
+    std::vector<llvm::Value*> args{parent, constant_int(-1)};
+    b().CreateCall(_refcount_structure, args);
+  }
+  b().CreateCall(free_ptr, it);
+  if (name == "global_data") {
+    b().CreateCall(_destroy_internals, parent);
+  }
+  b().CreateRetVoid();
+
+  _destructors[output_type] = free;
+  b().SetInsertPoint(prev_block);
 }
 
 llvm::Value* IrGenerator::allocate_structure_value(
@@ -1033,6 +1102,7 @@ llvm::Value* IrGenerator::allocate_structure_value(
   llvm::Type* llvm_size_t =
       llvm::IntegerType::get(b().getContext(), 8 * sizeof(std::size_t));
 
+  b().CreateCall(_cleanup_structures);
   auto malloc_ptr = get_native_function(
       "malloc", (yang::void_fp)&malloc,
       llvm::FunctionType::get(type, llvm_size_t, false));
@@ -1045,10 +1115,52 @@ llvm::Value* IrGenerator::allocate_structure_value(
   // Call malloc, make sure refcounted memory is initialised, and return the
   // pointer.
   llvm::Value* v = b().CreateCall(malloc_ptr, size_of, "call");
+  memory_store(constant_ptr(nullptr), structure_ptr(v, 0));
+  memory_store(constant_int(0), structure_ptr(v, 1));
+  memory_store(_destructors[type], structure_ptr(v, 2));
   for (const auto& pair : numbering) {
     memory_init(b(), structure_ptr(v, pair.second));
   }
   return v;
+}
+
+llvm::Value* IrGenerator::allocate_closure_struct(
+    const symbol_frame& symbols, llvm::Value* parent_ptr)
+{
+  if (symbols.empty()) {
+    // Store a nullptr to be explicit.
+    _metadata.add(CLOSURE_PTR, nullptr);
+    return nullptr;
+  }
+
+  // Handle closure-structure initialisation.
+  llvm::Type* closure_type = nullptr;
+  structure_numbering closure_numbering;
+  init_structure_type(closure_type, closure_numbering,  symbols, "closure");
+  llvm::Value* closure_value =
+      allocate_structure_value(closure_type, closure_numbering);
+  // Store in metadata.
+  _metadata.add(CLOSURE_PTR, closure_value);
+  _scope_closures.push_back({closure_type, closure_numbering});
+
+  // Store parent pointer in the first slot.
+  auto parent_void_ptr = b().CreateBitCast(parent_ptr, void_ptr_type());
+  memory_store(parent_void_ptr, structure_ptr(closure_value, 0));
+  std::vector<llvm::Value*> args{parent_void_ptr, constant_int(1)};
+  b().CreateCall(_refcount_structure, args);
+  // Set up the symbol-table for all the rest. If a closed variable "v"
+  // appears in scope #1, for instance, we store "v/1" in the symbol table
+  // with a pointer into the closure-structure.
+  //
+  // Then, when we reach the actual declaration of v in scope #1, we store
+  // into "v/1" and copy the symbol table entry for "v/1" to "v" for that
+  // scope and its children (as in the argument list code below).
+  for (const auto& pair : symbols) {
+    llvm::Value* ptr =
+        structure_ptr(closure_value, closure_numbering[pair.first]);
+    _symbol_table.add(pair.first, ptr);
+  }
+  return closure_value;
 }
 
 llvm::Value* IrGenerator::get_parent_struct(
@@ -1087,44 +1199,6 @@ llvm::Value* IrGenerator::get_variable_ptr(const std::string& name)
       b().CreateBitCast(closure_ptr, closure_type), struct_index);
 }
 
-llvm::Value* IrGenerator::allocate_closure_struct(
-    const symbol_frame& symbols, llvm::Value* parent_ptr)
-{
-  if (symbols.empty()) {
-    // Store a nullptr to be explicit.
-    _metadata.add(CLOSURE_PTR, nullptr);
-    return nullptr;
-  }
-
-  // Handle closure-structure initialisation.
-  llvm::Type* closure_type = nullptr;
-  structure_numbering closure_numbering;
-  init_structure_type(
-      closure_type, closure_numbering, true, symbols, "closure");
-  llvm::Value* closure_value =
-      allocate_structure_value(closure_type, closure_numbering);
-  // Store in metadata.
-  _metadata.add(CLOSURE_PTR, closure_value);
-  _scope_closures.push_back({closure_type, closure_numbering});
-
-  // Store parent pointer in the first slot.
-  memory_store(b().CreateBitCast(parent_ptr, void_ptr_type()),
-               structure_ptr(closure_value, 0));
-  // Set up the symbol-table for all the rest. If a closed variable "v"
-  // appears in scope #1, for instance, we store "v/1" in the symbol table
-  // with a pointer into the closure-structure.
-  //
-  // Then, when we reach the actual declaration of v in scope #1, we store
-  // into "v/1" and copy the symbol table entry for "v/1" to "v" for that
-  // scope and its children (as in the argument list code below).
-  for (const auto& pair : symbols) {
-    llvm::Value* ptr =
-        structure_ptr(closure_value, closure_numbering[pair.first]);
-    _symbol_table.add(pair.first, ptr);
-  }
-  return closure_value;
-}
-
 void IrGenerator::create_function(
     const Node& node, llvm::FunctionType* function_type)
 {
@@ -1137,8 +1211,6 @@ void IrGenerator::create_function(
 
   // The code for Node::TYPE_FUNCTION in visit() ensures it takes an environment
   // pointer.
-  // TODO: we possibly need to do refcounting on the special function arguments
-  // (environment pointer; self-recursion pointer...)?
   auto eptr = --function->arg_end();
   eptr->setName("env");
   _metadata.add(ENVIRONMENT_PTR, eptr);
@@ -1161,6 +1233,13 @@ void IrGenerator::create_function(
   // the sets of enclosing variables they access are disjoint, we could allocate
   // separate structures for each (and potentially return unused memory sooner).
   allocate_closure_struct(node.static_info.closed_environment, eptr);
+  // Refcounting on closure pointer.
+  if (_metadata[CLOSURE_PTR]) {
+    std::vector<llvm::Value*> args{
+        b().CreateBitCast(_metadata[CLOSURE_PTR], void_ptr_type()),
+        constant_int(1)};
+    b().CreateCall(_refcount_structure, args);
+  }
 
   // Lambda for deciding whether to put an argument in closure or stack.
   auto assign_storage = [&](
@@ -1172,7 +1251,6 @@ void IrGenerator::create_function(
     if (_symbol_table.has(unique_name)) {
       llvm::Value* v = _symbol_table[unique_name];
       _value_to_unique_name_map.emplace(v, unique_name);
-      _refcount_locals.back().back().push_back(v);
       return v;
     }
     // Rather than reference argument values directly, we create an alloca
@@ -1180,6 +1258,7 @@ void IrGenerator::create_function(
     // can emit the same IR code when referencing local variables or
     // function arguments.
     llvm::Value* v = b().CreateAlloca(type, nullptr, name);
+    _refcount_locals.back().back().push_back(v);
     memory_init(b(), v);
     return v;
   };
@@ -1193,7 +1272,7 @@ void IrGenerator::create_function(
     // Confusingly, that's two unique scope-numbers back because the LHS of the
     // assignment has its own scope in-between.
     llvm::Value* storage = assign_storage(fp_type, _immediate_left_assign, -2);
-    b().CreateStore(generic_function_value(function, eptr), storage);
+    memory_store(generic_function_value(function, eptr), storage);
     _symbol_table.add(_immediate_left_assign, storage);
     _immediate_left_assign.clear();
   }
@@ -1207,6 +1286,7 @@ void IrGenerator::create_function(
         node.children[0]->children[1 + arg_num]->string_value;
     llvm::Value* storage =
         assign_storage(function_type->getParamType(arg_num), name, 0);
+    it->setName(name);
 
     // It's possible refcounting isn't necessary on arguments, since they're
     // const and will usually be referenced somewhere up the call stack. I'm not
@@ -1325,8 +1405,12 @@ void IrGenerator::update_reference_count(llvm::Value* value, int_t change)
   llvm::Value* eptr = b().CreateExtractValue(value, 1, "eptr");
 
   auto parent = b().GetInsertBlock()->getParent();
-  auto refcount_block =
-      llvm::BasicBlock::Create(b().getContext(), "refcount", parent);
+  auto cpp_block =
+      llvm::BasicBlock::Create(b().getContext(), "cpp", parent);
+  auto else_block =
+      llvm::BasicBlock::Create(b().getContext(), "else", parent);
+  auto yang_block =
+      llvm::BasicBlock::Create(b().getContext(), "yang", parent);
   auto merge_block =
       llvm::BasicBlock::Create(b().getContext(), "merge", parent);
 
@@ -1335,33 +1419,50 @@ void IrGenerator::update_reference_count(llvm::Value* value, int_t change)
   llvm::Value* cmp = b().CreateAnd(
       b().CreateICmpNE(fvoid, v, "fptr"),
       b().CreateICmpEQ(eptr, v, "eptr"), "and");
-  b().CreateCondBr(cmp, refcount_block, merge_block);
+  b().CreateCondBr(cmp, cpp_block, else_block);
 
-  b().SetInsertPoint(refcount_block);
-  std::vector<llvm::Value*> args{
-      b().CreateBitCast(fptr, void_ptr_type(), "cast"), constant_int(change)};
+  b().SetInsertPoint(cpp_block);
+  std::vector<llvm::Value*> args{fvoid, constant_int(change)};
   b().CreateCall(_refcount_function, args);
+  b().CreateBr(merge_block);
+
+  b().SetInsertPoint(else_block);
+  llvm::Value* evoid = b().CreateBitCast(eptr, void_ptr_type(), "cast");
+  cmp = b().CreateICmpNE(evoid, v, "eptr");
+  b().CreateCondBr(cmp, yang_block, merge_block);
+
+  b().SetInsertPoint(yang_block);
+  // We could easily do the refcounting in Yang code to avoid the function call
+  // unless we actually have to destruct.
+  args[0] = evoid;
+  b().CreateCall(_refcount_structure, args);
   b().CreateBr(merge_block);
   b().SetInsertPoint(merge_block);
 }
 
 void IrGenerator::dereference_scoped_locals(bool all_scopes)
 {
+  auto dereference = [&](llvm::Value* v)
+  {
+    if (!v->getType()->isPointerTy()) {
+      update_reference_count(v, -1);
+      return;
+    }
+    llvm::Value* load = memory_load(v);
+    update_reference_count(load, -1);
+    memory_init(b(), v);
+  };
   const auto& function = _refcount_locals.back();
-  if (all_scopes) {
-    for (const auto& scope : function) {
-      for (llvm::Value* alloc : scope) {
-        llvm::Value* v = memory_load(alloc);
-        update_reference_count(v, -1);
-        memory_init(b(), alloc);
-      }
+  if (!all_scopes) {
+    for (llvm::Value* v : function.back()) {
+      dereference(v);
     }
     return;
   }
-  for (llvm::Value* alloc : function.back()) {
-    llvm::Value* v = memory_load(alloc);
-    update_reference_count(v, -1);
-    memory_init(b(), alloc);
+  for (const auto& scope : function) {
+    for (llvm::Value* v : scope) {
+      dereference(v);
+    }
   }
 }
 

@@ -64,8 +64,7 @@ private:
   typedef std::unordered_map<std::string, std::size_t> structure_numbering;
   void init_structure_type(
       llvm::Type*& output_type, structure_numbering& output_numbering,
-      bool has_parent, const symbol_frame& symbols,
-      const std::string& name) const;
+      const symbol_frame& symbols, const std::string& name);
   llvm::Value* allocate_structure_value(
       llvm::Type* type, const structure_numbering& numbering);
   llvm::Value* allocate_closure_struct(
@@ -180,8 +179,13 @@ private:
 
   // List of local variables in scope, for refcounting.
   std::vector<std::vector<std::vector<llvm::Value*>>> _refcount_locals;
-  // Refcount function.
+  // Functions for refcounting on various types.
   llvm::Function* _refcount_function;
+  llvm::Function* _refcount_structure;
+  llvm::Function* _cleanup_structures;
+  llvm::Function* _destroy_internals;
+  // Map from structure type to destructor function.
+  std::unordered_map<llvm::Type*, llvm::Function*> _destructors;
 
 };
 
