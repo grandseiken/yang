@@ -32,6 +32,8 @@
 //
 // Misc stuff:
 // TODO: context combination and scopes.
+// TODO: contexts should be immutable and store their data in a shared_ptr which
+// is shared by client programs.
 // TODO: as alternative to textual include, allow code-sharing by way of
 // treating a Program as a Context (using LLVM modules to avoid the need for
 // complicated trampolining back and forth).
@@ -50,11 +52,7 @@
 //   of functions from the same Instance, and concurrent invocation of functions
 //   from different Instances where one happens to hold a reference to a
 //   function from the other.
-// The last is the trickiest bit and should probably be optional. Clients must
-// also follow this rule for thread-safety:
-// - Context should not be modified after it has been used (i.e. passed to
-//   Function::get_type or Program::Program)! This could be enforced by making
-//   Contexts immutable which might be a good idea anyway.
+// The last is the trickiest bit and should probably be optional.
 //
 // Further off (helpful stuff that can be emulated without needing to be built-
 // -in right away):

@@ -93,7 +93,8 @@ private:
   void update_reference_count(llvm::Value* value, int_t change);
   // Emit code to decrement reference count of locals in topmost scope, or
   // all scopes (for returns).
-  void dereference_scoped_locals(bool all_scopes);
+  void dereference_scoped_locals();
+  void dereference_scoped_locals(std::size_t first_scope);
 
   // Power implementation.
   llvm::Value* pow(llvm::Value* v, llvm::Value* u);
@@ -179,6 +180,7 @@ private:
 
   // List of local variables in scope, for refcounting.
   std::vector<std::vector<std::vector<llvm::Value*>>> _refcount_locals;
+  std::vector<std::size_t> _refcount_loop_indices;
   // Functions for refcounting on various types.
   llvm::Function* _refcount_function;
   llvm::Function* _refcount_structure;

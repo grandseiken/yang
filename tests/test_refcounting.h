@@ -106,6 +106,66 @@ export temporaries = int()
   };
   return f(get_fn(), get_fn()) + f(g(3), g(7));
 }
+
+export loops = int()
+{
+  const alloc = int()()
+  {
+    var n = 0;
+    return int()
+    {
+      return ++n;
+    };
+  };
+
+  var result = 0;
+  while (const v = alloc()()) {
+    const u = alloc();
+    if (!result) {
+      result += u();
+      continue;
+    }
+    result += v;
+    result += u();
+    if (result) {
+      result += alloc()();
+      break;
+    }
+  }
+
+  var i = 0;
+  do {
+    ++i;
+    const v = alloc();
+    result += v();
+    if (i == 1) {
+      continue;
+    }
+    result += v();
+    if (i == 2) {
+      break;
+    }
+  }
+  while (result += alloc()());
+
+  for (const t = alloc();
+       t() + (const u = alloc()()) + alloc()(); alloc()) {
+    if (result == 9) {
+      const w = alloc();
+      result += t() + u + w();
+      continue;
+    }
+    if (result > 9) {
+      result += t() + u;
+      break;
+    }
+  }
+
+  do {const t = alloc(); t(); break;} while(true);
+  for (const t = alloc(); !t();) result += t();
+
+  return result;
+}
 )";
 
 TEST_F(YangTest, FunctionRefCounting)
@@ -178,6 +238,7 @@ TEST_F(YangTest, FunctionRefCounting)
 
   EXPECT_EQ(inst.call<intf_t>("overwrite_and_return")(), 111);
   EXPECT_EQ(inst.call<int_t>("temporaries"), 13);
+  EXPECT_EQ(inst.call<int_t>("loops"), 18);
   // It'd be nice to test memory usage and that everything is actually getting
   // destroyed at the end, but it's not clear how to do that unintrusively.
 

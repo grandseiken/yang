@@ -291,8 +291,9 @@ void IrGenerator::preorder(const Node& node)
     {
       _metadata.push();
       _symbol_table.push();
+      _refcount_loop_indices.push_back(_refcount_locals.back().size());
       _refcount_locals.back().emplace_back();
-      auto loop_block =create_block(LOOP_BODY_BLOCK, "loop");
+      auto loop_block = create_block(LOOP_BODY_BLOCK, "loop");
       auto cond_block = create_block(LOOP_COND_BLOCK, "cond");
       auto merge_block = create_block(MERGE_BLOCK, "merge");
       _metadata.add(LOOP_BREAK_LABEL, merge_block);
@@ -346,9 +347,17 @@ void IrGenerator::infix(const Node& node, const result_list& results)
       if (results.size() == 1) {
         b().CreateBr(cond_block);
         b().SetInsertPoint(cond_block);
+        _refcount_loop_indices.push_back(_refcount_locals.back().size());
+        _refcount_locals.back().emplace_back();
       }
       if (results.size() == 2) {
-        b().CreateCondBr(i2b(results[1]), loop_block, merge_block);
+        auto parent = b().GetInsertBlock()->getParent();
+        auto clean_block =
+            llvm::BasicBlock::Create(b().getContext(), "clean", parent);
+        b().CreateCondBr(i2b(results[1]), loop_block, clean_block);
+        b().SetInsertPoint(clean_block);
+        dereference_scoped_locals();
+        b().CreateBr(merge_block);
         b().SetInsertPoint(after_block);
       }
       if (results.size() == 3) {
@@ -361,6 +370,12 @@ void IrGenerator::infix(const Node& node, const result_list& results)
     case Node::DO_WHILE_STMT:
     {
       auto cond_block = (llvm::BasicBlock*)_metadata[LOOP_COND_BLOCK];
+      dereference_scoped_locals();
+      _refcount_loop_indices.pop_back();
+      _refcount_locals.back().pop_back();
+      _symbol_table.pop();
+      _symbol_table.push();
+      _refcount_locals.back().emplace_back();
       b().CreateBr(cond_block);
       b().SetInsertPoint(cond_block);
       break;
@@ -520,7 +535,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     }
 
     case Node::GLOBAL:
-      dereference_scoped_locals(true);
+      dereference_scoped_locals(0);
       if (!node.static_info.closed_environment.empty()) {
         _scope_closures.pop_back();
       }
@@ -549,7 +564,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       auto function_type =
           (llvm::FunctionType*)parent->getType()->getElementType();
       if (function_type->getReturnType()->isVoidTy()) {
-        dereference_scoped_locals(true);
+        dereference_scoped_locals(0);
         if (_metadata[CLOSURE_PTR]) {
           std::vector<llvm::Value*> args{
               b().CreateBitCast(_metadata[CLOSURE_PTR], void_ptr_type()),
@@ -605,7 +620,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       b().CreateBr(after_block);
       b().SetInsertPoint(after_block);
       _symbol_table.pop();
-      dereference_scoped_locals(false);
+      dereference_scoped_locals();
       _refcount_locals.back().pop_back();
       return parent;
     }
@@ -618,7 +633,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     {
       auto dead_block =
           llvm::BasicBlock::Create(b().getContext(), "dead", parent);
-      dereference_scoped_locals(true);
+      dereference_scoped_locals(0);
       if (_metadata[CLOSURE_PTR]) {
         std::vector<llvm::Value*> args{
             b().CreateBitCast(_metadata[CLOSURE_PTR], void_ptr_type()),
@@ -638,7 +653,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
 
       b().CreateBr(merge_block);
       b().SetInsertPoint(merge_block);
-      dereference_scoped_locals(false);
+      dereference_scoped_locals();
       _refcount_locals.back().pop_back();
       return results[0];
     }
@@ -648,10 +663,13 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
       _symbol_table.pop();
       _metadata.pop();
+      dereference_scoped_locals();
+      _refcount_loop_indices.pop_back();
+      _refcount_locals.back().pop_back();
 
       b().CreateBr(after_block);
       b().SetInsertPoint(merge_block);
-      dereference_scoped_locals(false);
+      dereference_scoped_locals();
       _refcount_locals.back().pop_back();
       return results[0];
     }
@@ -659,18 +677,18 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     {
       auto loop_block = (llvm::BasicBlock*)_metadata[LOOP_BODY_BLOCK];
       auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
-      _symbol_table.pop();
       _metadata.pop();
+      dereference_scoped_locals();
+      _refcount_locals.back().pop_back();
 
       b().CreateCondBr(i2b(results[1]), loop_block, merge_block);
       b().SetInsertPoint(merge_block);
-      dereference_scoped_locals(false);
-      _refcount_locals.back().pop_back();
       return results[0];
     }
     case Node::BREAK_STMT:
     case Node::CONTINUE_STMT:
     {
+      dereference_scoped_locals(_refcount_loop_indices.back());
       auto dead_block =
           llvm::BasicBlock::Create(b().getContext(), "dead", parent);
       llvm::Value* v = b().CreateBr((llvm::BasicBlock*)_metadata[
@@ -1440,28 +1458,23 @@ void IrGenerator::update_reference_count(llvm::Value* value, int_t change)
   b().SetInsertPoint(merge_block);
 }
 
-void IrGenerator::dereference_scoped_locals(bool all_scopes)
+void IrGenerator::dereference_scoped_locals()
 {
-  auto dereference = [&](llvm::Value* v)
-  {
-    if (!v->getType()->isPointerTy()) {
-      update_reference_count(v, -1);
-      return;
-    }
-    llvm::Value* load = memory_load(v);
-    update_reference_count(load, -1);
-    memory_init(b(), v);
-  };
+  dereference_scoped_locals(_refcount_locals.back().size() - 1);
+}
+
+void IrGenerator::dereference_scoped_locals(std::size_t first_scope)
+{
   const auto& function = _refcount_locals.back();
-  if (!all_scopes) {
-    for (llvm::Value* v : function.back()) {
-      dereference(v);
-    }
-    return;
-  }
-  for (const auto& scope : function) {
-    for (llvm::Value* v : scope) {
-      dereference(v);
+  for (std::size_t i = first_scope; i < function.size(); ++i) {
+    for (llvm::Value* v : function[i]) {
+      if (!v->getType()->isPointerTy()) {
+        update_reference_count(v, -1);
+        continue;
+      }
+      llvm::Value* load = memory_load(v);
+      update_reference_count(load, -1);
+      memory_init(b(), v);
     }
   }
 }
