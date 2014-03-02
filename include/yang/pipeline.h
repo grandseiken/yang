@@ -11,41 +11,20 @@
 #include <vector>
 
 #include "error.h"
+#include "refcounting.h"
 #include "type.h"
 #include "type_info.h"
 #include "typedefs.h"
 
 namespace llvm {
-  class ExecutionEngine;
   class Function;
-  class LLVMContext;
-  class Module;
 }
 
 namespace yang {
-
-typedef std::unordered_map<std::string, Type> symbol_table;
 class Context;
 
 namespace internal {
   struct Node;
-
-  // Data for a Program that is preserved as long as an Instance or some closure
-  // structure needs it.
-  struct ProgramInternals {
-    std::string name;
-    const Context& context;
-    symbol_table functions;
-    symbol_table globals;
-
-    std::unique_ptr<llvm::LLVMContext> llvm_context;
-    llvm::Module* module;
-    std::unique_ptr<llvm::ExecutionEngine> engine;
-  };
-  // Similarly for an Instance.
-  struct InstanceInternals {
-    std::shared_ptr<const internal::ProgramInternals> ptr;
-  };
 }
 
 class Program {

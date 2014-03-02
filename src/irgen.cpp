@@ -6,8 +6,7 @@
 
 #include <llvm/IR/Module.h>
 #include <yang/context.h>
-#include <yang/function.h>
-#include <yang/pipeline.h>
+#include <yang/refcounting.h>
 
 namespace llvm {
   class LLVMContext;
@@ -21,54 +20,6 @@ namespace std {
       return v;
     }
   };
-}
-
-namespace {
-
-void refcount_function(void* target, yang::int_t change)
-{
-  auto native = (yang::internal::NativeFunction<void>*)target;
-  while (change > 0) {
-    native->take_reference();
-    --change;
-  }
-  while (change < 0) {
-    native->release_reference();
-    ++change;
-  }
-}
-
-void refcount_structure(void* target, yang::int_t change)
-{
-  yang::internal::update_structure_refcount(target, change);
-}
-
-void cleanup_structures()
-{
-  struct prefix {
-    void* parent;
-    yang::int_t refcount;
-    yang::void_fp free;
-  };
-  typedef void (*free_fp)(void*);
-
-  while (!yang::internal::get_structure_cleanup_list().empty()) {
-    std::unordered_set<void*> copy =
-        yang::internal::get_structure_cleanup_list();
-    yang::internal::get_structure_cleanup_list().clear();
-
-    for (void* v : copy) {
-      ((free_fp)((prefix*)v)->free)(v);
-    }
-  }
-}
-
-void destroy_internals(void* global_parent)
-{
-  delete (yang::internal::InstanceInternals*)global_parent;
-}
-
-// End anonymous namespace.
 }
 
 namespace yang {
@@ -111,12 +62,12 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   , _scope_to_function_map{{0, 0}}
   , _function_scope(0)
   , _refcount_function(get_native_function(
-      "refcount_function", (void_fp)&refcount_function,
+      "refcount_function", (void_fp)&update_function_refcount,
       llvm::FunctionType::get(
           void_type(),
           std::vector<llvm::Type*>{void_ptr_type(), int_type()}, false)))
   , _refcount_structure(get_native_function(
-      "refcount_structure", (void_fp)&refcount_structure,
+      "refcount_structure", (void_fp)&update_structure_refcount,
       llvm::FunctionType::get(
           void_type(),
           std::vector<llvm::Type*>{void_ptr_type(), int_type()}, false)))
@@ -1061,6 +1012,9 @@ void IrGenerator::init_structure_type(
       llvm::StructType::create(_module.getContext(), name);
   output_type = llvm::PointerType::get(struct_type, 0);
   auto free_type = llvm::FunctionType::get(void_type(), output_type, false);
+  std::vector<llvm::Type*> query_args{
+      output_type, llvm::PointerType::get(void_ptr_type(), 0)};
+  auto query_type = llvm::FunctionType::get(void_type(), query_args, false);
   std::vector<llvm::Type*> type_list;
 
   // The first element in closure structures is a pointer to the parent
@@ -1070,8 +1024,12 @@ void IrGenerator::init_structure_type(
   type_list.push_back(int_type());
   // The third is a pointer to the destructor.
   type_list.push_back(llvm::PointerType::get(free_type, 0));
+  // The fourth is the number of outgoing references this structure has.
+  type_list.push_back(int_type());
+  // The fifth is the pointer to the reference query function.
+  type_list.push_back(llvm::PointerType::get(query_type, 0));
 
-  std::size_t number = 3;
+  std::size_t number = 5;
   for (const auto& pair : symbols) {
     // Type-calculation must be kept up-to-date with new types, or globals of
     // that type will fail.
@@ -1083,19 +1041,15 @@ void IrGenerator::init_structure_type(
 
   // Create the destruction function.
   auto prev_block = b().GetInsertBlock();
-  auto free_ptr = get_native_function(
-      "free", (yang::void_fp)&free,
-      llvm::FunctionType::get(void_type(), output_type, false));
-
   auto free = llvm::Function::Create(
-      free_type, llvm::Function::ExternalLinkage, "!free_" + name, &_module);
+      free_type, llvm::Function::InternalLinkage, "!free_" + name, &_module);
   auto free_block = llvm::BasicBlock::Create(b().getContext(), "entry", free);
   b().SetInsertPoint(free_block);
   auto it = free->arg_begin();
   it->setName("struct");
   // Make sure to decrement the reference count on each global variable on
   // destruction.
-  for (const auto pair : output_numbering) {
+  for (const auto& pair : output_numbering) {
     llvm::Value* old = memory_load(structure_ptr(it, pair.second));
     update_reference_count(old, -1);
   }
@@ -1104,13 +1058,39 @@ void IrGenerator::init_structure_type(
     std::vector<llvm::Value*> args{parent, constant_int(-1)};
     b().CreateCall(_refcount_structure, args);
   }
-  b().CreateCall(free_ptr, it);
   if (name == "global_data") {
     b().CreateCall(_destroy_internals, parent);
   }
   b().CreateRetVoid();
 
+  // Create the reference query function.
+  auto query = llvm::Function::Create(
+      query_type, llvm::Function::InternalLinkage, "!query_" + name, &_module);
+  auto query_block = llvm::BasicBlock::Create(b().getContext(), "entry", query);
+  it = query->arg_begin();
+  auto jt = it;
+  ++jt;
+  it->setName("struct");
+  jt->setName("output");
+
+  b().SetInsertPoint(query_block);
+  std::size_t reference_count = 0;
+  for (const auto& pair : symbols) {
+    if (!pair.second.is_function()) {
+      continue;
+    }
+    std::size_t index = output_numbering[pair.first];
+    llvm::Value* f = memory_load(structure_ptr(it, index));
+    llvm::Value* eptr = b().CreateExtractValue(f, 1, "eptr");
+    std::vector<llvm::Value*> indices{constant_int(reference_count)};
+    b().CreateAlignedStore(eptr, b().CreateGEP(jt, indices, "out"), 1);
+    ++reference_count;
+  }
+  b().CreateRetVoid();
+
   _destructors[output_type] = free;
+  _reference_queries[output_type] = query;
+  _reference_counts[output_type] = reference_count;
   b().SetInsertPoint(prev_block);
 }
 
@@ -1136,6 +1116,8 @@ llvm::Value* IrGenerator::allocate_structure_value(
   memory_store(constant_ptr(nullptr), structure_ptr(v, 0));
   memory_store(constant_int(0), structure_ptr(v, 1));
   memory_store(_destructors[type], structure_ptr(v, 2));
+  memory_store(constant_int(_reference_counts[type]), structure_ptr(v, 3));
+  memory_store(_reference_queries[type], structure_ptr(v, 4));
   for (const auto& pair : numbering) {
     memory_init(b(), structure_ptr(v, pair.second));
   }

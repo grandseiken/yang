@@ -166,6 +166,35 @@ export loops = int()
 
   return result;
 }
+
+export cycles = int()()
+{
+  var n = 0;
+  var ff = int() {return ++n;};
+  const f = int()
+  {
+    var m = 0;
+    var gg = int() {return ++m;};
+    const g = int()
+    {
+      var l = 0;
+      var hh = int() {return 0;};
+      const h = int()
+      {
+        const r = ++l + gg() + ff();
+        ff = h;
+        gg = h;
+        hh = h;
+        const dasd = g;dasd;
+        return r;
+      };
+      hh = h;
+      return hh();
+    };
+    return g();
+  };
+  return f;
+}
 )";
 
 TEST_F(YangTest, FunctionRefCounting)
@@ -239,10 +268,9 @@ TEST_F(YangTest, FunctionRefCounting)
   EXPECT_EQ(inst.call<intf_t>("overwrite_and_return")(), 111);
   EXPECT_EQ(inst.call<int_t>("temporaries"), 13);
   EXPECT_EQ(inst.call<int_t>("loops"), 18);
+
+  auto cycles = inst.call<intf_t>("cycles");
+  EXPECT_EQ(cycles(), 3);
   // It'd be nice to test memory usage and that everything is actually getting
   // destroyed at the end, but it's not clear how to do that unintrusively.
-
-  // TODO: function values can introduce cycles in the graph. So refcounting
-  // isn't sufficient for structures. Also, need more refcounting tests for
-  // closures.
 }

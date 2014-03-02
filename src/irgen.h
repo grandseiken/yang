@@ -188,6 +188,8 @@ private:
   llvm::Function* _destroy_internals;
   // Map from structure type to destructor function.
   std::unordered_map<llvm::Type*, llvm::Function*> _destructors;
+  std::unordered_map<llvm::Type*, llvm::Function*> _reference_queries;
+  std::unordered_map<llvm::Type*, std::size_t> _reference_counts;
 
 };
 

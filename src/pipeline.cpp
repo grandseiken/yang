@@ -204,12 +204,12 @@ Instance::Instance(const Program& program)
   _global_data = ((alloc_fp)(std::intptr_t)global_alloc)();
 
   *(void**)_global_data = _internals;
-  internal::update_structure_refcount(_global_data, 1);
+  internal::update_structure_refcount((internal::Prefix*)_global_data, 1);
 }
 
 Instance::~Instance()
 {
-  internal::update_structure_refcount(_global_data, -1);
+  internal::update_structure_refcount((internal::Prefix*)_global_data, -1);
 }
 
 void* Instance::get_native_fp(const std::string& name) const

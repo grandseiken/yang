@@ -6,6 +6,7 @@
 #define YANG_INCLUDE_YANG_FUNCTION_H
 
 #include "native.h"
+#include "refcounting.h"
 #include "type.h"
 #include "typedefs.h"
 
@@ -37,10 +38,6 @@ struct ReverseTrampolineCallReturn;
 
 template<typename>
 struct GenerateReverseTrampolineLookupTable;
-
-// Structure refcounting.
-std::unordered_set<void*>& get_structure_cleanup_list();
-void update_structure_refcount(void* structure, int_t change);
 
 // End namespace internal.
 }
@@ -318,7 +315,7 @@ template<typename R, typename... Args>
 void Function<R(Args...)>::update_env_refcount(int_t change)
 {
   if (_env) {
-    internal::update_structure_refcount(_env, change);
+    internal::update_structure_refcount((internal::Prefix*)_env, change);
   }
 }
 
