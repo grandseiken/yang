@@ -61,16 +61,13 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   , _metadata(nullptr)
   , _scope_to_function_map{{0, 0}}
   , _function_scope(0)
-  , _refcount_function(get_native_function(
-      "refcount_function", (void_fp)&update_function_refcount,
+  , _update_refcount(get_native_function(
+      "update_refcount", (void_fp)&update_refcount,
       llvm::FunctionType::get(
           void_type(),
-          std::vector<llvm::Type*>{void_ptr_type(), int_type()}, false)))
-  , _refcount_structure(get_native_function(
-      "refcount_structure", (void_fp)&update_structure_refcount,
-      llvm::FunctionType::get(
-          void_type(),
-          std::vector<llvm::Type*>{void_ptr_type(), int_type()}, false)))
+          std::vector<llvm::Type*>{
+              void_ptr_type(), void_ptr_type(), int_type()},
+          false)))
   , _cleanup_structures(get_native_function(
       "cleanup_structures", (void_fp)&cleanup_structures,
       llvm::FunctionType::get(void_type(), false)))
@@ -518,9 +515,10 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
         dereference_scoped_locals(0);
         if (_metadata[CLOSURE_PTR]) {
           std::vector<llvm::Value*> args{
+              constant_ptr(nullptr),
               b().CreateBitCast(_metadata[CLOSURE_PTR], void_ptr_type()),
               constant_int(-1)};
-          b().CreateCall(_refcount_structure, args);
+          b().CreateCall(_update_refcount, args);
         }
         b().CreateRetVoid();
       }
@@ -587,9 +585,10 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       dereference_scoped_locals(0);
       if (_metadata[CLOSURE_PTR]) {
         std::vector<llvm::Value*> args{
+            constant_ptr(nullptr),
             b().CreateBitCast(_metadata[CLOSURE_PTR], void_ptr_type()),
             constant_int(-1)};
-        b().CreateCall(_refcount_structure, args);
+        b().CreateCall(_update_refcount, args);
       }
       llvm::Value* v = node.type == Node::RETURN_STMT ?
           b().CreateRet(results[0]) : b().CreateRetVoid();
@@ -1038,6 +1037,7 @@ void IrGenerator::init_structure_type(
     output_numbering[pair.first] = number++;
   }
   struct_type->setBody(type_list, false);
+  bool global_data = name == "global_data";
 
   // Create the destruction function.
   auto prev_block = b().GetInsertBlock();
@@ -1054,12 +1054,13 @@ void IrGenerator::init_structure_type(
     update_reference_count(old, -1);
   }
   llvm::Value* parent = memory_load(structure_ptr(it, 0));
-  if (name != "global_data") {
-    std::vector<llvm::Value*> args{parent, constant_int(-1)};
-    b().CreateCall(_refcount_structure, args);
-  }
-  if (name == "global_data") {
+  if (global_data) {
     b().CreateCall(_destroy_internals, parent);
+  }
+  else {
+    std::vector<llvm::Value*> args{
+        constant_ptr(nullptr), parent, constant_int(-1)};
+    b().CreateCall(_update_refcount, args);
   }
   b().CreateRetVoid();
 
@@ -1074,7 +1075,8 @@ void IrGenerator::init_structure_type(
   jt->setName("output");
 
   b().SetInsertPoint(query_block);
-  std::size_t reference_count = 0;
+  std::size_t refout_count = 0;
+  // Output pointers for each function value environment.
   for (const auto& pair : symbols) {
     if (!pair.second.is_function()) {
       continue;
@@ -1082,15 +1084,22 @@ void IrGenerator::init_structure_type(
     std::size_t index = output_numbering[pair.first];
     llvm::Value* f = memory_load(structure_ptr(it, index));
     llvm::Value* eptr = b().CreateExtractValue(f, 1, "eptr");
-    std::vector<llvm::Value*> indices{constant_int(reference_count)};
+    std::vector<llvm::Value*> indices{constant_int(refout_count)};
     b().CreateAlignedStore(eptr, b().CreateGEP(jt, indices, "out"), 1);
-    ++reference_count;
+    ++refout_count;
+  }
+  // Also output the parent pointer.
+  if (!global_data) {
+    llvm::Value* v = memory_load(structure_ptr(it, 0));
+    std::vector<llvm::Value*> indices{constant_int(refout_count)};
+    b().CreateAlignedStore(v, b().CreateGEP(jt, indices, "out"), 1);
+    ++refout_count;
   }
   b().CreateRetVoid();
 
   _destructors[output_type] = free;
-  _reference_queries[output_type] = query;
-  _reference_counts[output_type] = reference_count;
+  _refout_queries[output_type] = query;
+  _refout_counts[output_type] = refout_count;
   b().SetInsertPoint(prev_block);
 }
 
@@ -1116,8 +1125,8 @@ llvm::Value* IrGenerator::allocate_structure_value(
   memory_store(constant_ptr(nullptr), structure_ptr(v, 0));
   memory_store(constant_int(0), structure_ptr(v, 1));
   memory_store(_destructors[type], structure_ptr(v, 2));
-  memory_store(constant_int(_reference_counts[type]), structure_ptr(v, 3));
-  memory_store(_reference_queries[type], structure_ptr(v, 4));
+  memory_store(constant_int(_refout_counts[type]), structure_ptr(v, 3));
+  memory_store(_refout_queries[type], structure_ptr(v, 4));
   for (const auto& pair : numbering) {
     memory_init(b(), structure_ptr(v, pair.second));
   }
@@ -1146,8 +1155,9 @@ llvm::Value* IrGenerator::allocate_closure_struct(
   // Store parent pointer in the first slot.
   auto parent_void_ptr = b().CreateBitCast(parent_ptr, void_ptr_type());
   memory_store(parent_void_ptr, structure_ptr(closure_value, 0));
-  std::vector<llvm::Value*> args{parent_void_ptr, constant_int(1)};
-  b().CreateCall(_refcount_structure, args);
+  std::vector<llvm::Value*> args{
+      constant_ptr(nullptr), parent_void_ptr, constant_int(1)};
+  b().CreateCall(_update_refcount, args);
   // Set up the symbol-table for all the rest. If a closed variable "v"
   // appears in scope #1, for instance, we store "v/1" in the symbol table
   // with a pointer into the closure-structure.
@@ -1236,9 +1246,10 @@ void IrGenerator::create_function(
   // Refcounting on closure pointer.
   if (_metadata[CLOSURE_PTR]) {
     std::vector<llvm::Value*> args{
+        constant_ptr(nullptr),
         b().CreateBitCast(_metadata[CLOSURE_PTR], void_ptr_type()),
         constant_int(1)};
-    b().CreateCall(_refcount_structure, args);
+    b().CreateCall(_update_refcount, args);
   }
 
   // Lambda for deciding whether to put an argument in closure or stack.
@@ -1266,6 +1277,7 @@ void IrGenerator::create_function(
   // Store the function's name in its own scope. Recursive lookup handled
   // similarly to arguments below.
   if (_immediate_left_assign.length()) {
+    function->setName(_immediate_left_assign);
     llvm::Type* fp_type =
         generic_function_type(llvm::PointerType::get(function_type, 0));
     // The identifier is registered one scope above the function argument scope.
@@ -1401,43 +1413,13 @@ void IrGenerator::update_reference_count(llvm::Value* value, int_t change)
   if (!value->getType()->isStructTy()) {
     return;
   }
+  // TODO: for speed, Yang reference counting at least should be inlined.
   llvm::Value* fptr = b().CreateExtractValue(value, 0, "fptr");
   llvm::Value* eptr = b().CreateExtractValue(value, 1, "eptr");
-
-  auto parent = b().GetInsertBlock()->getParent();
-  auto cpp_block =
-      llvm::BasicBlock::Create(b().getContext(), "cpp", parent);
-  auto else_block =
-      llvm::BasicBlock::Create(b().getContext(), "else", parent);
-  auto yang_block =
-      llvm::BasicBlock::Create(b().getContext(), "yang", parent);
-  auto merge_block =
-      llvm::BasicBlock::Create(b().getContext(), "merge", parent);
-
-  llvm::Value* v = llvm::ConstantPointerNull::get(void_ptr_type());
-  llvm::Value* fvoid = b().CreateBitCast(fptr, void_ptr_type(), "cast");
-  llvm::Value* cmp = b().CreateAnd(
-      b().CreateICmpNE(fvoid, v, "fptr"),
-      b().CreateICmpEQ(eptr, v, "eptr"), "and");
-  b().CreateCondBr(cmp, cpp_block, else_block);
-
-  b().SetInsertPoint(cpp_block);
-  std::vector<llvm::Value*> args{fvoid, constant_int(change)};
-  b().CreateCall(_refcount_function, args);
-  b().CreateBr(merge_block);
-
-  b().SetInsertPoint(else_block);
-  llvm::Value* evoid = b().CreateBitCast(eptr, void_ptr_type(), "cast");
-  cmp = b().CreateICmpNE(evoid, v, "eptr");
-  b().CreateCondBr(cmp, yang_block, merge_block);
-
-  b().SetInsertPoint(yang_block);
-  // We could easily do the refcounting in Yang code to avoid the function call
-  // unless we actually have to destruct.
-  args[0] = evoid;
-  b().CreateCall(_refcount_structure, args);
-  b().CreateBr(merge_block);
-  b().SetInsertPoint(merge_block);
+  std::vector<llvm::Value*> args{
+      b().CreateBitCast(fptr, void_ptr_type()),
+      b().CreateBitCast(eptr, void_ptr_type()), constant_int(change)};
+  b().CreateCall(_update_refcount, args);
 }
 
 void IrGenerator::dereference_scoped_locals()

@@ -68,6 +68,9 @@ std::unordered_set<Prefix*>& get_structure_possible_cycle_list();
 void update_structure_refcount(Prefix* structure, int_t change);
 // Do function refcounting.
 void update_function_refcount(NativeFunction<void>* target, int_t change);
+// Do both refcounting.
+void update_refcount(
+    NativeFunction<void>* target, Prefix* structure, int_t change);
 // Expensive cleaning up of cyclic structures that are no longer referenced.
 void cleanup_cyclic_structures();
 // Clean up structures that are no longer referenced.

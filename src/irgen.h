@@ -182,14 +182,13 @@ private:
   std::vector<std::vector<std::vector<llvm::Value*>>> _refcount_locals;
   std::vector<std::size_t> _refcount_loop_indices;
   // Functions for refcounting on various types.
-  llvm::Function* _refcount_function;
-  llvm::Function* _refcount_structure;
+  llvm::Function* _update_refcount;
   llvm::Function* _cleanup_structures;
   llvm::Function* _destroy_internals;
   // Map from structure type to destructor function.
   std::unordered_map<llvm::Type*, llvm::Function*> _destructors;
-  std::unordered_map<llvm::Type*, llvm::Function*> _reference_queries;
-  std::unordered_map<llvm::Type*, std::size_t> _reference_counts;
+  std::unordered_map<llvm::Type*, llvm::Function*> _refout_queries;
+  std::unordered_map<llvm::Type*, std::size_t> _refout_counts;
 
 };
 

@@ -164,3 +164,27 @@ TEST_F(YangTest, SemanticsTest)
   EXPECT_EQ(inst.call<int_t>("knuth_man_or_boy_test", 10), -67);
   // TODO: just getting started. Need way more semantic tests.
 }
+
+TEST_F(YangTest, TestBroken)
+{
+  // TODO: this is broken; something to do with immediate left-assign hack
+  // causes "ff" to have a value "ff" inside that's initialised with a value
+  // from "foo".
+  // Before trying to hack a fix for this, refactor the entire IR generation.
+  const std::string s = R"(
+  export foo = int()
+  {
+    var ff = int() {return 0;};
+    const f = int()
+    {
+      ff = int() {return 1;};
+      ff = f;
+      ff = foo;
+      return ff();
+    };
+    return ff();
+  }
+  )";
+
+  /* program(s); BROKEN */
+}
