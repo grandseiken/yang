@@ -48,21 +48,32 @@ public:
   // User types.
   bool is_user_type() const;
   const std::string& get_user_type_name() const;
-  // Return a new type with user types erased; that is, all user types replaced
-  // by a single placeholder user type with no name.
-  Type erase_user_types() const;
 
   bool operator==(const Type& t) const;
   bool operator!=(const Type& t) const;
 
+  // Construct types. By default neither the exported bit nor the const bit is
+  // set on created Types.
+  static Type void_t();
+  static Type int_t();
+  static Type float_t();
+  static Type int_vector_t(std::size_t size);
+  static Type float_vector_t(std::size_t size);
+  static Type function_t(
+      const Type& return_t, const std::vector<Type>& args);
+  static Type user_t(const std::string& name = "");
+
+  // Return a new type that's identical except exported.
+  Type make_exported(bool exported = true) const;
+  // Return a new type that's identical except const.
+  Type make_const(bool is_const = true) const;
+  // Return a new type with user types erased; that is, all user types replaced
+  // by a single placeholder user type with no name.
+  Type erase_user_types() const;
+
 private:
 
   friend struct std::hash<Type>;
-  friend class internal::IrCommon;
-  friend class internal::Type;
-  template<typename>
-  friend struct internal::TypeInfo;
-  friend struct internal::GenericFunction;
   Type();
 
   enum type_base {
@@ -80,7 +91,6 @@ private:
   std::vector<Type> _elements;
   std::string _user_type_name;
   static Type void_type;
-  static std::string erased_type_name;
 
 };
 

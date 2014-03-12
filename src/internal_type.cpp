@@ -11,16 +11,19 @@ Type::Type(const yang::Type& type)
   : Type(VOID)
 {
   _base =
-      type._base == yang::Type::INT ? INT :
-      type._base == yang::Type::FLOAT ? FLOAT :
-      type._base == yang::Type::FUNCTION ? FUNCTION :
-      type._base == yang::Type::USER_TYPE ? USER_TYPE :
+      type.is_int() || type.is_int_vector() ? INT :
+      type.is_float() || type.is_float_vector() ? FLOAT :
+      type.is_function() ? FUNCTION :
+      type.is_user_type() ? USER_TYPE :
       VOID;
-  _const = type._const;
-  _count = type._count;
-  _user_type_name = type._user_type_name;
-  for (const yang::Type& u : type._elements) {
-    _elements.push_back(u);
+  _const = type.is_const();
+  _count = type.get_vector_size();
+  _user_type_name = type.get_user_type_name();
+  if (type.is_function()) {
+    _elements.push_back(type.get_function_return_type());
+    for (std::size_t i = 0; i < type.get_function_num_args(); ++i) {
+      _elements.push_back(type.get_function_arg_type(i));
+    }
   }
 }
 
@@ -198,21 +201,27 @@ bool Type::operator!=(const Type& t) const
 
 yang::Type Type::external(bool exported) const
 {
-  yang::Type t;
-  t._exported = exported;
-  t._const = _const;
-  t._base =
-      _base == INT ? yang::Type::INT :
-      _base == FLOAT ? yang::Type::FLOAT :
-      _base == FUNCTION ? yang::Type::FUNCTION :
-      _base == USER_TYPE ? yang::Type::USER_TYPE :
-      yang::Type::VOID;
-  t._count = _count;
-  t._user_type_name = _user_type_name;
-  for (const Type& u : _elements) {
-    t._elements.push_back(u.external(false));
+  yang::Type t =
+      _base == INT ? yang::Type::int_t() :
+      _base == FLOAT ? yang::Type::float_t() :
+      yang::Type::void_t();
+  if (_count > 1) {
+    t = _base == INT ? yang::Type::int_vector_t(_count) :
+        _base == FLOAT ? yang::Type::float_vector_t(_count) :
+        yang::Type::void_t();
   }
-  return t;
+  if (_base == FUNCTION) {
+    std::vector<yang::Type> args;
+    auto it = _elements.begin();
+    for (++it; it != _elements.end(); ++it) {
+      args.push_back(it->external(false));
+    }
+    t = yang::Type::function_t(_elements[0].external(false), args);
+  }
+  if (_base == USER_TYPE) {
+    t = yang::Type::user_t(_user_type_name);
+  }
+  return t.make_exported(exported).make_const(_const);
 }
 
 std::string Type::string_internal() const

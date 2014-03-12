@@ -126,18 +126,13 @@ namespace internal {
       if (!context.has_type<T>()) {
         throw runtime_error("use of unregistered user type");
       }
-      yang::Type t;
-      t._base = yang::Type::USER_TYPE;
-      t._user_type_name = context.get_type_name<T>();
-      return t;
+      return yang::Type::user_t(context.get_type_name<T>());
     }
 
     // Without passing a context, we just construct erased user-types.
     yang::Type operator()() const
     {
-      yang::Type t;
-      t._base = yang::Type::USER_TYPE;
-      return t;
+      return yang::Type::user_t();
     }
   };
 }

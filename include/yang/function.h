@@ -214,7 +214,9 @@ using make_fn_type = yang::Function<typename GetSignature<T>::type>;
 // Dynamic storage of an abitrary Function.
 struct GenericFunction {
   GenericFunction()
-    : ptr(nullptr) {}
+    : type(yang::Type::void_t())
+    , ptr(nullptr)
+  {}
 
   yang::Type type;
   std::unique_ptr<FunctionBase> ptr;

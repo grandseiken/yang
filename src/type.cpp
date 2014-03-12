@@ -3,6 +3,7 @@
 // MIT License. See LICENSE file for details.
 //============================================================================//
 #include <yang/type.h>
+#include <yang/error.h>
 
 namespace yang {
 
@@ -106,20 +107,7 @@ bool Type::is_user_type() const
 
 const std::string& Type::get_user_type_name() const
 {
-  if (_user_type_name.empty()) {
-    return erased_type_name;
-  }
   return _user_type_name;
-}
-
-Type Type::erase_user_types() const
-{
-  Type t = *this;
-  t._user_type_name.clear();
-  for (auto& u : t._elements) {
-    u = u.erase_user_types();
-  }
-  return t;
 }
 
 bool Type::operator==(const Type& t) const
@@ -141,6 +129,90 @@ bool Type::operator!=(const Type& t) const
   return !operator==(t);
 }
 
+Type Type::void_t()
+{
+  return {};
+}
+
+Type Type::int_t()
+{
+  Type t;
+  t._base = INT;
+  return t;
+}
+
+Type Type::float_t()
+{
+  Type t;
+  t._base = FLOAT;
+  return t;
+}
+
+Type Type::int_vector_t(std::size_t size)
+{
+  if (size <= 1) {
+    throw runtime_error(
+        "vector type created with size " + std::to_string(size));
+  }
+  Type t = int_t();
+  t._count = size;
+  return t;
+}
+
+Type Type::float_vector_t(std::size_t size)
+{
+  if (size <= 1) {
+    throw runtime_error(
+        "vector type created with size " + std::to_string(size));
+  }
+  Type t = float_t();
+  t._count = size;
+  return t;
+}
+
+Type Type::function_t(const Type& return_t, const std::vector<Type>& args)
+{
+  Type t;
+  t._base = FUNCTION;
+  t._elements.push_back(return_t);
+  for (const Type& u : args) {
+    t._elements.push_back(u);
+  }
+  return t;
+}
+
+Type Type::user_t(const std::string& name)
+{
+  Type t;
+  t._base = USER_TYPE;
+  t._user_type_name = name;
+  return t;
+}
+
+Type Type::make_exported(bool exported) const
+{
+  Type t = *this;
+  t._exported = exported;
+  return t;
+}
+
+Type Type::make_const(bool is_const) const
+{
+  Type t = *this;
+  t._const = is_const;
+  return t;
+}
+
+Type Type::erase_user_types() const
+{
+  Type t = *this;
+  t._user_type_name.clear();
+  for (auto& u : t._elements) {
+    u = u.erase_user_types();
+  }
+  return t;
+}
+
 Type::Type()
   : _exported(false)
   , _const(false)
@@ -150,7 +222,6 @@ Type::Type()
 }
 
 Type Type::void_type;
-std::string Type::erased_type_name = "[Erased]";
 
 // End namespace yang.
 }

@@ -167,8 +167,8 @@ private:
   //
   // The scope index of the identifier then gives us the closure scope index via
   // _scope_to_function_map. This lets us look up the correct closure structure
-  // via the environment pointer and index it using scope_closures[closure index]
-  // and unique_identifier.
+  // via the environment pointer and index it using
+  // scope_closures[closure index] and unique_identifier.
   //
   // TODO: clean up these data structures if possible, it's kind of awkward.
   struct closure_t {

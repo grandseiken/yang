@@ -27,12 +27,12 @@ struct TypeInfo {
   // Avoid extra unnecessary error messages (beyond static assert above).
   yang::Type operator()(const Context&) const
   {
-    return {};
+    return yang::Type::void_t();
   }
 
   yang::Type operator()() const
   {
-    return {};
+    return yang::Type::void_t();
   }
 };
 
@@ -40,12 +40,12 @@ template<>
 struct TypeInfo<void> {
   yang::Type operator()(const Context&) const
   {
-    return {};
+    return yang::Type::void_t();
   }
 
   yang::Type operator()() const
   {
-    return {};
+    return yang::Type::void_t();
   }
 };
 
@@ -53,14 +53,12 @@ template<>
 struct TypeInfo<yang::int_t> {
   yang::Type operator()(const Context&) const
   {
-    return operator()();
+    return yang::Type::int_t();
   }
 
   yang::Type operator()() const
   {
-    yang::Type t;
-    t._base = yang::Type::INT;
-    return t;
+    return yang::Type::int_t();
   }
 };
 
@@ -68,14 +66,12 @@ template<>
 struct TypeInfo<yang::float_t> {
   yang::Type operator()(const Context&) const
   {
-    return operator()();
+    return yang::Type::float_t();
   }
 
   yang::Type operator()() const
   {
-    yang::Type t;
-    t._base = yang::Type::FLOAT;
-    return t;
+    return yang::Type::float_t();
   }
 };
 
@@ -83,15 +79,12 @@ template<std::size_t N>
 struct TypeInfo<ivec_t<N>> {
   yang::Type operator()(const Context&) const
   {
-    return operator()();
+    return yang::Type::int_vector_t(N);
   }
 
   yang::Type operator()() const
   {
-    yang::Type t;
-    t._base = yang::Type::INT;
-    t._count = N;
-    return t;
+    return yang::Type::int_vector_t(N);
   }
 };
 
@@ -99,15 +92,12 @@ template<std::size_t N>
 struct TypeInfo<fvec_t<N>> {
   yang::Type operator()(const Context&) const
   {
-    return operator()();
+    return yang::Type::float_vector_t(N);
   }
 
   yang::Type operator()() const
   {
-    yang::Type t;
-    t._base = yang::Type::FLOAT;
-    t._count = N;
-    return t;
+    return yang::Type::float_vector_t(N);
   }
 };
 
@@ -124,39 +114,42 @@ struct TypeInfo<fvec_t<N>> {
 // which, since C++ functions can only return *pointers* to other functions, is
 // unfortunately illegal. For now, the only option right now is judicious use
 // of typedefs (and perhaps a shorter typedef for Function).
-template<typename R>
-struct TypeInfo<Function<R()>> {
-  yang::Type operator()(const Context& context) const
+template<typename...>
+struct ArgsTypeInfo {};
+template<>
+struct ArgsTypeInfo<> {
+  void operator()(const Context&, const std::vector<yang::Type>&) const {}
+  void operator()(const std::vector<yang::Type>&) const {}
+};
+template<typename A, typename... Args>
+struct ArgsTypeInfo<A, Args...> {
+  void operator()(const Context& context, std::vector<yang::Type>& output) const
   {
-    yang::Type t;
-    t._base = yang::Type::FUNCTION;
-    t._elements.push_back(TypeInfo<R>()(context));
-    return t;
+    output.push_back(TypeInfo<A>()(context));
+    ArgsTypeInfo<Args...>()(context, output);
   }
 
-  yang::Type operator()() const
+  void operator()(std::vector<yang::Type>& output) const
   {
-    yang::Type t;
-    t._base = yang::Type::FUNCTION;
-    t._elements.push_back(TypeInfo<R>()());
-    return t;
+    output.push_back(TypeInfo<A>()());
+    ArgsTypeInfo<Args...>()(output);
   }
 };
 
-template<typename R, typename A, typename... Args>
-struct TypeInfo<Function<R(A, Args...)>> {
+template<typename R, typename... Args>
+struct TypeInfo<Function<R(Args...)>> {
   yang::Type operator()(const Context& context) const
   {
-    yang::Type t = TypeInfo<Function<R(Args...)>>()(context);
-    t._elements.insert(++t._elements.begin(), TypeInfo<A>()(context));
-    return t;
+    std::vector<yang::Type> args;
+    ArgsTypeInfo<Args...>()(context, args);
+    return yang::Type::function_t(TypeInfo<R>()(context), args);
   }
 
   yang::Type operator()() const
   {
-    yang::Type t = TypeInfo<Function<R(Args...)>>()();
-    t._elements.insert(++t._elements.begin(), TypeInfo<A>()());
-    return t;
+    std::vector<yang::Type> args;
+    ArgsTypeInfo<Args...>()(args);
+    return yang::Type::function_t(TypeInfo<R>()(), args);
   }
 };
 

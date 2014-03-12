@@ -6,10 +6,7 @@
 #define YANG_SRC_IRCOMMON_H
 
 #include <unordered_map>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/IRBuilder.h>
-#include <yang/type.h>
-#include <yang/typedefs.h>
+#include "irval.h"
 
 namespace llvm {
   class Constant;
@@ -17,8 +14,6 @@ namespace llvm {
   class Function;
   class Module;
   class PassManager;
-  class Type;
-  class Value;
 }
 
 namespace yang {
@@ -56,24 +51,6 @@ public:
 
 protected:
 
-  const llvm::IRBuilder<>& b() const;
-  /***/ llvm::IRBuilder<>& b();
-
-  // Types.
-  llvm::PointerType* void_ptr_type() const;
-  llvm::Type* void_type() const;
-  llvm::Type* int_type() const;
-  llvm::Type* float_type() const;
-  llvm::Type* vector_type(llvm::Type* type, std::size_t n) const;
-
-  // Constants.
-  llvm::Constant* constant_int(yang::int_t value) const;
-  llvm::Constant* constant_float(yang::float_t value) const;
-  llvm::Constant* constant_vector(
-      const std::vector<llvm::Constant*>& values) const;
-  llvm::Constant* constant_vector(llvm::Constant* value, std::size_t n) const;
-  llvm::Value* constant_ptr(void* ptr);
-
   // Function types and values.
   llvm::Type* generic_function_type(llvm::Type* function_type) const;
   llvm::Type* generic_function_type(
@@ -108,12 +85,15 @@ private:
 
   llvm::Module& _module;
   llvm::ExecutionEngine& _engine;
-  llvm::IRBuilder<> _builder;
 
   // Generated trampolines (map from type of function to corresponding
   // trampoline function).
   trampoline_map _trampoline_map;
   trampoline_map _reverse_trampoline_map;
+
+protected:
+
+  Builder _b;
 
 };
 

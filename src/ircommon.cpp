@@ -20,7 +20,7 @@ namespace internal {
 IrCommon::IrCommon(llvm::Module& module, llvm::ExecutionEngine& engine)
   : _module(module)
   , _engine(engine)
-  , _builder(module.getContext())
+  , _b{llvm::IRBuilder<>(module.getContext())}
 {
 }
 
@@ -145,8 +145,8 @@ llvm::Function* IrCommon::get_trampoline_function(
   auto function = llvm::Function::Create(
       ext_function_type, llvm::Function::ExternalLinkage,
       "!trampoline", &_module);
-  auto block = llvm::BasicBlock::Create(b().getContext(), "entry", function);
-  b().SetInsertPoint(block);
+  auto block = llvm::BasicBlock::Create(_b.b.getContext(), "entry", function);
+  _b.b.SetInsertPoint(block);
 
   std::vector<llvm::Value*> call_args;
   auto callee = --function->arg_end();
@@ -165,12 +165,11 @@ llvm::Function* IrCommon::get_trampoline_function(
     if ((*it)->isVectorTy()) {
       std::size_t size = (*it)->getVectorNumElements();
       llvm::Value* v = (*it)->isIntOrIntVectorTy() ?
-          constant_vector(constant_int(0), size) :
-          constant_vector(constant_float(0), size);
+          _b.constant_int_vector(0, size) : _b.constant_float_vector(0, size);
 
       for (std::size_t j = 0; j < size; ++j) {
         jt->setName("a" + std::to_string(i) + "_" + std::to_string(j));
-        v = b().CreateInsertElement(v, jt, constant_int(j), "vec");
+        v = _b.b.CreateInsertElement(v, jt, _b.constant_int(j), "vec");
         ++jt;
       }
       call_args.push_back(v);
@@ -193,26 +192,27 @@ llvm::Function* IrCommon::get_trampoline_function(
   }
 
   // Do the call and translate the result back to native calling convention.
-  llvm::Value* result = b().CreateCall(callee, call_args);
+  llvm::Value* result = _b.b.CreateCall(callee, call_args);
   if (llvm_return_type->isVectorTy()) {
     auto it = function->arg_begin();
     for (std::size_t i = 0; i < llvm_return_type->getVectorNumElements(); ++i) {
-      llvm::Value* v = b().CreateExtractElement(result, constant_int(i), "vec");
-      b().CreateStore(v, it++);
+      llvm::Value* v =
+          _b.b.CreateExtractElement(result, _b.constant_int(i), "vec");
+      _b.b.CreateStore(v, it++);
     }
   }
   else if (llvm_return_type->isStructTy()) {
-    llvm::Value* fptr = b().CreateExtractValue(result, 0, "fptr");
-    llvm::Value* eptr = b().CreateExtractValue(result, 1, "eptr");
+    llvm::Value* fptr = _b.b.CreateExtractValue(result, 0, "fptr");
+    llvm::Value* eptr = _b.b.CreateExtractValue(result, 1, "eptr");
 
     auto it = function->arg_begin();
-    b().CreateStore(fptr, it++);
-    b().CreateStore(eptr, it++);
+    _b.b.CreateStore(fptr, it++);
+    _b.b.CreateStore(eptr, it++);
   }
   else if (!llvm_return_type->isVoidTy()) {
-    b().CreateStore(result, function->arg_begin());
+    _b.b.CreateStore(result, function->arg_begin());
   }
-  b().CreateRetVoid();
+  _b.b.CreateRetVoid();
   _trampoline_map.emplace(function_type.erase_user_types(), function);
   return function;
 }
@@ -256,8 +256,8 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
   auto function = llvm::Function::Create(
       internal_type, llvm::Function::InternalLinkage,
       "!reverse_trampoline", &_module);
-  auto block = llvm::BasicBlock::Create(b().getContext(), "entry", function);
-  b().SetInsertPoint(block);
+  auto block = llvm::BasicBlock::Create(_b.b.getContext(), "entry", function);
+  _b.b.SetInsertPoint(block);
 
   llvm::Type* return_type = internal_type->getReturnType();
   std::size_t return_args = get_trampoline_num_return_args(return_type);
@@ -270,7 +270,7 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
         return_type->isVectorTy() ? return_type->getVectorElementType() :
         return_type->isStructTy() ?
             ((llvm::StructType*)return_type)->getElementType(i) : return_type;
-    llvm::Value* v = b().CreateAlloca(t, nullptr, "r" + std::to_string(i));
+    llvm::Value* v = _b.b.CreateAlloca(t, nullptr, "r" + std::to_string(i));
     return_allocs.push_back(v);
     args.push_back(v);
   }
@@ -292,14 +292,15 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
 
     if (it->getType()->isVectorTy()) {
       for (std::size_t j = 0; j < it->getType()->getVectorNumElements(); ++j) {
-        llvm::Value* v = b().CreateExtractElement(it, constant_int(j), "vec");
+        llvm::Value* v =
+            _b.b.CreateExtractElement(it, _b.constant_int(j), "vec");
         args.push_back(v);
       }
       continue;
     }
     if (it->getType()->isStructTy()) {
-      llvm::Value* fptr = b().CreateExtractValue(it, 0, "fptr");
-      llvm::Value* eptr = b().CreateExtractValue(it, 1, "eptr");
+      llvm::Value* fptr = _b.b.CreateExtractValue(it, 0, "fptr");
+      llvm::Value* eptr = _b.b.CreateExtractValue(it, 1, "eptr");
       args.push_back(fptr);
       args.push_back(eptr);
       continue;
@@ -310,28 +311,28 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
   auto external_type = get_trampoline_type(internal_type, true);
   auto external_trampoline = get_native_function(
       "external_trampoline", external_trampoline_ptr, external_type);
-  b().CreateCall(external_trampoline, args);
+  _b.b.CreateCall(external_trampoline, args);
 
   if (return_type->isVoidTy()) {
-    b().CreateRetVoid();
+    _b.b.CreateRetVoid();
   }
   else if (return_type->isVectorTy()) {
-    llvm::Value* v = constant_vector(
-        return_type->isIntOrIntVectorTy() ? constant_int(0) : constant_float(0),
-        return_args);
+    llvm::Value* v = return_type->isIntOrIntVectorTy() ?
+         _b.constant_int_vector(0, return_args) :
+         _b.constant_float_vector(0, return_args);
     for (std::size_t i = 0; i < return_args; ++i) {
-      v = b().CreateInsertElement(
-          v, b().CreateLoad(return_allocs[i], "load"), constant_int(i), "vec");
+      llvm::Value* load = _b.b.CreateLoad(return_allocs[i], "load");
+      v = _b.b.CreateInsertElement(v, load, _b.constant_int(i), "vec");
     }
-    b().CreateRet(v);
+    _b.b.CreateRet(v);
   }
   else if (return_type->isStructTy()) {
-    b().CreateRet(generic_function_value(
-        b().CreateLoad(return_allocs[0], "fptr"),
-        b().CreateLoad(return_allocs[1], "eptr")));
+    _b.b.CreateRet(generic_function_value(
+        _b.b.CreateLoad(return_allocs[0], "fptr"),
+        _b.b.CreateLoad(return_allocs[1], "eptr")));
   }
   else {
-    b().CreateRet(b().CreateLoad(return_allocs[0], "ret"));
+    _b.b.CreateRet(_b.b.CreateLoad(return_allocs[0], "ret"));
   }
   _reverse_trampoline_map.emplace(function_type.erase_user_types(), function);
   return function;
@@ -347,79 +348,6 @@ auto IrCommon::get_reverse_trampoline_map() const -> const trampoline_map&
   return _reverse_trampoline_map;
 }
 
-const llvm::IRBuilder<>& IrCommon::b() const
-{
-  return _builder;
-}
-
-llvm::IRBuilder<>& IrCommon::b()
-{
-  return _builder;
-}
-
-llvm::PointerType* IrCommon::void_ptr_type() const
-{
-  // LLVM doesn't have a built-in void pointer type, so just use a pointer
-  // to whatever.
-  return llvm::PointerType::get(int_type(), 0);
-}
-
-llvm::Type* IrCommon::void_type() const
-{
-  return llvm::Type::getVoidTy(b().getContext());
-}
-
-llvm::Type* IrCommon::int_type() const
-{
-  return llvm::IntegerType::get(
-      b().getContext(), 8 * sizeof(yang::int_t));
-}
-
-llvm::Type* IrCommon::float_type() const
-{
-  return llvm::Type::getDoubleTy(b().getContext());
-}
-
-llvm::Type* IrCommon::vector_type(llvm::Type* type, std::size_t n) const
-{
-  return llvm::VectorType::get(type, n);
-}
-
-llvm::Constant* IrCommon::constant_int(yang::int_t value) const
-{
-  return llvm::ConstantInt::getSigned(int_type(), value);
-}
-
-llvm::Constant* IrCommon::constant_float(yang::float_t value) const
-{
-  return llvm::ConstantFP::get(b().getContext(), llvm::APFloat(value));
-}
-
-llvm::Constant* IrCommon::constant_vector(
-    const std::vector<llvm::Constant*>& values) const
-{
-  return llvm::ConstantVector::get(values);
-}
-
-llvm::Value* IrCommon::constant_ptr(void* ptr)
-{
-  // To construct a constant pointer, we need to do a bit of machine-dependent
-  // stuff.
-  llvm::Type* int_ptr =
-      llvm::IntegerType::get(b().getContext(), 8 * sizeof(ptr));
-  llvm::Constant* const_int =
-      llvm::ConstantInt::get(int_ptr, (std::size_t)ptr);
-  llvm::Value* const_ptr =
-      llvm::ConstantExpr::getIntToPtr(const_int, void_ptr_type());
-  return const_ptr;
-}
-
-llvm::Constant* IrCommon::constant_vector(
-    llvm::Constant* value, std::size_t n) const
-{
-  return llvm::ConstantVector::getSplat(n, value);
-}
-
 llvm::Type* IrCommon::generic_function_type(llvm::Type* type) const
 {
   std::vector<llvm::Type*> types;
@@ -428,9 +356,9 @@ llvm::Type* IrCommon::generic_function_type(llvm::Type* type) const
   // hacky).
   types.push_back(type);
   // Pointer to environment (global data structure or closure structure).
-  types.push_back(void_ptr_type());
+  types.push_back(_b.void_ptr_type());
 
-  return llvm::StructType::get(b().getContext(), types);
+  return llvm::StructType::get(_b.b.getContext(), types);
 }
 
 llvm::Type* IrCommon::generic_function_type(
@@ -454,7 +382,7 @@ llvm::Value* IrCommon::generic_function_value_null(
   std::vector<llvm::Constant*> values;
   values.push_back(llvm::ConstantPointerNull::get(
       (llvm::PointerType*)generic_function_type->getElementType(0)));
-  values.push_back(llvm::ConstantPointerNull::get(void_ptr_type()));
+  values.push_back(llvm::ConstantPointerNull::get(_b.void_ptr_type()));
   return llvm::ConstantStruct::get(generic_function_type, values);
 }
 
@@ -464,12 +392,12 @@ llvm::Value* IrCommon::generic_function_value(
   auto type = (llvm::StructType*)generic_function_type(function_ptr->getType());
   llvm::Value* v = generic_function_value_null(type);
 
-  v = b().CreateInsertValue(v, function_ptr, 0, "fptr");
+  v = _b.b.CreateInsertValue(v, function_ptr, 0, "fptr");
   if (env_ptr) {
     // Must be bitcast to void pointer, since it may be a global data type or
     // closure data type..
-    llvm::Value* cast = b().CreateBitCast(env_ptr, void_ptr_type());
-    v = b().CreateInsertValue(v, cast, 1, "eptr");
+    llvm::Value* cast = _b.b.CreateBitCast(env_ptr, _b.void_ptr_type());
+    v = _b.b.CreateInsertValue(v, cast, 1, "eptr");
   }
   return v;
 }
@@ -482,12 +410,12 @@ llvm::Value* IrCommon::generic_function_value(const GenericFunction& function)
   llvm::Type* ft = llvm::PointerType::get(
       function_type_from_generic(get_llvm_type(function.type)), 0);
 
-  llvm::Value* v = b().CreateBitCast(constant_ptr(fptr), ft, "fun");
+  llvm::Value* v = _b.b.CreateBitCast(_b.constant_ptr(fptr), ft, "fun");
   if (!eptr) {
     // Native functions don't need an environment pointer.
     return generic_function_value(v, nullptr);
   }
-  return generic_function_value(v, constant_ptr(eptr));
+  return generic_function_value(v, _b.constant_ptr(eptr));
 }
 
 llvm::FunctionType* IrCommon::get_function_type_with_target(
@@ -503,7 +431,7 @@ llvm::FunctionType* IrCommon::get_function_type_with_target(
   for (auto it = f_type->param_begin(); it != f_type->param_end(); ++it) {
     ft_args.push_back(*it);
   }
-  ft_args.push_back(void_ptr_type());
+  ft_args.push_back(_b.void_ptr_type());
   return llvm::FunctionType::get(f_type->getReturnType(), ft_args, false);
 }
 
@@ -514,55 +442,58 @@ llvm::Type* IrCommon::get_llvm_type(const yang::Type& t) const
     for (std::size_t i = 0; i < t.get_function_num_args(); ++i) {
       args.push_back(get_llvm_type(t.get_function_arg_type(i)));
     }
-    args.push_back(void_ptr_type());
+    args.push_back(_b.void_ptr_type());
 
     return generic_function_type(
         get_llvm_type(t.get_function_return_type()), args);
   }
   if (t.is_int()) {
-    return int_type();
+    return _b.int_type();
   }
   if (t.is_float()) {
-    return float_type();
+    return _b.float_type();
   }
   if (t.is_int_vector()) {
-    return vector_type(int_type(), t.get_vector_size());
+    return _b.vector_type(_b.int_type(), t.get_vector_size());
   }
   if (t.is_float_vector()) {
-    return vector_type(float_type(), t.get_vector_size());
+    return _b.vector_type(_b.float_type(), t.get_vector_size());
   }
   if (t.is_user_type()) {
-    return void_ptr_type();
+    return _b.void_ptr_type();
   }
-  return void_type();
+  return _b.void_type();
 }
 
 yang::Type IrCommon::get_yang_type(llvm::Type* t) const
 {
-  yang::Type r;
-  if (t == void_ptr_type()) {
+  yang::Type r = yang::Type::void_t();
+  if (t == _b.void_ptr_type()) {
     // We can't reconstruct the full user type from the void pointer. This means
     // we treat all user-types as equivalent for the purposes of trampoline
     // function generation (which makes sense).
-    r._base = yang::Type::USER_TYPE;
+    r = yang::Type::user_t();
   }
   else if (t->isFunctionTy() || t->isStructTy()) {
     auto ft = t->isStructTy() ?
         function_type_from_generic(t) : (llvm::FunctionType*)t;
-    r._base = yang::Type::FUNCTION;
-    r._elements.push_back(get_yang_type(ft->getReturnType()));
+    std::vector<yang::Type> args;
     // Make sure to skip the environment pointer.
     for (std::size_t i = 0; i < ft->getFunctionNumParams() - 1; ++i) {
-      r._elements.push_back(get_yang_type(ft->getFunctionParamType(i)));
+      args.push_back(get_yang_type(ft->getFunctionParamType(i)));
     }
+    r = yang::Type::function_t(get_yang_type(ft->getReturnType()), args);
   }
   else if (t->isIntOrIntVectorTy()) {
-    r._base = yang::Type::INT;
+    r = t->isVectorTy() ?
+        yang::Type::int_vector_t(t->getVectorNumElements()) :
+        yang::Type::int_t();
   }
   else if (t->isFPOrFPVectorTy()) {
-    r._base = yang::Type::FLOAT;
+    r = t->isVectorTy() ?
+        yang::Type::float_vector_t(t->getVectorNumElements()) :
+        yang::Type::float_t();
   }
-  r._count = t->isVectorTy() ? t->getVectorNumElements() : 1;
   return r;
 }
 
@@ -618,7 +549,7 @@ llvm::FunctionType* IrCommon::get_trampoline_type(
     // target argument is implicit in function_type.)
     args.push_back(llvm::PointerType::get(function_type, 0));
   }
-  return llvm::FunctionType::get(void_type(), args, false);
+  return llvm::FunctionType::get(_b.void_type(), args, false);
 }
 
 std::size_t IrCommon::get_trampoline_num_return_args(

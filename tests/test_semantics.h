@@ -185,6 +185,4 @@ TEST_F(YangTest, TestBroken)
     return ff();
   }
   )";
-
-  /* program(s); BROKEN */
 }
