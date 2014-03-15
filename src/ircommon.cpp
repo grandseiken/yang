@@ -138,7 +138,7 @@ llvm::Function* IrCommon::get_trampoline_function(
     return nullptr;
   }
   auto llvm_type =
-      _b.function_type_from_generic(_b.get_llvm_type(function_type));
+      _b.internal_function_type(_b.get_llvm_type(function_type));
   auto llvm_return_type = llvm_type->getReturnType();
   auto ext_function_type = get_trampoline_type(llvm_type, false);
 
@@ -183,7 +183,7 @@ llvm::Function* IrCommon::get_trampoline_function(
       jt->setName("a" + std::to_string(i) + "_eptr");
       llvm::Value* eptr = jt++;
 
-      call_args.push_back(_b.generic_function_value(fptr, eptr));
+      call_args.push_back(_b.function_value(fptr, eptr).irval);
       continue;
     }
     // Environment pointer is last parameter.
@@ -329,9 +329,9 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
     _b.b.CreateRet(v);
   }
   else if (return_type->isStructTy()) {
-    _b.b.CreateRet(_b.generic_function_value(
+    _b.b.CreateRet(_b.function_value(
         _b.b.CreateLoad(return_allocs[0], "fptr"),
-        _b.b.CreateLoad(return_allocs[1], "eptr")));
+        _b.b.CreateLoad(return_allocs[1], "eptr")).irval);
   }
   else {
     _b.b.CreateRet(_b.b.CreateLoad(return_allocs[0], "ret"));
@@ -358,7 +358,7 @@ llvm::FunctionType* IrCommon::get_function_type_with_target(
   // unused target parameter at the end to avoid this weird casting and
   // switching. Not sure whether that's a better idea. It would avoid having
   // to branch on every function call (in case we want to pass a target).
-  auto f_type = _b.function_type_from_generic(function_type);
+  auto f_type = _b.internal_function_type(function_type);
   std::vector<llvm::Type*> ft_args;
   for (auto it = f_type->param_begin(); it != f_type->param_end(); ++it) {
     ft_args.push_back(*it);

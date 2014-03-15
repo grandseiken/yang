@@ -533,7 +533,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       // dereference and pass only the closure scopes they actually access; it's
       // kind of complicated and not really a huge optimisation, though.
       auto closure = _metadata[CLOSURE_PTR];
-      return _b.generic_function_value(
+      return _b.function_value(
           parent, closure ? closure : _metadata[ENVIRONMENT_PTR]);
     }
     case Node::NAMED_EXPRESSION:
@@ -633,7 +633,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       std::string s =
           node.static_info.user_type_name + "::" + node.string_value;
       auto it = _context.get_functions().find(s);
-      return _b.generic_function_value(it->second);
+      return _b.function_value(it->second);
     }
     case Node::MEMBER_SELECTION:
       // Just return the object directly; the call site has special logic to
@@ -660,7 +660,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
         // If the symbol table entry is non-null it's a top-level function; just
         // get the value.
         if (_symbol_table.get(node.string_value, 0).irval) {
-          return _b.generic_function_value(
+          return _b.function_value(
               _symbol_table.get(node.string_value, 0).irval,
               global_ptr().irval);
         }
@@ -677,7 +677,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       }
 
       // It must be a context function.
-      return _b.generic_function_value(it->second);
+      return _b.function_value(it->second);
     }
 
     case Node::INT_LITERAL:
@@ -720,7 +720,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
         std::string s = node.children[0]->static_info.user_type_name +
             "::" + node.children[0]->string_value;
         auto it = _context.get_functions().find(s);
-        genf = _b.generic_function_value(it->second);
+        genf = _b.function_value(it->second).irval;
 
         args.push_back(results[0].irval);
       }
@@ -753,7 +753,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       // Don't bother to generate correct code when the C++ path can never be
       // taken.
       llvm::Value* trampoline = get_reverse_trampoline_function(
-          _b.get_yang_type(_b.function_type_from_generic(genf->getType())),
+          _b.get_yang_type(_b.internal_function_type(genf->getType())),
           false);
       llvm::Value* cpp_val = nullptr;
       _b.b.SetInsertPoint(cpp_block);
@@ -1213,7 +1213,7 @@ void IrGenerator::create_function(
   _metadata.push();
 
   // Linkage will be set later if necessary.
-  auto llvm_type = _b.function_type_from_generic(
+  auto llvm_type = _b.internal_function_type(
       (llvm::FunctionType*)_b.get_llvm_type(function_type));
   auto function = llvm::Function::Create(
       llvm_type, llvm::Function::InternalLinkage,
@@ -1279,12 +1279,12 @@ void IrGenerator::create_function(
   if (_immediate_left_assign.length()) {
     function->setName(_immediate_left_assign);
     llvm::Type* fp_type =
-        _b.generic_function_type(llvm::PointerType::get(llvm_type, 0));
+        _b.function_type(llvm::PointerType::get(llvm_type, 0));
     // The identifier is registered one scope above the function argument scope.
     // Confusingly, that's two unique scope-numbers back because the LHS of the
     // assignment has its own scope in-between.
     llvm::Value* storage = assign_storage(fp_type, _immediate_left_assign, -2);
-    memory_store(_b.generic_function_value(function, eptr), storage);
+    memory_store(_b.function_value(function, eptr), storage);
     _symbol_table.add(_immediate_left_assign, storage);
     _immediate_left_assign.clear();
   }
@@ -1400,7 +1400,8 @@ void IrGenerator::memory_init(llvm::IRBuilder<>& pos, const Value& ptr)
   if (elem->isStructTy()) {
     // Null Yang function.
     pos.CreateAlignedStore(
-        _b.generic_function_value_null((llvm::StructType*)elem), ptr.irval, 1);
+        _b.function_value_null((llvm::StructType*)elem).irval,
+        ptr.irval, 1);
   }
 }
 

@@ -42,11 +42,11 @@ struct Builder {
   llvm::Type* vector_type(llvm::Type* type, std::size_t n) const;
 
   // Functions.
-  llvm::Type* generic_function_type(llvm::Type* function_type) const;
-  llvm::Type* generic_function_type(
+  llvm::Type* function_type(llvm::Type* function_type) const;
+  llvm::Type* function_type(
       llvm::Type* return_type, const std::vector<llvm::Type*>& arg_types) const;
-  llvm::FunctionType* function_type_from_generic(
-      llvm::Type* generic_function_type) const;
+  llvm::FunctionType* internal_function_type(
+      llvm::Type* function_type) const;
 
   // Value construction.
   llvm::Constant* constant_ptr(void* ptr);
@@ -56,16 +56,15 @@ struct Builder {
   Value constant_float_vector(yang::float_t value, std::size_t n) const;
 
   // Functions.
-  llvm::Value* generic_function_value_null(
-      llvm::StructType* generic_function_type) const;
-  llvm::Value* generic_function_value(
-      llvm::Value* function_ptr, llvm::Value* env_ptr);
-  llvm::Value* generic_function_value(const GenericFunction& function);
+  Value function_value_null(llvm::StructType* function_type) const;
+  Value function_value(llvm::Value* function_ptr, llvm::Value* env_ptr);
+  Value function_value(const GenericFunction& function);
 
   // Convert back and forth between equivalent Yang and LLVM types.
   llvm::Type* get_llvm_type(const yang::Type& t) const;
   yang::Type get_yang_type(llvm::Type* t) const;
 
+  // Builder functions.
   llvm::IRBuilder<> b;
 };
 
