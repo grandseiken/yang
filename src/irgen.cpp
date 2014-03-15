@@ -25,28 +25,6 @@ namespace std {
 namespace yang {
 namespace internal {
 
-IrGeneratorUnion::IrGeneratorUnion(llvm::Type* type)
-  : type(type)
-  , value(nullptr)
-{
-}
-
-IrGeneratorUnion::IrGeneratorUnion(llvm::Value* value)
-  : type(nullptr)
-  , value(value)
-{
-}
-
-IrGeneratorUnion::operator llvm::Type*() const
-{
-  return type;
-}
-
-IrGeneratorUnion::operator llvm::Value*() const
-{
-  return value;
-}
-
 // TODO: this whole file needs refactored, to use a wrapped Value class that
 // knows about Yang types instead of LLVM types.
 // In particular, for example, we could store functions as two void pointers
@@ -108,11 +86,11 @@ void IrGenerator::emit_global_functions()
   // TODO: here we call the global initialisation functions. It should also be
   // possible to define custom destructor functions that are called when the
   // global structure is freed.
-  llvm::Value* v = allocate_structure_value(_global_data, _global_numbering);
+  Value v = allocate_structure_value(_global_data, _global_numbering);
   for (llvm::Function* f : _global_inits) {
-    _b.b.CreateCall(f, v);
+    _b.b.CreateCall(f, v.irval);
   }
-  _b.b.CreateRet(v);
+  _b.b.CreateRet(v.irval);
 
   // Create accessor functions for each field of the global structure.
   for (const auto pair : _global_numbering) {
@@ -123,7 +101,7 @@ void IrGenerator::emit_global_functions()
     auto function_type = llvm::FunctionType::get(t, _global_data, false);
     auto getter = llvm::Function::Create(
         function_type, llvm::Function::ExternalLinkage, name, &_module);
-    get_trampoline_function(get_yang_type(function_type), false);
+    get_trampoline_function(_b.get_yang_type(function_type), false);
 
     auto getter_block = llvm::BasicBlock::Create(
         _b.b.getContext(), "entry", getter);
@@ -133,14 +111,14 @@ void IrGenerator::emit_global_functions()
     // Loads out of the global data structure must be byte-aligned! I don't
     // entirely understand why, but leaving the default will segfault at random
     // sometimes for certain types (e.g. float vectors).
-    _b.b.CreateRet(memory_load(structure_ptr(it, pair.second)));
+    _b.b.CreateRet(memory_load(structure_ptr(&*it, pair.second)).irval);
 
     name = "!global_set_" + pair.first;
     std::vector<llvm::Type*> setter_args{t, _global_data};
     function_type = llvm::FunctionType::get(_b.void_type(), setter_args, false);
     auto setter = llvm::Function::Create(
         function_type, llvm::Function::ExternalLinkage, name, &_module);
-    get_trampoline_function(get_yang_type(function_type), false);
+    get_trampoline_function(_b.get_yang_type(function_type), false);
 
     auto setter_block = llvm::BasicBlock::Create(
         _b.b.getContext(), "entry", setter);
@@ -150,7 +128,7 @@ void IrGenerator::emit_global_functions()
     ++jt;
     jt->setName("global");
     _b.b.SetInsertPoint(setter_block);
-    memory_store(it, structure_ptr(jt, pair.second));
+    memory_store(&*it, structure_ptr(&*jt, pair.second));
     _b.b.CreateRetVoid();
   }
 }
@@ -175,10 +153,10 @@ void IrGenerator::preorder(const Node& node)
       // structure pointer.
       auto it = function->arg_begin();
       it->setName("env");
-      _metadata.add(ENVIRONMENT_PTR, it);
+      _metadata.add(ENVIRONMENT_PTR, &*it);
       _metadata.add(FUNCTION, function);
       _metadata.add(PARENT_BLOCK, _b.b.GetInsertBlock());
-      allocate_closure_struct(node.static_info.closed_environment, it);
+      allocate_closure_struct(node.static_info.closed_environment, &*it);
 
       _metadata.add(GLOBAL_INIT_FUNCTION, function);
       _b.b.SetInsertPoint(block);
@@ -262,7 +240,7 @@ void IrGenerator::infix(const Node& node, const result_list& results)
     case Node::FUNCTION:
     {
       _metadata.pop();
-      create_function(node, function_type_from_generic(results[0].type));
+      create_function(node, results[0].type);
       break;
     }
 
@@ -274,8 +252,8 @@ void IrGenerator::infix(const Node& node, const result_list& results)
 
       if (results.size() == 1) {
         bool has_else = node.children.size() > 2;
-        _b.b.CreateCondBr(i2b(results[0]), then_block,
-                         has_else ? else_block : merge_block);
+        _b.b.CreateCondBr(i2b(results[0]).irval, then_block,
+                          has_else ? else_block : merge_block);
         _b.b.SetInsertPoint(then_block);
       }
       if (results.size() == 2) {
@@ -302,7 +280,7 @@ void IrGenerator::infix(const Node& node, const result_list& results)
         auto parent = _b.b.GetInsertBlock()->getParent();
         auto clean_block =
             llvm::BasicBlock::Create(_b.b.getContext(), "clean", parent);
-        _b.b.CreateCondBr(i2b(results[1]), loop_block, clean_block);
+        _b.b.CreateCondBr(i2b(results[1]).irval, loop_block, clean_block);
         _b.b.SetInsertPoint(clean_block);
         dereference_scoped_locals();
         _b.b.CreateBr(merge_block);
@@ -332,7 +310,7 @@ void IrGenerator::infix(const Node& node, const result_list& results)
     case Node::TERNARY:
     {
       // Vectorised ternary can't short-circuit.
-      if (results[0].value->getType()->isVectorTy()) {
+      if (results[0].llvm_type()->isVectorTy()) {
         break;
       }
 
@@ -345,7 +323,7 @@ void IrGenerator::infix(const Node& node, const result_list& results)
         auto else_block = create_block(IF_ELSE_BLOCK, "else");
         create_block(MERGE_BLOCK, "merge");
 
-        _b.b.CreateCondBr(i2b(results[0]), then_block, else_block);
+        _b.b.CreateCondBr(i2b(results[0]).irval, then_block, else_block);
         _b.b.SetInsertPoint(then_block);
       }
       if (results.size() == 2) {
@@ -369,19 +347,19 @@ void IrGenerator::infix(const Node& node, const result_list& results)
     case Node::LOGICAL_OR:
     case Node::LOGICAL_AND:
     {
-      if (results[0].value->getType()->isVectorTy()) {
+      if (results[0].llvm_type()->isVectorTy()) {
         break;
       }
       _metadata.push();
-      _metadata.add(LOGICAL_OP_SOURCE_BLOCK, _b.b.GetInsertPoint());
+      _metadata.add(LOGICAL_OP_SOURCE_BLOCK, &*_b.b.GetInsertPoint());
       auto rhs_block = create_block(LOGICAL_OP_RHS_BLOCK, "rhs");
       auto merge_block = create_block(MERGE_BLOCK, "merge");
 
       if (node.type == Node::LOGICAL_OR) {
-        _b.b.CreateCondBr(i2b(results[0]), merge_block, rhs_block);
+        _b.b.CreateCondBr(i2b(results[0]).irval, merge_block, rhs_block);
       }
       else {
-        _b.b.CreateCondBr(i2b(results[0]), rhs_block, merge_block);
+        _b.b.CreateCondBr(i2b(results[0]).irval, rhs_block, merge_block);
       }
       _b.b.SetInsertPoint(rhs_block);
       break;
@@ -391,18 +369,19 @@ void IrGenerator::infix(const Node& node, const result_list& results)
   }
 }
 
-IrGeneratorUnion IrGenerator::visit(const Node& node,
-                                    const result_list& results)
+Value IrGenerator::visit(const Node& node, const result_list& results)
 {
   auto parent = _b.b.GetInsertBlock() ?
       _b.b.GetInsertBlock()->getParent() : nullptr;
   std::vector<llvm::Type*> types;
   for (const auto& v : results) {
-    types.push_back(v.value ? v.value->getType() : nullptr);
+    types.push_back(v.llvm_type());
   }
 
-  auto binary_lambda = [&](llvm::Value* v, llvm::Value* u)
+  auto binary_lambda = [&](const Value& vv, const Value& uu)
   {
+    llvm::Value* v = vv.irval;
+    llvm::Value* u = uu.irval;
     Node::node_type type =
         node.type == Node::FOLD_LOGICAL_OR ? Node::LOGICAL_OR :
         node.type == Node::FOLD_LOGICAL_AND ? Node::LOGICAL_AND :
@@ -464,22 +443,21 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
 
   switch (node.type) {
     case Node::TYPE_VOID:
-      return _b.void_type();
+      return yang::Type::void_t();
     case Node::TYPE_INT:
       return node.int_value > 1 ?
-          _b.vector_type(_b.int_type(), node.int_value) : _b.int_type();
+          yang::Type::int_vector_t(node.int_value) : yang::Type::int_t();
     case Node::TYPE_FLOAT:
       return node.int_value > 1 ?
-          _b.vector_type(_b.float_type(), node.int_value) : _b.float_type();
+          yang::Type::float_vector_t(node.int_value) : yang::Type::float_t();
     case Node::TYPE_FUNCTION:
     {
       type_function:
-      std::vector<llvm::Type*> args;
+      std::vector<yang::Type> args;
       for (std::size_t i = 1; i < results.size(); ++i) {
-        args.push_back(results[i]);
+        args.push_back(results[i].type);
       }
-      args.push_back(_b.void_ptr_type());
-      return generic_function_type(results[0], args);
+      return yang::Type::function_t(results[0].type, args);
     }
 
     case Node::GLOBAL:
@@ -497,7 +475,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       auto function = (llvm::Function*)parent;
       auto function_type =
           (llvm::FunctionType*)function->getType()->getPointerElementType();
-      get_trampoline_function(get_yang_type(function_type), false);
+      get_trampoline_function(_b.get_yang_type(function_type), false);
       // Top-level functions Nodes have their int_value set to 1 when defined
       // using the `export` keyword.
       if (node.int_value) {
@@ -517,7 +495,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
           std::vector<llvm::Value*> args{
               _b.constant_ptr(nullptr),
               _b.b.CreateBitCast(_metadata[CLOSURE_PTR], _b.void_ptr_type()),
-              _b.constant_int(-1)};
+              _b.constant_int(-1).irval};
           _b.b.CreateCall(_update_refcount, args);
         }
         _b.b.CreateRetVoid();
@@ -555,7 +533,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // dereference and pass only the closure scopes they actually access; it's
       // kind of complicated and not really a huge optimisation, though.
       auto closure = _metadata[CLOSURE_PTR];
-      return generic_function_value(
+      return _b.generic_function_value(
           parent, closure ? closure : _metadata[ENVIRONMENT_PTR]);
     }
     case Node::NAMED_EXPRESSION:
@@ -586,12 +564,13 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       if (_metadata[CLOSURE_PTR]) {
         std::vector<llvm::Value*> args{
             _b.constant_ptr(nullptr),
-            _b.b.CreateBitCast(_metadata[CLOSURE_PTR], _b.void_ptr_type()),
-            _b.constant_int(-1)};
+            _b.b.CreateBitCast(
+                _metadata[CLOSURE_PTR], _b.void_ptr_type()),
+            _b.constant_int(-1).irval};
         _b.b.CreateCall(_update_refcount, args);
       }
       llvm::Value* v = node.type == Node::RETURN_STMT ?
-          _b.b.CreateRet(results[0]) : _b.b.CreateRetVoid();
+          _b.b.CreateRet(results[0].irval) : _b.b.CreateRetVoid();
       _b.b.SetInsertPoint(dead_block);
       return v;
     }
@@ -631,7 +610,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       dereference_scoped_locals();
       _refcount_locals.back().pop_back();
 
-      _b.b.CreateCondBr(i2b(results[1]), loop_block, merge_block);
+      _b.b.CreateCondBr(i2b(results[1]).irval, loop_block, merge_block);
       _b.b.SetInsertPoint(merge_block);
       return results[0];
     }
@@ -654,7 +633,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       std::string s =
           node.static_info.user_type_name + "::" + node.string_value;
       auto it = _context.get_functions().find(s);
-      return generic_function_value(it->second);
+      return _b.generic_function_value(it->second);
     }
     case Node::MEMBER_SELECTION:
       // Just return the object directly; the call site has special logic to
@@ -665,7 +644,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     {
       // In type-context, we just want to return a user type.
       if (_metadata.has(TYPE_EXPR_CONTEXT)) {
-        return _b.void_ptr_type();
+        return yang::Type::user_t();
       }
 
       // Load the local variable, if it's there.
@@ -680,9 +659,10 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       if (_symbol_table.has(node.string_value)) {
         // If the symbol table entry is non-null it's a top-level function; just
         // get the value.
-        if (_symbol_table.get(node.string_value, 0)) {
-          return generic_function_value(
-              _symbol_table.get(node.string_value, 0), global_ptr());
+        if (_symbol_table.get(node.string_value, 0).irval) {
+          return _b.generic_function_value(
+              _symbol_table.get(node.string_value, 0).irval,
+              global_ptr().irval);
         }
         // Otherwise it's a global, so look up in the global structure with a
         // byte-aligned load.
@@ -697,7 +677,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       }
 
       // It must be a context function.
-      return generic_function_value(it->second);
+      return _b.generic_function_value(it->second);
     }
 
     case Node::INT_LITERAL:
@@ -707,9 +687,10 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
 
     case Node::TERNARY:
     {
-      if (results[0].value->getType()->isVectorTy()) {
+      if (results[0].llvm_type()->isVectorTy()) {
         // Vectorised ternary. Short-circuiting isn't possible.
-        return _b.b.CreateSelect(i2b(results[0]), results[1], results[2]);
+        return _b.b.CreateSelect(
+            i2b(results[0]).irval, results[1].irval, results[2].irval);
       }
       // Update in case we branched again.
       _metadata[IF_ELSE_BLOCK] = _b.b.GetInsertBlock();
@@ -721,8 +702,8 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       _b.b.CreateBr(merge_block);
       _b.b.SetInsertPoint(merge_block);
       auto phi = _b.b.CreatePHI(types[1], 2, "tern");
-      phi->addIncoming(results[1], then_block);
-      phi->addIncoming(results[2], else_block);
+      phi->addIncoming(results[1].irval, then_block);
+      phi->addIncoming(results[2].irval, else_block);
       return phi;
     }
     case Node::CALL:
@@ -731,7 +712,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
         goto type_function;
       }
       std::vector<llvm::Value*> args;
-      llvm::Value* genf = results[0];
+      llvm::Value* genf = results[0].irval;
 
       // Special logic for member-function calling.
       // TODO: get rid of this now that we have closures.
@@ -739,12 +720,12 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
         std::string s = node.children[0]->static_info.user_type_name +
             "::" + node.children[0]->string_value;
         auto it = _context.get_functions().find(s);
-        genf = generic_function_value(it->second);
+        genf = _b.generic_function_value(it->second);
 
-        args.push_back(results[0]);
+        args.push_back(results[0].irval);
       }
       for (std::size_t i = 1; i < results.size(); ++i) {
-        args.push_back(results[i]);
+        args.push_back(results[i].irval);
       }
 
       // Extract pointers from the struct.
@@ -772,7 +753,8 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // Don't bother to generate correct code when the C++ path can never be
       // taken.
       llvm::Value* trampoline = get_reverse_trampoline_function(
-          get_yang_type(function_type_from_generic(genf->getType())), false);
+          _b.get_yang_type(_b.function_type_from_generic(genf->getType())),
+          false);
       llvm::Value* cpp_val = nullptr;
       _b.b.SetInsertPoint(cpp_block);
       if (trampoline) {
@@ -809,7 +791,8 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       // Update in case we branched again.
       _metadata[LOGICAL_OP_RHS_BLOCK] = _b.b.GetInsertBlock();
 
-      auto source_block = (llvm::BasicBlock*)_metadata[LOGICAL_OP_SOURCE_BLOCK];
+      auto source_block =
+          (llvm::BasicBlock*)_metadata[LOGICAL_OP_SOURCE_BLOCK];
       auto rhs_block = (llvm::BasicBlock*)_metadata[LOGICAL_OP_RHS_BLOCK];
       auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
       _metadata.pop();
@@ -821,16 +804,17 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
       llvm::Value* constant = nullptr;
       if (types[1]->isVectorTy()) {
         std::size_t n = types[1]->getVectorNumElements();
-        constant = _b.constant_int_vector(node.type == Node::LOGICAL_OR, n);
+        constant =
+            _b.constant_int_vector(node.type == Node::LOGICAL_OR, n).irval;
         type = _b.vector_type(type, n);
       }
       else {
-        constant = _b.constant_int(node.type == Node::LOGICAL_OR);
+        constant = _b.constant_int(node.type == Node::LOGICAL_OR).irval;
       }
 
       auto phi = _b.b.CreatePHI(type, 2, "cut");
       phi->addIncoming(constant, source_block);
-      phi->addIncoming(rhs, rhs_block);
+      phi->addIncoming(rhs.irval, rhs_block);
       return phi;
     }
 
@@ -890,39 +874,39 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     case Node::LOGICAL_NEGATION:
     {
       llvm::Value* cmp = types[0]->isVectorTy() ?
-          _b.constant_int_vector(0, types[0]->getVectorNumElements()) :
-          _b.constant_int(0);
-      return b2i(_b.b.CreateICmpEQ(results[0], cmp, "lneg"));
+          _b.constant_int_vector(0, types[0]->getVectorNumElements()).irval :
+          _b.constant_int(0).irval;
+      return b2i(_b.b.CreateICmpEQ(results[0].irval, cmp, "lneg"));
     }
     case Node::BITWISE_NEGATION:
     {
       llvm::Value* cmp = types[0]->isVectorTy() ?
-        _b.constant_int_vector(0u - 1, types[0]->getVectorNumElements()) :
-        _b.constant_int(0u - 1);
-      return _b.b.CreateXor(results[0], cmp, "neg");
+        _b.constant_int_vector(0u - 1, types[0]->getVectorNumElements()).irval :
+        _b.constant_int(0u - 1).irval;
+      return _b.b.CreateXor(results[0].irval, cmp, "neg");
     }
     case Node::ARITHMETIC_NEGATION:
     {
       llvm::Value* cmp = nullptr;
       if (types[0]->isVectorTy()) {
         cmp = types[0]->isIntOrIntVectorTy() ?
-            _b.constant_int_vector(0, types[0]->getVectorNumElements()) :
-            _b.constant_float_vector(0, types[0]->getVectorNumElements());
+            _b.constant_int_vector(0, types[0]->getVectorNumElements()).irval :
+            _b.constant_float_vector(0, types[0]->getVectorNumElements()).irval;
       }
       else {
         cmp = types[0]->isIntOrIntVectorTy() ?
-            _b.constant_int(0) : _b.constant_float(0);
+            _b.constant_int(0).irval : _b.constant_float(0).irval;
       }
       return types[0]->isIntOrIntVectorTy() ?
-          _b.b.CreateSub(cmp, results[0], "sub") :
-          _b.b.CreateFSub(cmp, results[0], "fsub");
+          _b.b.CreateSub(cmp, results[0].irval, "sub") :
+          _b.b.CreateFSub(cmp, results[0].irval, "fsub");
     }
 
     case Node::ASSIGN:
     {
       // See Node::IDENTIFIER.
       const std::string& s = node.children[0]->string_value;
-      if (_symbol_table[s]) {
+      if (_symbol_table[s].irval) {
         memory_store(results[1], get_variable_ptr(s));
       }
       // We can't store values for globals in the symbol table since the lookup
@@ -951,7 +935,7 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
 
       llvm::Value* storage = nullptr;
       if (_symbol_table.has(unique_name)) {
-        storage = _symbol_table[unique_name];
+        storage = _symbol_table[unique_name].irval;
         _value_to_unique_name_map.emplace(storage, unique_name);
       }
       else {
@@ -973,32 +957,36 @@ IrGeneratorUnion IrGenerator::visit(const Node& node,
     }
 
     case Node::INT_CAST:
-      return w2i(results[0]);
+      return f2i(results[0]);
     case Node::FLOAT_CAST:
-      return i2w(results[0]);
+      return i2f(results[0]);
 
     case Node::VECTOR_CONSTRUCT:
     {
       llvm::Value* v = types[0]->isIntegerTy() ?
-          _b.constant_int_vector(0, results.size()) :
-          _b.constant_float_vector(0, results.size());
+          _b.constant_int_vector(0, results.size()).irval :
+          _b.constant_float_vector(0, results.size()).irval;
       for (std::size_t i = 0; i < results.size(); ++i) {
-        v = _b.b.CreateInsertElement(v, results[i], _b.constant_int(i), "vec");
+        v = _b.b.CreateInsertElement(
+            v, results[i].irval, _b.constant_int(i).irval, "vec");
       }
       return v;
     }
     case Node::VECTOR_INDEX:
     {
       // Indexing out-of-bounds produces constant zero.
-      llvm::Value* zero = types[0]->isIntOrIntVectorTy() ?
-          _b.constant_int(0) : _b.constant_float(0);
-      auto ge = _b.b.CreateICmpSGE(results[1], _b.constant_int(0), "idx");
+      llvm::Value* zero = (types[0]->isIntOrIntVectorTy() ?
+          _b.constant_int(0) : _b.constant_float(0)).irval;
+      auto ge = _b.b.CreateICmpSGE(
+          results[1].irval, _b.constant_int(0).irval, "idx");
       auto lt = _b.b.CreateICmpSLT(
-          results[1], _b.constant_int(types[0]->getVectorNumElements()), "idx");
+          results[1].irval,
+          _b.constant_int(types[0]->getVectorNumElements()).irval, "idx");
 
       auto in = _b.b.CreateAnd(ge, lt, "idx");
       return _b.b.CreateSelect(
-          in, _b.b.CreateExtractElement(results[0], results[1], "idx"),
+          in,
+          _b.b.CreateExtractElement(results[0].irval, results[1].irval, "idx"),
           zero, "idx");
     }
 
@@ -1038,7 +1026,7 @@ void IrGenerator::init_structure_type(
   for (const auto& pair : symbols) {
     // Type-calculation must be kept up-to-date with new types, or globals of
     // that type will fail.
-    llvm::Type* t = get_llvm_type(pair.second);
+    llvm::Type* t = _b.get_llvm_type(pair.second);
     type_list.push_back(t);
     output_numbering[pair.first] = number++;
   }
@@ -1056,16 +1044,16 @@ void IrGenerator::init_structure_type(
   // Make sure to decrement the reference count on each global variable on
   // destruction.
   for (const auto& pair : output_numbering) {
-    llvm::Value* old = memory_load(structure_ptr(it, pair.second));
+    llvm::Value* old = memory_load(structure_ptr(&*it, pair.second)).irval;
     update_reference_count(old, -1);
   }
-  llvm::Value* parent = memory_load(structure_ptr(it, 0));
+  llvm::Value* parent = memory_load(structure_ptr(&*it, 0)).irval;
   if (global_data) {
     _b.b.CreateCall(_destroy_internals, parent);
   }
   else {
     std::vector<llvm::Value*> args{
-        _b.constant_ptr(nullptr), parent, _b.constant_int(-1)};
+        _b.constant_ptr(nullptr), parent, _b.constant_int(-1).irval};
     _b.b.CreateCall(_update_refcount, args);
   }
   _b.b.CreateRetVoid();
@@ -1089,16 +1077,16 @@ void IrGenerator::init_structure_type(
       continue;
     }
     std::size_t index = output_numbering[pair.first];
-    llvm::Value* f = memory_load(structure_ptr(it, index));
+    llvm::Value* f = memory_load(structure_ptr(&*it, index)).irval;
     llvm::Value* eptr = _b.b.CreateExtractValue(f, 1, "eptr");
-    std::vector<llvm::Value*> indices{_b.constant_int(refout_count)};
+    std::vector<llvm::Value*> indices{_b.constant_int(refout_count).irval};
     _b.b.CreateAlignedStore(eptr, _b.b.CreateGEP(jt, indices, "out"), 1);
     ++refout_count;
   }
   // Also output the parent pointer.
   if (!global_data) {
-    llvm::Value* v = memory_load(structure_ptr(it, 0));
-    std::vector<llvm::Value*> indices{_b.constant_int(refout_count)};
+    llvm::Value* v = memory_load(structure_ptr(&*it, 0)).irval;
+    std::vector<llvm::Value*> indices{_b.constant_int(refout_count).irval};
     _b.b.CreateAlignedStore(v, _b.b.CreateGEP(jt, indices, "out"), 1);
     ++refout_count;
   }
@@ -1110,7 +1098,7 @@ void IrGenerator::init_structure_type(
   _b.b.SetInsertPoint(prev_block);
 }
 
-llvm::Value* IrGenerator::allocate_structure_value(
+Value IrGenerator::allocate_structure_value(
     llvm::Type* type, const structure_numbering& numbering)
 {
   llvm::Type* llvm_size_t =
@@ -1122,8 +1110,9 @@ llvm::Value* IrGenerator::allocate_structure_value(
       llvm::FunctionType::get(type, llvm_size_t, false));
 
   // Compute sizeof(type) by indexing one past the null pointer.
-  llvm::Value* size_of = _b.b.CreateIntToPtr(_b.constant_int(0), type, "null");
-  size_of = _b.b.CreateGEP(size_of, _b.constant_int(1), "sizeof");
+  llvm::Value* size_of =
+      _b.b.CreateIntToPtr(_b.constant_int(0).irval, type, "null");
+  size_of = _b.b.CreateGEP(size_of, _b.constant_int(1).irval, "sizeof");
   size_of = _b.b.CreatePtrToInt(size_of, llvm_size_t, "size");
 
   // Call malloc, make sure refcounted memory is initialised, and return the
@@ -1140,8 +1129,8 @@ llvm::Value* IrGenerator::allocate_structure_value(
   return v;
 }
 
-llvm::Value* IrGenerator::allocate_closure_struct(
-    const symbol_frame& symbols, llvm::Value* parent_ptr)
+Value IrGenerator::allocate_closure_struct(
+    const symbol_frame& symbols, const Value& parent_ptr)
 {
   if (symbols.empty()) {
     // Store a nullptr to be explicit.
@@ -1154,16 +1143,17 @@ llvm::Value* IrGenerator::allocate_closure_struct(
   structure_numbering closure_numbering;
   init_structure_type(closure_type, closure_numbering,  symbols, "closure");
   llvm::Value* closure_value =
-      allocate_structure_value(closure_type, closure_numbering);
+      allocate_structure_value(closure_type, closure_numbering).irval;
   // Store in metadata.
   _metadata.add(CLOSURE_PTR, closure_value);
   _scope_closures.push_back({closure_type, closure_numbering});
 
   // Store parent pointer in the first slot.
-  auto parent_void_ptr = _b.b.CreateBitCast(parent_ptr, _b.void_ptr_type());
+  auto parent_void_ptr =
+      _b.b.CreateBitCast(parent_ptr.irval, _b.void_ptr_type());
   memory_store(parent_void_ptr, structure_ptr(closure_value, 0));
   std::vector<llvm::Value*> args{
-      _b.constant_ptr(nullptr), parent_void_ptr, _b.constant_int(1)};
+      _b.constant_ptr(nullptr), parent_void_ptr, _b.constant_int(1).irval};
   _b.b.CreateCall(_update_refcount, args);
   // Set up the symbol-table for all the rest. If a closed variable "v"
   // appears in scope #1, for instance, we store "v/1" in the symbol table
@@ -1174,28 +1164,29 @@ llvm::Value* IrGenerator::allocate_closure_struct(
   // scope and its children (as in the argument list code below).
   for (const auto& pair : symbols) {
     llvm::Value* ptr =
-        structure_ptr(closure_value, closure_numbering[pair.first]);
+        structure_ptr(closure_value, closure_numbering[pair.first]).irval;
     _symbol_table.add(pair.first, ptr);
   }
   return closure_value;
 }
 
-llvm::Value* IrGenerator::get_parent_struct(
-    std::size_t parent_steps, llvm::Value* v)
+Value IrGenerator::get_parent_struct(std::size_t parent_steps, const Value& v)
 {
   llvm::Type* void_ptr_ptr = llvm::PointerType::get(
       llvm::StructType::create(_b.b.getContext(), _b.void_ptr_type()), 0);
+  Value u = v;
   for (std::size_t i = 0; i < parent_steps; ++i) {
-    v = memory_load(structure_ptr(_b.b.CreateBitCast(v, void_ptr_ptr), 0));
+    u = memory_load(
+        structure_ptr(_b.b.CreateBitCast(u.irval, void_ptr_ptr), 0));
   }
-  return v;
+  return u;
 }
 
-llvm::Value* IrGenerator::get_variable_ptr(const std::string& name)
+Value IrGenerator::get_variable_ptr(const std::string& name)
 {
   // See notes in header file about the flow here.
   auto it = _scope_to_function_map.upper_bound(_symbol_table.index(name));
-  llvm::Value* v = _symbol_table[name];
+  llvm::Value* v = _symbol_table[name].irval;
 
   if (it == _scope_to_function_map.begin() ||
       it == _scope_to_function_map.end()) {
@@ -1208,7 +1199,7 @@ llvm::Value* IrGenerator::get_variable_ptr(const std::string& name)
 
   const std::string& unique_name = _value_to_unique_name_map[v];
   llvm::Value* closure_ptr = get_parent_struct(
-      current_index - closure_index - 1, _metadata[ENVIRONMENT_PTR]);
+      current_index - closure_index - 1, _metadata[ENVIRONMENT_PTR]).irval;
   llvm::Type* closure_type = _scope_closures[closure_index].type;
   std::size_t struct_index =
       _scope_closures[closure_index].numbering[unique_name];
@@ -1217,22 +1208,24 @@ llvm::Value* IrGenerator::get_variable_ptr(const std::string& name)
 }
 
 void IrGenerator::create_function(
-    const Node& node, llvm::FunctionType* function_type)
+    const Node& node, const yang::Type& function_type)
 {
   _metadata.push();
 
   // Linkage will be set later if necessary.
+  auto llvm_type = _b.function_type_from_generic(
+      (llvm::FunctionType*)_b.get_llvm_type(function_type));
   auto function = llvm::Function::Create(
-      function_type, llvm::Function::InternalLinkage,
+      llvm_type, llvm::Function::InternalLinkage,
       "anonymous", &_module);
 
   // The code for Node::TYPE_FUNCTION in visit() ensures it takes an environment
   // pointer.
   auto eptr = --function->arg_end();
   eptr->setName("env");
-  _metadata.add(ENVIRONMENT_PTR, eptr);
+  _metadata.add(ENVIRONMENT_PTR, &*eptr);
   _metadata.add(FUNCTION, function);
-  _metadata.add(PARENT_BLOCK, _b.b.GetInsertPoint());
+  _metadata.add(PARENT_BLOCK, &*_b.b.GetInsertPoint());
 
   auto block = llvm::BasicBlock::Create(_b.b.getContext(), "entry", function);
   _b.b.SetInsertPoint(block);
@@ -1249,13 +1242,13 @@ void IrGenerator::create_function(
   // invocation. Obviously, if we could partition the inner functions such that
   // the sets of enclosing variables they access are disjoint, we could allocate
   // separate structures for each (and potentially return unused memory sooner).
-  allocate_closure_struct(node.static_info.closed_environment, eptr);
+  allocate_closure_struct(node.static_info.closed_environment, &*eptr);
   // Refcounting on closure pointer.
   if (_metadata[CLOSURE_PTR]) {
     std::vector<llvm::Value*> args{
         _b.constant_ptr(nullptr),
         _b.b.CreateBitCast(_metadata[CLOSURE_PTR], _b.void_ptr_type()),
-        _b.constant_int(1)};
+        _b.constant_int(1).irval};
     _b.b.CreateCall(_update_refcount, args);
   }
 
@@ -1267,7 +1260,7 @@ void IrGenerator::create_function(
         name + "/" + std::to_string(node.static_info.scope_number + scope_mod);
 
     if (_symbol_table.has(unique_name)) {
-      llvm::Value* v = _symbol_table[unique_name];
+      llvm::Value* v = _symbol_table[unique_name].irval;
       _value_to_unique_name_map.emplace(v, unique_name);
       return v;
     }
@@ -1286,12 +1279,12 @@ void IrGenerator::create_function(
   if (_immediate_left_assign.length()) {
     function->setName(_immediate_left_assign);
     llvm::Type* fp_type =
-        generic_function_type(llvm::PointerType::get(function_type, 0));
+        _b.generic_function_type(llvm::PointerType::get(llvm_type, 0));
     // The identifier is registered one scope above the function argument scope.
     // Confusingly, that's two unique scope-numbers back because the LHS of the
     // assignment has its own scope in-between.
     llvm::Value* storage = assign_storage(fp_type, _immediate_left_assign, -2);
-    memory_store(generic_function_value(function, eptr), storage);
+    memory_store(_b.generic_function_value(function, eptr), storage);
     _symbol_table.add(_immediate_left_assign, storage);
     _immediate_left_assign.clear();
   }
@@ -1304,130 +1297,133 @@ void IrGenerator::create_function(
     const std::string& name =
         node.children[0]->children[1 + arg_num]->string_value;
     llvm::Value* storage =
-        assign_storage(function_type->getParamType(arg_num), name, 0);
+        assign_storage(llvm_type->getParamType(arg_num), name, 0);
     it->setName(name);
 
     // It's possible refcounting isn't necessary on arguments, since they're
     // const and will usually be referenced somewhere up the call stack. I'm not
     // convinced, though.
-    memory_store(it, storage);
+    memory_store(&*it, storage);
     _symbol_table.add(name, storage);
   }
 }
 
-llvm::Value* IrGenerator::i2b(llvm::Value* v)
+Value IrGenerator::i2b(const Value& v)
 {
-  llvm::Value* cmp = v->getType()->isVectorTy() ?
-      _b.constant_int_vector(0, v->getType()->getVectorNumElements()) :
-      _b.constant_int(0);
-  return _b.b.CreateICmpNE(v, cmp, "bool");
+  llvm::Value* cmp = v.llvm_type()->isVectorTy() ?
+      _b.constant_int_vector(0, v.llvm_type()->getVectorNumElements()).irval :
+      _b.constant_int(0).irval;
+  return _b.b.CreateICmpNE(v.irval, cmp, "bool");
 }
 
-llvm::Value* IrGenerator::b2i(llvm::Value* v)
+Value IrGenerator::b2i(const Value& v)
 {
   llvm::Type* type = _b.int_type();
-  if (v->getType()->isVectorTy()) {
-    type = _b.vector_type(type, v->getType()->getVectorNumElements());
+  if (v.llvm_type()->isVectorTy()) {
+    type = _b.vector_type(type, v.llvm_type()->getVectorNumElements());
   }
-  return _b.b.CreateZExt(v, type, "int");
+  return _b.b.CreateZExt(v.irval, type, "int");
 }
 
-llvm::Value* IrGenerator::i2w(llvm::Value* v)
+Value IrGenerator::i2f(const Value& v)
 {
   llvm::Type* type = _b.float_type();
-  if (v->getType()->isVectorTy()) {
-    type = _b.vector_type(type, v->getType()->getVectorNumElements());
+  if (v.llvm_type()->isVectorTy()) {
+    type = _b.vector_type(type, v.llvm_type()->getVectorNumElements());
   }
-  return _b.b.CreateSIToFP(v, type, "wrld");
+  return _b.b.CreateSIToFP(v.irval, type, "wrld");
 }
 
-llvm::Value* IrGenerator::w2i(llvm::Value* v)
+Value IrGenerator::f2i(const Value& v)
 {
   llvm::Type* back_type = _b.float_type();
   llvm::Type* type = _b.int_type();
   llvm::Value* zero = nullptr;
-  if (v->getType()->isVectorTy()) {
-    std::size_t n = v->getType()->getVectorNumElements();
+  if (v.llvm_type()->isVectorTy()) {
+    std::size_t n = v.llvm_type()->getVectorNumElements();
     back_type = _b.vector_type(back_type, n);
     type = _b.vector_type(type, n);
-    zero = _b.constant_float_vector(0, n);
+    zero = _b.constant_float_vector(0, n).irval;
   }
   else {
-    zero = _b.constant_float(0);
+    zero = _b.constant_float(0).irval;
   }
   // Mathematical floor. Implements the algorithm:
   // return int(v) - (v < 0 && v != float(int(v)));
-  auto cast = _b.b.CreateFPToSI(v, type, "int");
+  auto cast = _b.b.CreateFPToSI(v.irval, type, "int");
   auto back = _b.b.CreateSIToFP(cast, back_type, "int");
 
-  auto a_check = _b.b.CreateFCmpOLT(v, zero, "int");
-  auto b_check = _b.b.CreateFCmpONE(v, back, "int");
+  auto a_check = _b.b.CreateFCmpOLT(v.irval, zero, "int");
+  auto b_check = _b.b.CreateFCmpONE(v.irval, back, "int");
   return _b.b.CreateSub(cast,
-      b2i(_b.b.CreateAnd(a_check, b_check, "int")), "int");
+      b2i(_b.b.CreateAnd(a_check, b_check, "int")).irval, "int");
 }
 
-llvm::Value* IrGenerator::structure_ptr(llvm::Value* ptr, std::size_t index)
+Value IrGenerator::structure_ptr(const Value& ptr, std::size_t index)
 {
   // The first index indexes the structure data pointer itself, i.e. to obtain
   // the one and only global data structure at that memory location.
-  std::vector<llvm::Value*> indexes{_b.constant_int(0), _b.constant_int(index)};
-  llvm::Value* v = _b.b.CreateGEP(ptr, indexes, "index");
+  std::vector<llvm::Value*> indexes{
+      _b.constant_int(0).irval, _b.constant_int(index).irval};
+  llvm::Value* v = _b.b.CreateGEP(ptr.irval, indexes, "index");
   return v;
 }
 
-llvm::Value* IrGenerator::global_ptr(const std::string& name)
+Value IrGenerator::global_ptr(const std::string& name)
 {
   return structure_ptr(global_ptr(), _global_numbering[name]);
 }
 
-llvm::Value* IrGenerator::global_ptr()
+Value IrGenerator::global_ptr()
 {
   // This always gets the global pointer, even in inner functions of closure
   // scopes.
   llvm::Value* ptr = get_parent_struct(
-      _scope_to_function_map.rbegin()->second, _metadata[ENVIRONMENT_PTR]);
+      _scope_to_function_map.rbegin()->second,
+      _metadata[ENVIRONMENT_PTR]).irval;
   // Bitcast, since it's represented as void pointer.
   return _b.b.CreateBitCast(ptr, _global_data);
 }
 
-llvm::Value* IrGenerator::memory_load(llvm::Value* ptr)
+Value IrGenerator::memory_load(const Value& ptr)
 {
-  return _b.b.CreateAlignedLoad(ptr, 1, "load");
+  return _b.b.CreateAlignedLoad(ptr.irval, 1, "load");
 }
 
-void IrGenerator::memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr)
+void IrGenerator::memory_init(llvm::IRBuilder<>& pos, const Value& ptr)
 {
   // We need to make sure ref-counted memory locations are initialised with
   // something sensible. Otherwise, the first store will try to decrement
   // the refcount on something undefined. (Important in particular for variable
   // declarations which are "executed" more than once.)
-  llvm::Type* elem = ptr->getType()->getPointerElementType();
+  llvm::Type* elem = ptr.llvm_type()->getPointerElementType();
   if (elem->isStructTy()) {
     // Null Yang function.
     pos.CreateAlignedStore(
-        generic_function_value_null((llvm::StructType*)elem), ptr, 1);
+        _b.generic_function_value_null((llvm::StructType*)elem), ptr.irval, 1);
   }
 }
 
-void IrGenerator::memory_store(llvm::Value* value, llvm::Value* ptr)
+void IrGenerator::memory_store(const Value& value, const Value& ptr)
 {
-  llvm::Value* old = memory_load(ptr);
+  llvm::Value* old = memory_load(ptr).irval;
   update_reference_count(old, -1);
   update_reference_count(value, 1);
-  _b.b.CreateAlignedStore(value, ptr, 1);
+  _b.b.CreateAlignedStore(value.irval, ptr.irval, 1);
 }
 
-void IrGenerator::update_reference_count(llvm::Value* value, int_t change)
+void IrGenerator::update_reference_count(const Value& value, int_t change)
 {
-  if (!value->getType()->isStructTy()) {
+  if (!value.llvm_type()->isStructTy()) {
     return;
   }
   // TODO: for speed, Yang reference counting at least should be inlined.
-  llvm::Value* fptr = _b.b.CreateExtractValue(value, 0, "fptr");
-  llvm::Value* eptr = _b.b.CreateExtractValue(value, 1, "eptr");
+  llvm::Value* fptr = _b.b.CreateExtractValue(value.irval, 0, "fptr");
+  llvm::Value* eptr = _b.b.CreateExtractValue(value.irval, 1, "eptr");
   std::vector<llvm::Value*> args{
       _b.b.CreateBitCast(fptr, _b.void_ptr_type()),
-      _b.b.CreateBitCast(eptr, _b.void_ptr_type()), _b.constant_int(change)};
+      _b.b.CreateBitCast(eptr, _b.void_ptr_type()),
+      _b.constant_int(change).irval};
   _b.b.CreateCall(_update_refcount, args);
 }
 
@@ -1440,55 +1436,55 @@ void IrGenerator::dereference_scoped_locals(std::size_t first_scope)
 {
   const auto& function = _refcount_locals.back();
   for (std::size_t i = first_scope; i < function.size(); ++i) {
-    for (llvm::Value* v : function[i]) {
-      if (!v->getType()->isPointerTy()) {
+    for (const Value& v : function[i]) {
+      if (!v.llvm_type()->isPointerTy()) {
         update_reference_count(v, -1);
         continue;
       }
-      llvm::Value* load = memory_load(v);
+      Value load = memory_load(v);
       update_reference_count(load, -1);
       memory_init(_b.b, v);
     }
   }
 }
 
-llvm::Value* IrGenerator::pow(llvm::Value* v, llvm::Value* u)
+Value IrGenerator::pow(const Value& v, const Value& u)
 {
-  llvm::Type* t = v->getType();
+  llvm::Type* t = v.llvm_type();
+  Value vv = t->isIntOrIntVectorTy() ? v : i2f(v);
+  Value uu = t->isIntOrIntVectorTy() ? u : i2f(u);
 
   std::vector<llvm::Type*> args{_b.float_type(), _b.float_type()};
   auto pow_ptr = get_native_function(
       "pow", (yang::void_fp)&::pow,
       llvm::FunctionType::get(_b.float_type(), args, false));
 
-  if (t->isIntOrIntVectorTy()) {
-    v = i2w(v);
-    u = i2w(u);
-  }
-
   if (!t->isVectorTy()) {
-    std::vector<llvm::Value*> args{v, u};
+    std::vector<llvm::Value*> args{v.irval, u.irval};
     llvm::Value* r = _b.b.CreateCall(pow_ptr, args, "pow");
-    return t->isIntOrIntVectorTy() ? w2i(r) : r;
+    return t->isIntOrIntVectorTy() ? f2i(r) : r;
   }
 
   llvm::Value* result =
-      _b.constant_float_vector(0, t->getVectorNumElements());
+      _b.constant_float_vector(0, t->getVectorNumElements()).irval;
   for (std::size_t i = 0; i < t->getVectorNumElements(); ++i) {
-    llvm::Value* x = _b.b.CreateExtractElement(v, _b.constant_int(i), "pow");
-    llvm::Value* y = _b.b.CreateExtractElement(u, _b.constant_int(i), "pow");
+    llvm::Value* x =
+        _b.b.CreateExtractElement(v.irval, _b.constant_int(i).irval, "pow");
+    llvm::Value* y =
+        _b.b.CreateExtractElement(u.irval, _b.constant_int(i).irval, "pow");
     std::vector<llvm::Value*> args{x, y};
 
     llvm::Value* call = _b.b.CreateCall(pow_ptr, args, "pow");
-    result = _b.b.CreateInsertElement(result, call, _b.constant_int(i), "pow");
+    result = _b.b.CreateInsertElement(
+        result, call, _b.constant_int(i).irval, "pow");
   }
-  return t->isIntOrIntVectorTy() ? w2i(result) : result;
+  return t->isIntOrIntVectorTy() ? f2i(result) : result;
 }
 
-llvm::Value* IrGenerator::mod(llvm::Value* v, llvm::Value* u)
+Value IrGenerator::mod(const Value& v, const Value& u)
 {
-  if (!v->getType()->isIntOrIntVectorTy()) {
-    return _b.b.CreateFRem(v, u, "fmod");
+  if (!v.llvm_type()->isIntOrIntVectorTy()) {
+    return _b.b.CreateFRem(v.irval, u.irval, "fmod");
   }
 
   // Implements the following algorithm:
@@ -1496,53 +1492,57 @@ llvm::Value* IrGenerator::mod(llvm::Value* v, llvm::Value* u)
   // There are simpler ways, but they are vulnerable to overflow errors.
   // k = |v| % |u| + |v| / |u| is the smallest postive integer such that
   // k * |u| >= |v|.
-  auto v_check = _b.b.CreateICmpSGE(v, _b.constant_int(0), "mod");
-  auto u_check = _b.b.CreateICmpSGE(u, _b.constant_int(0), "mod");
+  auto v_check = _b.b.CreateICmpSGE(v.irval, _b.constant_int(0).irval, "mod");
+  auto u_check = _b.b.CreateICmpSGE(u.irval, _b.constant_int(0).irval, "mod");
   auto v_abs = _b.b.CreateSelect(
-      v_check, v, _b.b.CreateSub(_b.constant_int(0), v, "mod"), "mod");
+      v_check, v.irval,
+      _b.b.CreateSub(_b.constant_int(0).irval, v.irval, "mod"), "mod");
   auto u_abs = _b.b.CreateSelect(
-      u_check, u, _b.b.CreateSub(_b.constant_int(0), u, "mod"), "mod");
+      u_check, u.irval,
+      _b.b.CreateSub(_b.constant_int(0).irval, u.irval, "mod"), "mod");
 
-  auto k = _b.b.CreateAdd(b2i(i2b(_b.b.CreateSRem(v_abs, u_abs, "mod"))),
-                           _b.b.CreateSDiv(v_abs, u_abs, "mod"), "mod");
+  auto k = _b.b.CreateAdd(b2i(i2b(_b.b.CreateSRem(v_abs, u_abs, "mod"))).irval,
+                          _b.b.CreateSDiv(v_abs, u_abs, "mod"), "mod");
   auto lhs = _b.b.CreateSelect(
-      v_check, v,
-      _b.b.CreateAdd(v, _b.b.CreateMul(k, u_abs, "mod"), "mod"), "mod");
+      v_check, v.irval,
+      _b.b.CreateAdd(v.irval, _b.b.CreateMul(k, u_abs, "mod"), "mod"), "mod");
   return _b.b.CreateSRem(lhs, u_abs, "mod");
 }
 
-llvm::Value* IrGenerator::div(llvm::Value* v, llvm::Value* u)
+Value IrGenerator::div(const Value& v, const Value& u)
 {
-  if (!v->getType()->isIntOrIntVectorTy()) {
-    return _b.b.CreateFDiv(v, u, "fdiv");
+  if (!v.llvm_type()->isIntOrIntVectorTy()) {
+    return _b.b.CreateFDiv(v.irval, u.irval, "fdiv");
   }
 
   // Implements the following algorithm:
   // bool sign = (v < 0) == (u < 0);
   // int t = (v < 0 ? -(1 + v) : v) / |u|;
   // return (sign ? t : -(1 + t)) + (u < 0);
-  auto v_check = _b.b.CreateICmpSLT(v, _b.constant_int(0), "div");
-  auto u_check = _b.b.CreateICmpSLT(u, _b.constant_int(0), "div");
+  auto v_check = _b.b.CreateICmpSLT(v.irval, _b.constant_int(0).irval, "div");
+  auto u_check = _b.b.CreateICmpSLT(u.irval, _b.constant_int(0).irval, "div");
   auto sign = _b.b.CreateICmpEQ(v_check, u_check, "div");
   auto u_abs = _b.b.CreateSelect(
-      u_check, _b.b.CreateSub(_b.constant_int(0), u, "div"), u, "div");
+      u_check, _b.b.CreateSub(_b.constant_int(0).irval, u.irval, "div"),
+      u.irval, "div");
 
   auto t = _b.b.CreateSelect(
-      v_check,
-      _b.b.CreateSub(_b.constant_int(-1), v, "div"), v, "div");
+      v_check, _b.b.CreateSub(_b.constant_int(-1).irval, v.irval, "div"),
+      v.irval, "div");
   t = _b.b.CreateSDiv(t, u_abs, "div");
   return _b.b.CreateAdd(
       _b.b.CreateSelect(sign, t,
-                        _b.b.CreateSub(_b.constant_int(-1), t, "div"), "div"),
-      b2i(u_check), "div");
+                        _b.b.CreateSub(_b.constant_int(-1).irval, t, "div"),
+                        "div"),
+      b2i(u_check).irval, "div");
 }
 
-llvm::Value* IrGenerator::binary(
-    llvm::Value* left, llvm::Value* right,
-    std::function<llvm::Value*(llvm::Value*, llvm::Value*)> op)
+Value IrGenerator::binary(
+    const Value& left, const Value& right,
+    std::function<Value(const Value&, const Value&)> op)
 {
-  llvm::Type* l_type = left->getType();
-  llvm::Type* r_type = right->getType();
+  llvm::Type* l_type = left.llvm_type();
+  llvm::Type* r_type = right.llvm_type();
 
   // If both scalar or vector, sizes must be equal, and we can directly operate
   // on the values.
@@ -1558,35 +1558,35 @@ llvm::Value* IrGenerator::binary(
 
   llvm::Value* v = nullptr;
   if (l_type->isIntOrIntVectorTy()) {
-    v = _b.constant_int_vector(0, size);
+    v = _b.constant_int_vector(0, size).irval;
     // Can't insert booleans into a vector of int_type()!
     llvm::Type* i = is_left ? l_type->getVectorElementType() : l_type;
     if (i->getIntegerBitWidth() == 1) {
-      v = i2b(v);
+      v = i2b(v).irval;
     }
   }
   else {
-    v = _b.constant_float_vector(0, size);
+    v = _b.constant_float_vector(0, size).irval;
   }
 
   for (std::size_t i = 0; i < size; ++i) {
     v = _b.b.CreateInsertElement(
-        v, is_left ? right : left, _b.constant_int(i), "vec");
+        v, (is_left ? right : left).irval, _b.constant_int(i).irval, "vec");
   }
   return is_left ? op(left, v) : op(v, right);
 }
 
-llvm::Value* IrGenerator::fold(
-    llvm::Value* value,
-    std::function<llvm::Value*(llvm::Value*, llvm::Value*)> op,
+Value IrGenerator::fold(
+    const Value& value,
+    std::function<Value(const Value&, const Value&)> op,
     bool to_bool, bool with_ands, bool right_assoc)
 {
   // Convert each argument to boolean, if necessary.
   std::vector<llvm::Value*> elements;
-  for (std::size_t i = 0; i < value->getType()->getVectorNumElements(); ++i) {
+  for (std::size_t i = 0; i < value.llvm_type()->getVectorNumElements(); ++i) {
     llvm::Value* v =
-        _b.b.CreateExtractElement(value, _b.constant_int(i), "idx");
-    elements.push_back(to_bool ? i2b(v) : v);
+        _b.b.CreateExtractElement(value.irval, _b.constant_int(i).irval, "idx");
+    elements.push_back(to_bool ? i2b(v).irval : v);
   }
 
   // Usually, we just form the chain (((e0 op e1) op e2) ...).
@@ -1595,14 +1595,14 @@ llvm::Value* IrGenerator::fold(
       auto it = elements.rbegin();
       llvm::Value* v = *it++;
       for (; it != elements.rend(); ++it) {
-        v = op(*it, v);
+        v = op(*it, v).irval;
       }
       return v;
     }
     auto it = elements.begin();
     llvm::Value* v = *it++;
     for (; it != elements.end(); ++it) {
-      v = op(*it, v);
+      v = op(*it, v).irval;
     }
     return v;
   }
@@ -1611,7 +1611,7 @@ llvm::Value* IrGenerator::fold(
   // (e0 op e1) && (e1 op e2) && ...
   std::vector<llvm::Value*> comparisons;
   for (std::size_t i = 1; i < elements.size(); ++i) {
-    comparisons.push_back(op(elements[i - 1], elements[i]));
+    comparisons.push_back(op(elements[i - 1], elements[i]).irval);
   }
 
   // Ignore right_assoc, since logical AND is associative.

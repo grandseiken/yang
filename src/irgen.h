@@ -21,7 +21,6 @@ namespace llvm {
   class Function;
   class Module;
   class Type;
-  class Value;
 }
 
 namespace yang {
@@ -29,18 +28,7 @@ class Context;
 
 namespace internal {
 
-struct IrGeneratorUnion {
-  IrGeneratorUnion(llvm::Type* type);
-  IrGeneratorUnion(llvm::Value* value);
-
-  operator llvm::Type*() const;
-  operator llvm::Value*() const;
-
-  llvm::Type* type;
-  llvm::Value* value;
-};
-
-class IrGenerator : public IrCommon, public ConstAstWalker<IrGeneratorUnion> {
+class IrGenerator : public IrCommon, public ConstAstWalker<Value> {
 public:
 
   typedef std::unordered_map<std::string, yang::Type> symbol_frame;
@@ -57,7 +45,7 @@ protected:
 
   void preorder(const Node& node) override;
   void infix(const Node& node, const result_list& results) override;
-  IrGeneratorUnion visit(const Node& node, const result_list& results) override;
+  Value visit(const Node& node, const result_list& results) override;
 
 private:
 
@@ -65,49 +53,48 @@ private:
   void init_structure_type(
       llvm::Type*& output_type, structure_numbering& output_numbering,
       const symbol_frame& symbols, const std::string& name);
-  llvm::Value* allocate_structure_value(
+  Value allocate_structure_value(
       llvm::Type* type, const structure_numbering& numbering);
-  llvm::Value* allocate_closure_struct(
-      const symbol_frame& symbols, llvm::Value* parent_ptr);
-  llvm::Value* get_parent_struct(std::size_t parent_steps, llvm::Value* v);
-  llvm::Value* get_variable_ptr(const std::string& name);
+  Value allocate_closure_struct(
+      const symbol_frame& symbols, const Value& parent_ptr);
+  Value get_parent_struct(std::size_t parent_steps, const Value& v);
+  Value get_variable_ptr(const std::string& name);
 
-  void create_function(
-      const Node& node, llvm::FunctionType* function_type);
+  void create_function(const Node& node, const yang::Type& function_type);
 
-  llvm::Value* i2b(llvm::Value* v);
-  llvm::Value* b2i(llvm::Value* v);
-  llvm::Value* i2w(llvm::Value* v);
-  llvm::Value* w2i(llvm::Value* v);
+  Value i2b(const Value& v);
+  Value b2i(const Value& v);
+  Value i2f(const Value& v);
+  Value f2i(const Value& v);
 
   // Indexing global and closure data structures.
-  llvm::Value* structure_ptr(llvm::Value* ptr, std::size_t index);
-  llvm::Value* global_ptr(const std::string& name);
-  llvm::Value* global_ptr();
+  Value structure_ptr(const Value& ptr, std::size_t index);
+  Value global_ptr(const std::string& name);
+  Value global_ptr();
 
   // Storing to some structure (global data or closure) with refcounting.
-  llvm::Value* memory_load(llvm::Value* ptr);
-  void memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr);
-  void memory_store(llvm::Value* value, llvm::Value* ptr);
+  Value memory_load(const Value& ptr);
+  void memory_init(llvm::IRBuilder<>& pos, const Value& ptr);
+  void memory_store(const Value& value, const Value& ptr);
   // Raw reference-counting.
-  void update_reference_count(llvm::Value* value, int_t change);
+  void update_reference_count(const Value& value, int_t change);
   // Emit code to decrement reference count of locals in topmost scope, or
   // all scopes (for returns).
   void dereference_scoped_locals();
   void dereference_scoped_locals(std::size_t first_scope);
 
   // Power implementation.
-  llvm::Value* pow(llvm::Value* v, llvm::Value* u);
+  Value pow(const Value& v, const Value& u);
   // Euclidean mod and div implementations.
-  llvm::Value* mod(llvm::Value* v, llvm::Value* u);
-  llvm::Value* div(llvm::Value* v, llvm::Value* u);
+  Value mod(const Value& v, const Value& u);
+  Value div(const Value& v, const Value& u);
 
-  llvm::Value* binary(
-      llvm::Value* left, llvm::Value* right,
-      std::function<llvm::Value*(llvm::Value*, llvm::Value*)> op);
-  llvm::Value* fold(
-      llvm::Value* value,
-      std::function<llvm::Value*(llvm::Value*, llvm::Value*)> op,
+  Value binary(
+      const Value& left, const Value& right,
+      std::function<Value(const Value&, const Value&)> op);
+  Value fold(
+      const Value& value,
+      std::function<Value(const Value&, const Value&)> op,
       bool to_bool = false, bool with_ands = false, bool right_assoc = false);
 
   // Metadata symbols.
@@ -152,7 +139,7 @@ private:
   // correspond to actual source code symbols; this way we can add scopes
   // that automatically pop metadata without interfering with scope lookup.
   friend std::hash<metadata>;
-  SymbolTable<std::string, llvm::Value*> _symbol_table;
+  SymbolTable<std::string, Value> _symbol_table;
   SymbolTable<metadata, llvm::Value*> _metadata;
   // Metadata that isn't an llvm::Value.
   std::string _immediate_left_assign;
@@ -179,7 +166,7 @@ private:
   std::unordered_map<llvm::Value*, std::string> _value_to_unique_name_map;
 
   // List of local variables in scope, for refcounting.
-  std::vector<std::vector<std::vector<llvm::Value*>>> _refcount_locals;
+  std::vector<std::vector<std::vector<Value>>> _refcount_locals;
   std::vector<std::size_t> _refcount_loop_indices;
   // Functions for refcounting on various types.
   llvm::Function* _update_refcount;

@@ -137,7 +137,8 @@ llvm::Function* IrCommon::get_trampoline_function(
   if (!forward) {
     return nullptr;
   }
-  auto llvm_type = function_type_from_generic(get_llvm_type(function_type));
+  auto llvm_type =
+      _b.function_type_from_generic(_b.get_llvm_type(function_type));
   auto llvm_return_type = llvm_type->getReturnType();
   auto ext_function_type = get_trampoline_type(llvm_type, false);
 
@@ -164,12 +165,13 @@ llvm::Function* IrCommon::get_trampoline_function(
        it != llvm_type->param_end(); ++it, ++i) {
     if ((*it)->isVectorTy()) {
       std::size_t size = (*it)->getVectorNumElements();
-      llvm::Value* v = (*it)->isIntOrIntVectorTy() ?
-          _b.constant_int_vector(0, size) : _b.constant_float_vector(0, size);
+      llvm::Value* v = ((*it)->isIntOrIntVectorTy() ?
+          _b.constant_int_vector(0, size) :
+          _b.constant_float_vector(0, size)).irval;
 
       for (std::size_t j = 0; j < size; ++j) {
         jt->setName("a" + std::to_string(i) + "_" + std::to_string(j));
-        v = _b.b.CreateInsertElement(v, jt, _b.constant_int(j), "vec");
+        v = _b.b.CreateInsertElement(v, jt, _b.constant_int(j).irval, "vec");
         ++jt;
       }
       call_args.push_back(v);
@@ -181,7 +183,7 @@ llvm::Function* IrCommon::get_trampoline_function(
       jt->setName("a" + std::to_string(i) + "_eptr");
       llvm::Value* eptr = jt++;
 
-      call_args.push_back(generic_function_value(fptr, eptr));
+      call_args.push_back(_b.generic_function_value(fptr, eptr));
       continue;
     }
     // Environment pointer is last parameter.
@@ -197,7 +199,7 @@ llvm::Function* IrCommon::get_trampoline_function(
     auto it = function->arg_begin();
     for (std::size_t i = 0; i < llvm_return_type->getVectorNumElements(); ++i) {
       llvm::Value* v =
-          _b.b.CreateExtractElement(result, _b.constant_int(i), "vec");
+          _b.b.CreateExtractElement(result, _b.constant_int(i).irval, "vec");
       _b.b.CreateStore(v, it++);
     }
   }
@@ -250,7 +252,7 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
   // Construct the type of the trampoline function (with extra argument for
   // target pointer).
   auto internal_type =
-      get_function_type_with_target(get_llvm_type(function_type));
+      get_function_type_with_target(_b.get_llvm_type(function_type));
 
   // Generate it.
   auto function = llvm::Function::Create(
@@ -293,7 +295,7 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
     if (it->getType()->isVectorTy()) {
       for (std::size_t j = 0; j < it->getType()->getVectorNumElements(); ++j) {
         llvm::Value* v =
-            _b.b.CreateExtractElement(it, _b.constant_int(j), "vec");
+            _b.b.CreateExtractElement(it, _b.constant_int(j).irval, "vec");
         args.push_back(v);
       }
       continue;
@@ -318,16 +320,16 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
   }
   else if (return_type->isVectorTy()) {
     llvm::Value* v = return_type->isIntOrIntVectorTy() ?
-         _b.constant_int_vector(0, return_args) :
-         _b.constant_float_vector(0, return_args);
+         _b.constant_int_vector(0, return_args).irval :
+         _b.constant_float_vector(0, return_args).irval;
     for (std::size_t i = 0; i < return_args; ++i) {
       llvm::Value* load = _b.b.CreateLoad(return_allocs[i], "load");
-      v = _b.b.CreateInsertElement(v, load, _b.constant_int(i), "vec");
+      v = _b.b.CreateInsertElement(v, load, _b.constant_int(i).irval, "vec");
     }
     _b.b.CreateRet(v);
   }
   else if (return_type->isStructTy()) {
-    _b.b.CreateRet(generic_function_value(
+    _b.b.CreateRet(_b.generic_function_value(
         _b.b.CreateLoad(return_allocs[0], "fptr"),
         _b.b.CreateLoad(return_allocs[1], "eptr")));
   }
@@ -348,76 +350,6 @@ auto IrCommon::get_reverse_trampoline_map() const -> const trampoline_map&
   return _reverse_trampoline_map;
 }
 
-llvm::Type* IrCommon::generic_function_type(llvm::Type* type) const
-{
-  std::vector<llvm::Type*> types;
-  // Yang function pointer or C++ pointer (which is not actually a function
-  // pointer at all, but we have to store the type somehow; this is fairly
-  // hacky).
-  types.push_back(type);
-  // Pointer to environment (global data structure or closure structure).
-  types.push_back(_b.void_ptr_type());
-
-  return llvm::StructType::get(_b.b.getContext(), types);
-}
-
-llvm::Type* IrCommon::generic_function_type(
-    llvm::Type* return_type, const std::vector<llvm::Type*>& arg_types) const
-{
-  return generic_function_type(llvm::PointerType::get(
-      llvm::FunctionType::get(return_type, arg_types, false), 0));
-}
-
-llvm::FunctionType* IrCommon::function_type_from_generic(
-    llvm::Type* generic_function_type) const
-{
-  auto struct_type = (llvm::StructType*)generic_function_type;
-  auto f_type = (*struct_type->element_begin())->getPointerElementType();
-  return (llvm::FunctionType*)f_type;
-}
-
-llvm::Value* IrCommon::generic_function_value_null(
-    llvm::StructType* generic_function_type) const
-{
-  std::vector<llvm::Constant*> values;
-  values.push_back(llvm::ConstantPointerNull::get(
-      (llvm::PointerType*)generic_function_type->getElementType(0)));
-  values.push_back(llvm::ConstantPointerNull::get(_b.void_ptr_type()));
-  return llvm::ConstantStruct::get(generic_function_type, values);
-}
-
-llvm::Value* IrCommon::generic_function_value(
-    llvm::Value* function_ptr, llvm::Value* env_ptr)
-{
-  auto type = (llvm::StructType*)generic_function_type(function_ptr->getType());
-  llvm::Value* v = generic_function_value_null(type);
-
-  v = _b.b.CreateInsertValue(v, function_ptr, 0, "fptr");
-  if (env_ptr) {
-    // Must be bitcast to void pointer, since it may be a global data type or
-    // closure data type..
-    llvm::Value* cast = _b.b.CreateBitCast(env_ptr, _b.void_ptr_type());
-    v = _b.b.CreateInsertValue(v, cast, 1, "eptr");
-  }
-  return v;
-}
-
-llvm::Value* IrCommon::generic_function_value(const GenericFunction& function)
-{
-  void* fptr;
-  void* eptr;
-  function.ptr->get_representation(&fptr, &eptr);
-  llvm::Type* ft = llvm::PointerType::get(
-      function_type_from_generic(get_llvm_type(function.type)), 0);
-
-  llvm::Value* v = _b.b.CreateBitCast(_b.constant_ptr(fptr), ft, "fun");
-  if (!eptr) {
-    // Native functions don't need an environment pointer.
-    return generic_function_value(v, nullptr);
-  }
-  return generic_function_value(v, _b.constant_ptr(eptr));
-}
-
 llvm::FunctionType* IrCommon::get_function_type_with_target(
     llvm::Type* function_type) const
 {
@@ -426,75 +358,13 @@ llvm::FunctionType* IrCommon::get_function_type_with_target(
   // unused target parameter at the end to avoid this weird casting and
   // switching. Not sure whether that's a better idea. It would avoid having
   // to branch on every function call (in case we want to pass a target).
-  auto f_type = function_type_from_generic(function_type);
+  auto f_type = _b.function_type_from_generic(function_type);
   std::vector<llvm::Type*> ft_args;
   for (auto it = f_type->param_begin(); it != f_type->param_end(); ++it) {
     ft_args.push_back(*it);
   }
   ft_args.push_back(_b.void_ptr_type());
   return llvm::FunctionType::get(f_type->getReturnType(), ft_args, false);
-}
-
-llvm::Type* IrCommon::get_llvm_type(const yang::Type& t) const
-{
-  if (t.is_function()) {
-    std::vector<llvm::Type*> args;
-    for (std::size_t i = 0; i < t.get_function_num_args(); ++i) {
-      args.push_back(get_llvm_type(t.get_function_arg_type(i)));
-    }
-    args.push_back(_b.void_ptr_type());
-
-    return generic_function_type(
-        get_llvm_type(t.get_function_return_type()), args);
-  }
-  if (t.is_int()) {
-    return _b.int_type();
-  }
-  if (t.is_float()) {
-    return _b.float_type();
-  }
-  if (t.is_int_vector()) {
-    return _b.vector_type(_b.int_type(), t.get_vector_size());
-  }
-  if (t.is_float_vector()) {
-    return _b.vector_type(_b.float_type(), t.get_vector_size());
-  }
-  if (t.is_user_type()) {
-    return _b.void_ptr_type();
-  }
-  return _b.void_type();
-}
-
-yang::Type IrCommon::get_yang_type(llvm::Type* t) const
-{
-  yang::Type r = yang::Type::void_t();
-  if (t == _b.void_ptr_type()) {
-    // We can't reconstruct the full user type from the void pointer. This means
-    // we treat all user-types as equivalent for the purposes of trampoline
-    // function generation (which makes sense).
-    r = yang::Type::user_t();
-  }
-  else if (t->isFunctionTy() || t->isStructTy()) {
-    auto ft = t->isStructTy() ?
-        function_type_from_generic(t) : (llvm::FunctionType*)t;
-    std::vector<yang::Type> args;
-    // Make sure to skip the environment pointer.
-    for (std::size_t i = 0; i < ft->getFunctionNumParams() - 1; ++i) {
-      args.push_back(get_yang_type(ft->getFunctionParamType(i)));
-    }
-    r = yang::Type::function_t(get_yang_type(ft->getReturnType()), args);
-  }
-  else if (t->isIntOrIntVectorTy()) {
-    r = t->isVectorTy() ?
-        yang::Type::int_vector_t(t->getVectorNumElements()) :
-        yang::Type::int_t();
-  }
-  else if (t->isFPOrFPVectorTy()) {
-    r = t->isVectorTy() ?
-        yang::Type::float_vector_t(t->getVectorNumElements()) :
-        yang::Type::float_t();
-  }
-  return r;
 }
 
 llvm::Function* IrCommon::get_native_function(

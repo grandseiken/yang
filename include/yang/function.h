@@ -58,7 +58,7 @@ public:
 
 private:
 
-  friend class IrCommon;
+  friend class Builder;
   virtual void get_representation(void** function, void** env) = 0;
 
 };

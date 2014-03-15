@@ -51,25 +51,10 @@ public:
 
 protected:
 
-  // Function types and values.
-  llvm::Type* generic_function_type(llvm::Type* function_type) const;
-  llvm::Type* generic_function_type(
-      llvm::Type* return_type, const std::vector<llvm::Type*>& arg_types) const;
-  llvm::FunctionType* function_type_from_generic(
-      llvm::Type* generic_function_type) const;
-  llvm::Value* generic_function_value_null(
-      llvm::StructType* generic_function_type) const;
-  llvm::Value* generic_function_value(
-      llvm::Value* function_ptr, llvm::Value* env_ptr);
-  llvm::Value* generic_function_value(const GenericFunction& function);
   // Return a function type with extra parameter for the target function when
   // calling a trampoline.
   llvm::FunctionType* get_function_type_with_target(
       llvm::Type* function_type) const;
-
-  // Convert back and forth between equivalent Yang and LLVM types.
-  llvm::Type* get_llvm_type(const yang::Type& t) const;
-  yang::Type get_yang_type(llvm::Type* t) const;
 
   // Get an LLVM function pointer to a native function.
   llvm::Function* get_native_function(
