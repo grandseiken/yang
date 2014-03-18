@@ -54,37 +54,36 @@ llvm::Type* Builder::float_type() const
   return llvm::Type::getDoubleTy(b.getContext());
 }
 
-llvm::Type* Builder::vector_type(llvm::Type* type, std::size_t n) const
+llvm::Type* Builder::int_vector_type(std::size_t n) const
 {
-  return llvm::VectorType::get(type, n);
+  return llvm::VectorType::get(int_type(), n);
 }
 
-llvm::Type* Builder::function_type(llvm::Type* type) const
+llvm::Type* Builder::float_vector_type(std::size_t n) const
+{
+  return llvm::VectorType::get(float_type(), n);
+}
+
+llvm::FunctionType* Builder::raw_function_type(
+    llvm::Type* gen_function_type) const
+{
+  auto struct_type = (llvm::StructType*)gen_function_type;
+  auto f_type = (*struct_type->element_begin())->getPointerElementType();
+  return (llvm::FunctionType*)f_type;
+}
+
+llvm::Type* Builder::gen_function_type(llvm::Type* raw_function_type) const
 {
   std::vector<llvm::Type*> types;
   // Yang function pointer or C++ pointer (which is not actually a function
   // pointer at all, but we have to store the type somehow; this is fairly
   // hacky).
-  types.push_back(type);
+  // TODO: get rid of that!
+  types.push_back(raw_function_type);
   // Pointer to environment (global data structure or closure structure).
   types.push_back(void_ptr_type());
 
   return llvm::StructType::get(b.getContext(), types);
-}
-
-llvm::Type* Builder::function_type(
-    llvm::Type* return_type, const std::vector<llvm::Type*>& arg_types) const
-{
-  return function_type(llvm::PointerType::get(
-      llvm::FunctionType::get(return_type, arg_types, false), 0));
-}
-
-llvm::FunctionType* Builder::internal_function_type(
-    llvm::Type* function_type) const
-{
-  auto struct_type = (llvm::StructType*)function_type;
-  auto f_type = (*struct_type->element_begin())->getPointerElementType();
-  return (llvm::FunctionType*)f_type;
 }
 
 llvm::Constant* Builder::constant_ptr(void* ptr)
@@ -130,13 +129,14 @@ Value Builder::function_value_null(llvm::StructType* function_type) const
   values.push_back(llvm::ConstantPointerNull::get(
       (llvm::PointerType*)function_type->getElementType(0)));
   values.push_back(llvm::ConstantPointerNull::get(void_ptr_type()));
+  // TODO: needs type.
   return llvm::ConstantStruct::get(function_type, values);
 }
 
 Value Builder::function_value(
     llvm::Value* function_ptr, llvm::Value* env_ptr)
 {
-  auto type = (llvm::StructType*)function_type(function_ptr->getType());
+  auto type = (llvm::StructType*)gen_function_type(function_ptr->getType());
   Value v = function_value_null(type);
 
   v.irval = b.CreateInsertValue(v.irval, function_ptr, 0, "fptr");
@@ -155,7 +155,7 @@ Value Builder::function_value(const GenericFunction& function)
   void* eptr;
   function.ptr->get_representation(&fptr, &eptr);
   llvm::Type* ft = llvm::PointerType::get(
-      internal_function_type(get_llvm_type(function.type)), 0);
+      raw_function_type(get_llvm_type(function.type)), 0);
 
   llvm::Value* v = b.CreateBitCast(constant_ptr(fptr), ft, "fun");
   if (!eptr) {
@@ -174,8 +174,9 @@ llvm::Type* Builder::get_llvm_type(const yang::Type& t) const
     }
     args.push_back(void_ptr_type());
 
-    return function_type(
-        get_llvm_type(t.get_function_return_type()), args);
+    auto ft = llvm::FunctionType::get(
+        get_llvm_type(t.get_function_return_type()), args, false);
+    return gen_function_type(llvm::PointerType::get(ft, 0));
   }
   if (t.is_int()) {
     return int_type();
@@ -184,10 +185,10 @@ llvm::Type* Builder::get_llvm_type(const yang::Type& t) const
     return float_type();
   }
   if (t.is_int_vector()) {
-    return vector_type(int_type(), t.get_vector_size());
+    return int_vector_type(t.get_vector_size());
   }
   if (t.is_float_vector()) {
-    return vector_type(float_type(), t.get_vector_size());
+    return float_vector_type(t.get_vector_size());
   }
   if (t.is_user_type()) {
     return void_ptr_type();
@@ -197,6 +198,7 @@ llvm::Type* Builder::get_llvm_type(const yang::Type& t) const
 
 yang::Type Builder::get_yang_type(llvm::Type* t) const
 {
+  // TODO: delete this function.
   yang::Type r = yang::Type::void_t();
   if (t == void_ptr_type()) {
     // We can't reconstruct the full user type from the void pointer. This means
@@ -205,8 +207,7 @@ yang::Type Builder::get_yang_type(llvm::Type* t) const
     r = yang::Type::user_t();
   }
   else if (t->isFunctionTy() || t->isStructTy()) {
-    auto ft = t->isStructTy() ?
-        internal_function_type(t) : (llvm::FunctionType*)t;
+    auto ft = t->isStructTy() ? raw_function_type(t) : (llvm::FunctionType*)t;
     std::vector<yang::Type> args;
     // Make sure to skip the environment pointer.
     for (std::size_t i = 0; i < ft->getFunctionNumParams() - 1; ++i) {
@@ -226,7 +227,6 @@ yang::Type Builder::get_yang_type(llvm::Type* t) const
   }
   return r;
 }
-
 
 // End namespace yang::internal.
 }

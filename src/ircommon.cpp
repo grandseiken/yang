@@ -122,10 +122,10 @@ llvm::Function* IrCommon::get_trampoline_function(
   // definitely going to work. Essentially, we unpack vectors into individual
   // values, and convert return values to pointer arguments; the trampoline
   // takes the actual function to be called as the final argument.
-  yang::Type return_type = function_type.get_function_return_type();
+  const yang::Type& return_t = function_type.get_function_return_type();
   // Handle the transitive closure.
-  if (return_type.is_function()) {
-    get_trampoline_function(return_type, forward);
+  if (return_t.is_function()) {
+    get_trampoline_function(return_t, forward);
   }
   for (std::size_t i = 0; i < function_type.get_function_num_args(); ++i) {
     yang::Type t = function_type.get_function_arg_type(i);
@@ -137,10 +137,8 @@ llvm::Function* IrCommon::get_trampoline_function(
   if (!forward) {
     return nullptr;
   }
-  auto llvm_type =
-      _b.internal_function_type(_b.get_llvm_type(function_type));
-  auto llvm_return_type = llvm_type->getReturnType();
-  auto ext_function_type = get_trampoline_type(llvm_type, false);
+  auto ext_function_type = get_trampoline_type(
+      _b.raw_function_type(_b.get_llvm_type(function_type)), false);
 
   // Generate the function code.
   auto function = llvm::Function::Create(
@@ -155,17 +153,23 @@ llvm::Function* IrCommon::get_trampoline_function(
 
   // Translate trampoline arguments to an LLVM-internal argument list.
   auto jt = function->arg_begin();
-  for (std::size_t i = 0;
-       i < get_trampoline_num_return_args(llvm_return_type); ++i) {
+  std::size_t return_args =
+      return_t.is_void() ? 0 :
+      return_t.is_vector() ? return_t.get_vector_size() :
+      return_t.is_function() ? 2 : 1;
+  for (std::size_t i = 0; i < return_args; ++i) {
     jt->setName("r" + std::to_string(i));
     ++jt;
   }
+
   std::size_t i = 0;
-  for (auto it = llvm_type->param_begin();
-       it != llvm_type->param_end(); ++it, ++i) {
-    if ((*it)->isVectorTy()) {
-      std::size_t size = (*it)->getVectorNumElements();
-      llvm::Value* v = ((*it)->isIntOrIntVectorTy() ?
+  std::size_t function_args = function_type.get_function_num_args();
+  for (std::size_t i = 0; i < function_args; ++i) {
+    const yang::Type& t = function_type.get_function_arg_type(i);
+
+    if (t.is_vector()) {
+      std::size_t size = t.get_vector_size();
+      llvm::Value* v = (t.is_int_vector() ?
           _b.constant_int_vector(0, size) :
           _b.constant_float_vector(0, size)).irval;
 
@@ -177,7 +181,7 @@ llvm::Function* IrCommon::get_trampoline_function(
       call_args.push_back(v);
       continue;
     }
-    if ((*it)->isStructTy()) {
+    if (t.is_function()) {
       jt->setName("a" + std::to_string(i) + "_fptr");
       llvm::Value* fptr = jt++;
       jt->setName("a" + std::to_string(i) + "_eptr");
@@ -186,24 +190,25 @@ llvm::Function* IrCommon::get_trampoline_function(
       call_args.push_back(_b.function_value(fptr, eptr).irval);
       continue;
     }
-    // Environment pointer is last parameter.
-    auto kt = it;
-    jt->setName(
-        ++kt == llvm_type->param_end() ? "env" : "a" + std::to_string(i));
+
+    jt->setName("a" + std::to_string(i));
     call_args.push_back(jt++);
   }
+  // Environment pointer is last parameter.
+  jt->setName("env");
+  call_args.push_back(jt);
 
   // Do the call and translate the result back to native calling convention.
   llvm::Value* result = _b.b.CreateCall(callee, call_args);
-  if (llvm_return_type->isVectorTy()) {
+  if (return_t.is_vector()) {
     auto it = function->arg_begin();
-    for (std::size_t i = 0; i < llvm_return_type->getVectorNumElements(); ++i) {
+    for (std::size_t i = 0; i < return_t.get_vector_size(); ++i) {
       llvm::Value* v =
           _b.b.CreateExtractElement(result, _b.constant_int(i).irval, "vec");
       _b.b.CreateStore(v, it++);
     }
   }
-  else if (llvm_return_type->isStructTy()) {
+  else if (return_t.is_function()) {
     llvm::Value* fptr = _b.b.CreateExtractValue(result, 0, "fptr");
     llvm::Value* eptr = _b.b.CreateExtractValue(result, 1, "eptr");
 
@@ -211,7 +216,7 @@ llvm::Function* IrCommon::get_trampoline_function(
     _b.b.CreateStore(fptr, it++);
     _b.b.CreateStore(eptr, it++);
   }
-  else if (!llvm_return_type->isVoidTy()) {
+  else if (!return_t.is_void()) {
     _b.b.CreateStore(result, function->arg_begin());
   }
   _b.b.CreateRetVoid();
@@ -227,9 +232,9 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
     return it->second;
   }
   // Handle transitive closure.
-  if (function_type.get_function_return_type().is_function()) {
-    get_reverse_trampoline_function(
-        function_type.get_function_return_type(), forward);
+  const yang::Type& return_t = function_type.get_function_return_type();
+  if (return_t.is_function()) {
+    get_reverse_trampoline_function(return_t, forward);
   }
   for (std::size_t i = 0; i < function_type.get_function_num_args(); ++i) {
     yang::Type t = function_type.get_function_arg_type(i);
@@ -253,7 +258,6 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
   // target pointer).
   auto internal_type =
       get_function_type_with_target(_b.get_llvm_type(function_type));
-
   // Generate it.
   auto function = llvm::Function::Create(
       internal_type, llvm::Function::InternalLinkage,
@@ -261,80 +265,91 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
   auto block = llvm::BasicBlock::Create(_b.b.getContext(), "entry", function);
   _b.b.SetInsertPoint(block);
 
-  llvm::Type* return_type = internal_type->getReturnType();
-  std::size_t return_args = get_trampoline_num_return_args(return_type);
-
-  std::vector<llvm::Value*> return_allocs;
   std::vector<llvm::Value*> args;
-  // Handle return args.
-  for (std::size_t i = 0; i < return_args; ++i) {
-    llvm::Type* t =
-        return_type->isVectorTy() ? return_type->getVectorElementType() :
-        return_type->isStructTy() ?
-            ((llvm::StructType*)return_type)->getElementType(i) : return_type;
-    llvm::Value* v = _b.b.CreateAlloca(t, nullptr, "r" + std::to_string(i));
-    return_allocs.push_back(v);
-    args.push_back(v);
-  }
-
-  std::size_t i = 0;
-  for (auto it = function->arg_begin(); it != function->arg_end(); ++it, ++i) {
-    auto jt = it;
-    if (++jt == function->arg_end()) {
-      // Target is the last argument.
-      it->setName("target");
-    }
-    else if (++jt == function->arg_end()) {
-      // Environment pointer is second-last argument.
-      it->setName("env");
-    }
-    else {
-      it->setName("a" + std::to_string(i));
-    }
-
-    if (it->getType()->isVectorTy()) {
-      for (std::size_t j = 0; j < it->getType()->getVectorNumElements(); ++j) {
-        llvm::Value* v =
-            _b.b.CreateExtractElement(it, _b.constant_int(j).irval, "vec");
-        args.push_back(v);
+  auto handle = [&]()
+  {
+    std::size_t i = 0;
+    for (auto it = function->arg_begin(); it != function->arg_end(); ++it, ++i) {
+      auto jt = it;
+      if (++jt == function->arg_end()) {
+        // Target is the last argument.
+        it->setName("target");
       }
-      continue;
-    }
-    if (it->getType()->isStructTy()) {
-      llvm::Value* fptr = _b.b.CreateExtractValue(it, 0, "fptr");
-      llvm::Value* eptr = _b.b.CreateExtractValue(it, 1, "eptr");
-      args.push_back(fptr);
-      args.push_back(eptr);
-      continue;
-    }
-    args.push_back(it);
-  }
+      else if (++jt == function->arg_end()) {
+        // Environment pointer is second-last argument.
+        it->setName("env");
+      }
+      else {
+        it->setName("a" + std::to_string(i));
+      }
 
-  auto external_type = get_trampoline_type(internal_type, true);
-  auto external_trampoline = get_native_function(
-      "external_trampoline", external_trampoline_ptr, external_type);
-  _b.b.CreateCall(external_trampoline, args);
+      if (it->getType()->isVectorTy()) {
+        for (std::size_t j = 0; j < it->getType()->getVectorNumElements(); ++j) {
+          llvm::Value* v =
+              _b.b.CreateExtractElement(it, _b.constant_int(j).irval, "vec");
+          args.push_back(v);
+        }
+        continue;
+      }
+      if (it->getType()->isStructTy()) {
+        llvm::Value* fptr = _b.b.CreateExtractValue(it, 0, "fptr");
+        llvm::Value* eptr = _b.b.CreateExtractValue(it, 1, "eptr");
+        args.push_back(fptr);
+        args.push_back(eptr);
+        continue;
+      }
+      args.push_back(it);
+    }
 
-  if (return_type->isVoidTy()) {
+    auto external_type = get_trampoline_type(internal_type, true);
+    auto external_trampoline = get_native_function(
+        "external_trampoline", external_trampoline_ptr, external_type);
+    _b.b.CreateCall(external_trampoline, args);
+  };
+
+  if (return_t.is_void()) {
+    handle();
     _b.b.CreateRetVoid();
   }
-  else if (return_type->isVectorTy()) {
-    llvm::Value* v = return_type->isIntOrIntVectorTy() ?
-         _b.constant_int_vector(0, return_args).irval :
-         _b.constant_float_vector(0, return_args).irval;
-    for (std::size_t i = 0; i < return_args; ++i) {
-      llvm::Value* load = _b.b.CreateLoad(return_allocs[i], "load");
+  else if (return_t.is_vector()) {
+    std::vector<llvm::Value*> allocs;
+    std::size_t size = return_t.get_vector_size();
+    llvm::Type* t = return_t.is_int_vector() ? _b.int_type() : _b.float_type();
+    for (std::size_t i = 0; i < size; ++i) {
+      llvm::Value* v = _b.b.CreateAlloca(t, nullptr, "r" + std::to_string(i));
+      allocs.push_back(v);
+      args.push_back(v);
+    }
+    handle();
+
+    llvm::Value* v = return_t.is_int_vector() ?
+        _b.constant_int_vector(0, size).irval :
+        _b.constant_float_vector(0, size).irval;
+    for (std::size_t i = 0; i < return_t.get_vector_size(); ++i) {
+      llvm::Value* load = _b.b.CreateLoad(allocs[i], "load");
       v = _b.b.CreateInsertElement(v, load, _b.constant_int(i).irval, "vec");
     }
     _b.b.CreateRet(v);
   }
-  else if (return_type->isStructTy()) {
+  else if (return_t.is_function()) {
+    llvm::Type* t = internal_type->getReturnType()->getStructElementType(0);
+    llvm::Value* fptr = _b.b.CreateAlloca(t, nullptr, "r0");
+    llvm::Value* eptr = _b.b.CreateAlloca(_b.void_ptr_type(), nullptr, "r1");
+    args.push_back(fptr);
+    args.push_back(eptr);
+    handle();
+
     _b.b.CreateRet(_b.function_value(
-        _b.b.CreateLoad(return_allocs[0], "fptr"),
-        _b.b.CreateLoad(return_allocs[1], "eptr")).irval);
+        _b.b.CreateLoad(fptr, "fptr"),
+        _b.b.CreateLoad(eptr, "eptr")).irval);
   }
   else {
-    _b.b.CreateRet(_b.b.CreateLoad(return_allocs[0], "ret"));
+    llvm::Value* r =
+        _b.b.CreateAlloca(internal_type->getReturnType(), nullptr, "r0");
+    args.push_back(r);
+    handle();
+
+    _b.b.CreateRet(_b.b.CreateLoad(r, "ret"));
   }
   _reverse_trampoline_map.emplace(function_type.erase_user_types(), function);
   return function;
@@ -358,7 +373,7 @@ llvm::FunctionType* IrCommon::get_function_type_with_target(
   // unused target parameter at the end to avoid this weird casting and
   // switching. Not sure whether that's a better idea. It would avoid having
   // to branch on every function call (in case we want to pass a target).
-  auto f_type = _b.internal_function_type(function_type);
+  auto f_type = _b.raw_function_type(function_type);
   std::vector<llvm::Type*> ft_args;
   for (auto it = f_type->param_begin(); it != f_type->param_end(); ++it) {
     ft_args.push_back(*it);
@@ -420,15 +435,6 @@ llvm::FunctionType* IrCommon::get_trampoline_type(
     args.push_back(llvm::PointerType::get(function_type, 0));
   }
   return llvm::FunctionType::get(_b.void_type(), args, false);
-}
-
-std::size_t IrCommon::get_trampoline_num_return_args(
-    llvm::Type* return_type) const
-{
-  return
-      return_type->isVoidTy() ? 0 :
-      return_type->isVectorTy() ? return_type->getVectorNumElements() :
-      return_type->isStructTy() ? 2 : 1;
 }
 
 yang::void_fp YangTrampolineGlobals::get_trampoline_function(

@@ -66,7 +66,6 @@ private:
   // Get the trampoline type used either way.
   llvm::FunctionType* get_trampoline_type(
       llvm::FunctionType* function_type, bool reverse) const;
-  std::size_t get_trampoline_num_return_args(llvm::Type* return_type) const;
 
   llvm::Module& _module;
   llvm::ExecutionEngine& _engine;

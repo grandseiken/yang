@@ -39,14 +39,12 @@ struct Builder {
   llvm::Type* void_type() const;
   llvm::Type* int_type() const;
   llvm::Type* float_type() const;
-  llvm::Type* vector_type(llvm::Type* type, std::size_t n) const;
+  llvm::Type* int_vector_type(std::size_t n) const;
+  llvm::Type* float_vector_type(std::size_t n) const;
 
   // Functions.
-  llvm::Type* function_type(llvm::Type* function_type) const;
-  llvm::Type* function_type(
-      llvm::Type* return_type, const std::vector<llvm::Type*>& arg_types) const;
-  llvm::FunctionType* internal_function_type(
-      llvm::Type* function_type) const;
+  llvm::FunctionType* raw_function_type(llvm::Type* gen_function_type) const;
+  llvm::Type* gen_function_type(llvm::Type* raw_function_type) const;
 
   // Value construction.
   llvm::Constant* constant_ptr(void* ptr);
@@ -66,6 +64,7 @@ struct Builder {
 
   // Builder functions.
   llvm::IRBuilder<> b;
+
 };
 
 // End namespace yang::internal.

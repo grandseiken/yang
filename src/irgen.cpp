@@ -753,7 +753,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       // Don't bother to generate correct code when the C++ path can never be
       // taken.
       llvm::Value* trampoline = get_reverse_trampoline_function(
-          _b.get_yang_type(_b.internal_function_type(genf->getType())),
+          _b.get_yang_type(_b.raw_function_type(genf->getType())),
           false);
       llvm::Value* cpp_val = nullptr;
       _b.b.SetInsertPoint(cpp_block);
@@ -806,7 +806,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
         std::size_t n = types[1]->getVectorNumElements();
         constant =
             _b.constant_int_vector(node.type == Node::LOGICAL_OR, n).irval;
-        type = _b.vector_type(type, n);
+        type = _b.int_vector_type(n);
       }
       else {
         constant = _b.constant_int(node.type == Node::LOGICAL_OR).irval;
@@ -1213,7 +1213,7 @@ void IrGenerator::create_function(
   _metadata.push();
 
   // Linkage will be set later if necessary.
-  auto llvm_type = _b.internal_function_type(
+  auto llvm_type = _b.raw_function_type(
       (llvm::FunctionType*)_b.get_llvm_type(function_type));
   auto function = llvm::Function::Create(
       llvm_type, llvm::Function::InternalLinkage,
@@ -1279,7 +1279,7 @@ void IrGenerator::create_function(
   if (_immediate_left_assign.length()) {
     function->setName(_immediate_left_assign);
     llvm::Type* fp_type =
-        _b.function_type(llvm::PointerType::get(llvm_type, 0));
+        _b.gen_function_type(llvm::PointerType::get(llvm_type, 0));
     // The identifier is registered one scope above the function argument scope.
     // Confusingly, that's two unique scope-numbers back because the LHS of the
     // assignment has its own scope in-between.
@@ -1320,7 +1320,7 @@ Value IrGenerator::b2i(const Value& v)
 {
   llvm::Type* type = _b.int_type();
   if (v.llvm_type()->isVectorTy()) {
-    type = _b.vector_type(type, v.llvm_type()->getVectorNumElements());
+    type = _b.int_vector_type(v.llvm_type()->getVectorNumElements());
   }
   return _b.b.CreateZExt(v.irval, type, "int");
 }
@@ -1329,7 +1329,7 @@ Value IrGenerator::i2f(const Value& v)
 {
   llvm::Type* type = _b.float_type();
   if (v.llvm_type()->isVectorTy()) {
-    type = _b.vector_type(type, v.llvm_type()->getVectorNumElements());
+    type = _b.float_vector_type(v.llvm_type()->getVectorNumElements());
   }
   return _b.b.CreateSIToFP(v.irval, type, "wrld");
 }
@@ -1341,8 +1341,8 @@ Value IrGenerator::f2i(const Value& v)
   llvm::Value* zero = nullptr;
   if (v.llvm_type()->isVectorTy()) {
     std::size_t n = v.llvm_type()->getVectorNumElements();
-    back_type = _b.vector_type(back_type, n);
-    type = _b.vector_type(type, n);
+    back_type = _b.float_vector_type(n);
+    type = _b.int_vector_type(n);
     zero = _b.constant_float_vector(0, n).irval;
   }
   else {
