@@ -162,7 +162,6 @@ llvm::Function* IrCommon::get_trampoline_function(
     ++jt;
   }
 
-  std::size_t i = 0;
   std::size_t function_args = function_type.get_function_num_args();
   for (std::size_t i = 0; i < function_args; ++i) {
     const yang::Type& t = function_type.get_function_arg_type(i);
@@ -187,7 +186,7 @@ llvm::Function* IrCommon::get_trampoline_function(
       jt->setName("a" + std::to_string(i) + "_eptr");
       llvm::Value* eptr = jt++;
 
-      call_args.push_back(_b.function_value(fptr, eptr).irval);
+      call_args.push_back(_b.function_value(t, fptr, eptr).irval);
       continue;
     }
 
@@ -340,8 +339,8 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
     handle();
 
     _b.b.CreateRet(_b.function_value(
-        _b.b.CreateLoad(fptr, "fptr"),
-        _b.b.CreateLoad(eptr, "eptr")).irval);
+        return_t,
+        _b.b.CreateLoad(fptr, "fptr"), _b.b.CreateLoad(eptr, "eptr")).irval);
   }
   else {
     llvm::Value* r =

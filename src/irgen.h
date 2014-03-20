@@ -53,12 +53,12 @@ private:
   void init_structure_type(
       llvm::Type*& output_type, structure_numbering& output_numbering,
       const symbol_frame& symbols, const std::string& name);
-  Value allocate_structure_value(
+  llvm::Value* allocate_structure_value(
       llvm::Type* type, const structure_numbering& numbering);
-  Value allocate_closure_struct(
-      const symbol_frame& symbols, const Value& parent_ptr);
-  Value get_parent_struct(std::size_t parent_steps, const Value& v);
-  Value get_variable_ptr(const std::string& name);
+  llvm::Value* allocate_closure_struct(
+      const symbol_frame& symbols, llvm::Value* parent_ptr);
+  llvm::Value* get_parent_struct(std::size_t parent_steps, llvm::Value* v);
+  llvm::Value* get_variable_ptr(const std::string& name);
 
   void create_function(const Node& node, const yang::Type& function_type);
 
@@ -68,14 +68,14 @@ private:
   Value f2i(const Value& v);
 
   // Indexing global and closure data structures.
-  Value structure_ptr(const Value& ptr, std::size_t index);
-  Value global_ptr(const std::string& name);
-  Value global_ptr();
+  llvm::Value* structure_ptr(llvm::Value* ptr, std::size_t index);
+  llvm::Value* global_ptr(const std::string& name);
+  llvm::Value* global_ptr();
 
   // Storing to some structure (global data or closure) with refcounting.
-  Value memory_load(const Value& ptr);
-  void memory_init(llvm::IRBuilder<>& pos, const Value& ptr);
-  void memory_store(const Value& value, const Value& ptr);
+  Value memory_load(llvm::Value* ptr);
+  void memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr);
+  void memory_store(const Value& value, llvm::Value* ptr);
   // Raw reference-counting.
   void update_reference_count(const Value& value, int_t change);
   // Emit code to decrement reference count of locals in topmost scope, or
@@ -83,18 +83,16 @@ private:
   void dereference_scoped_locals();
   void dereference_scoped_locals(std::size_t first_scope);
 
+  Value raw_binary(const Node& node, const Value& v, const Value& u);
   // Power implementation.
-  Value pow(const Value& v, const Value& u);
+  llvm::Value* pow(const Value& v, const Value& u);
   // Euclidean mod and div implementations.
-  Value mod(const Value& v, const Value& u);
-  Value div(const Value& v, const Value& u);
+  llvm::Value* mod(const Value& v, const Value& u);
+  llvm::Value* div(const Value& v, const Value& u);
 
-  Value binary(
-      const Value& left, const Value& right,
-      std::function<Value(const Value&, const Value&)> op);
+  Value binary(const Node& node, const Value& left, const Value& right);
   Value fold(
-      const Value& value,
-      std::function<Value(const Value&, const Value&)> op,
+      const Node& node, const Value& value,
       bool to_bool = false, bool with_ands = false, bool right_assoc = false);
 
   // Metadata symbols.

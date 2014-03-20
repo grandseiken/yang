@@ -132,6 +132,12 @@ export knuth_man_or_boy_test = int(int n)
   };
   return a(n, k(1), k(-1), k(-1), k(1), k(0));
 }
+
+export odd_ops = int()
+{
+  return $+((5, 6, 7) % 4) + $+(8 / (1, 2, 4)) +
+         $+((1, 2, 3) ** 2) + $+(2 ** (1, 2, 3));
+}
 )";
 
 TEST_F(YangTest, SemanticsTest)
@@ -162,6 +168,7 @@ TEST_F(YangTest, SemanticsTest)
   EXPECT_EQ(inst.call<int_t>("big_int_literals"), -1);
 
   EXPECT_EQ(inst.call<int_t>("knuth_man_or_boy_test", 10), -67);
+  EXPECT_EQ(inst.call<int_t>("odd_ops"), 48);
   // TODO: just getting started. Need way more semantic tests.
 }
 

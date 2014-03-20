@@ -8,15 +8,9 @@
 namespace yang {
 namespace internal {
 
-Value::Value(const yang::Type& type, llvm::Value* irval)
-  : type(type)
-  , irval(irval)
-{
-}
-
-Value::Value(llvm::Value* irval)
+Value::Value()
   : type(yang::Type::void_t())
-  , irval(irval)
+  , irval(nullptr)
 {
 }
 
@@ -26,9 +20,20 @@ Value::Value(const yang::Type& type)
 {
 }
 
+Value::Value(const yang::Type& type, llvm::Value* irval)
+  : type(type)
+  , irval(irval)
+{
+}
+
 llvm::Type* Value::llvm_type() const
 {
   return irval ? irval->getType() : nullptr;
+}
+
+Value::operator llvm::Value*() const
+{
+  return irval;
 }
   
 llvm::PointerType* Builder::void_ptr_type() const
@@ -123,27 +128,29 @@ Value Builder::constant_float_vector(yang::float_t value, std::size_t n) const
                llvm::ConstantVector::getSplat(n, constant));
 }
 
-Value Builder::function_value_null(llvm::StructType* function_type) const
+Value Builder::function_value_null(const yang::Type& function_type) const
 {
+  auto gen_ft = (llvm::StructType*)get_llvm_type(function_type);
   std::vector<llvm::Constant*> values;
-  values.push_back(llvm::ConstantPointerNull::get(
-      (llvm::PointerType*)function_type->getElementType(0)));
+  // TODO: make this void ptr (and remove cast below).
+  values.push_back(llvm::ConstantPointerNull::get(llvm::PointerType::get(
+      raw_function_type(gen_ft), 0)));
   values.push_back(llvm::ConstantPointerNull::get(void_ptr_type()));
-  // TODO: needs type.
-  return llvm::ConstantStruct::get(function_type, values);
+  return Value(function_type, llvm::ConstantStruct::get(gen_ft, values));
 }
 
-Value Builder::function_value(
-    llvm::Value* function_ptr, llvm::Value* env_ptr)
+Value Builder::function_value(const yang::Type& function_type,
+                              llvm::Value* fptr, llvm::Value* eptr)
 {
-  auto type = (llvm::StructType*)gen_function_type(function_ptr->getType());
-  Value v = function_value_null(type);
-
-  v.irval = b.CreateInsertValue(v.irval, function_ptr, 0, "fptr");
-  if (env_ptr) {
+  Value v = function_value_null(function_type);
+  auto p = llvm::PointerType::get(
+      raw_function_type(get_llvm_type(function_type)), 0);
+  llvm::Value* cast = b.CreateBitCast(fptr, p);
+  v.irval = b.CreateInsertValue(v.irval, cast, 0, "fptr");
+  if (eptr) {
     // Must be bitcast to void pointer, since it may be a global data type or
     // closure data type..
-    llvm::Value* cast = b.CreateBitCast(env_ptr, void_ptr_type());
+    llvm::Value* cast = b.CreateBitCast(eptr, void_ptr_type());
     v.irval = b.CreateInsertValue(v.irval, cast, 1, "eptr");
   }
   return v;
@@ -154,15 +161,16 @@ Value Builder::function_value(const GenericFunction& function)
   void* fptr;
   void* eptr;
   function.ptr->get_representation(&fptr, &eptr);
+
   llvm::Type* ft = llvm::PointerType::get(
       raw_function_type(get_llvm_type(function.type)), 0);
-
   llvm::Value* v = b.CreateBitCast(constant_ptr(fptr), ft, "fun");
+
   if (!eptr) {
     // Native functions don't need an environment pointer.
-    return function_value(v, nullptr);
+    return function_value(function.type, v, nullptr);
   }
-  return function_value(v, constant_ptr(eptr));
+  return function_value(function.type, v, constant_ptr(eptr));
 }
 
 llvm::Type* Builder::get_llvm_type(const yang::Type& t) const

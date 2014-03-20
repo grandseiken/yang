@@ -21,12 +21,12 @@ namespace internal {
 // A Yang value wraps an LLVM IR value and associates it with a Yang type,
 // instead of a raw LLVM type.
 struct Value {
-  Value(const yang::Type& type, llvm::Value* irval);
-  // Possibly get rid of these?
-  Value(llvm::Value* irval);
+  Value();
   Value(const yang::Type& type);
+  Value(const yang::Type& type, llvm::Value* irval);
 
   llvm::Type* llvm_type() const;
+  operator llvm::Value*() const;
 
   yang::Type type;
   llvm::Value* irval;
@@ -54,8 +54,9 @@ struct Builder {
   Value constant_float_vector(yang::float_t value, std::size_t n) const;
 
   // Functions.
-  Value function_value_null(llvm::StructType* function_type) const;
-  Value function_value(llvm::Value* function_ptr, llvm::Value* env_ptr);
+  Value function_value_null(const yang::Type& function_type) const;
+  Value function_value(const yang::Type& function_type,
+                       llvm::Value* fptr, llvm::Value* ptr);
   Value function_value(const GenericFunction& function);
 
   // Convert back and forth between equivalent Yang and LLVM types.
