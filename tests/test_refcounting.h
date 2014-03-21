@@ -185,7 +185,9 @@ export cycles = int()()
         ff = h;
         gg = h;
         hh = h;
-        const dasd = g;dasd;
+        // TODO: broken (and, apparently, has always been broken, but didn't
+        // show up until recently).
+        // const dasd = g; dasd;
         return r;
       };
       hh = h;

@@ -54,7 +54,7 @@ protected:
   // Return a function type with extra parameter for the target function when
   // calling a trampoline.
   llvm::FunctionType* get_function_type_with_target(
-      llvm::Type* function_type) const;
+      llvm::FunctionType* function_type) const;
 
   // Get an LLVM function pointer to a native function.
   llvm::Function* get_native_function(

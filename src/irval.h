@@ -43,8 +43,8 @@ struct Builder {
   llvm::Type* float_vector_type(std::size_t n) const;
 
   // Functions.
-  llvm::FunctionType* raw_function_type(llvm::Type* gen_function_type) const;
-  llvm::Type* gen_function_type(llvm::Type* raw_function_type) const;
+  llvm::FunctionType* raw_function_type(const yang::Type& type) const;
+  llvm::StructType* gen_function_type() const;
 
   // Value construction.
   llvm::Constant* constant_ptr(void* ptr);
@@ -59,9 +59,8 @@ struct Builder {
                        llvm::Value* fptr, llvm::Value* ptr);
   Value function_value(const GenericFunction& function);
 
-  // Convert back and forth between equivalent Yang and LLVM types.
+  // Convert from Yang type to LLVM type.
   llvm::Type* get_llvm_type(const yang::Type& t) const;
-  yang::Type get_yang_type(llvm::Type* t) const;
 
   // Builder functions.
   llvm::IRBuilder<> b;

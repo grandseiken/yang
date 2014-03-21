@@ -49,12 +49,33 @@ protected:
 
 private:
 
-  typedef std::unordered_map<std::string, std::size_t> structure_numbering;
-  void init_structure_type(
-      llvm::Type*& output_type, structure_numbering& output_numbering,
-      const symbol_frame& symbols, const std::string& name);
-  llvm::Value* allocate_structure_value(
-      llvm::Type* type, const structure_numbering& numbering);
+  struct structure_entry {
+    structure_entry(const yang::Type& type = yang::Type::void_t(),
+                    std::size_t index = 0)
+      : type(type)
+      , index(index) {}
+
+    yang::Type type;
+    std::size_t index;
+  };
+  struct structure_t {
+    structure_t()
+      : type(nullptr)
+      , destructor(nullptr)
+      , refout_query(nullptr)
+      , refout_count(0) {}
+
+    llvm::Type* type;
+    std::unordered_map<std::string, structure_entry> table;
+
+    llvm::Function* destructor;
+    llvm::Function* refout_query;
+    std::size_t refout_count;
+  };
+
+  structure_t init_structure_type(const symbol_frame& symbols,
+                                  const std::string& name);
+  llvm::Value* allocate_structure_value(const structure_t& st);
   llvm::Value* allocate_closure_struct(
       const symbol_frame& symbols, llvm::Value* parent_ptr);
   llvm::Value* get_parent_struct(std::size_t parent_steps, llvm::Value* v);
@@ -73,11 +94,13 @@ private:
   llvm::Value* global_ptr();
 
   // Storing to some structure (global data or closure) with refcounting.
-  Value memory_load(llvm::Value* ptr);
+  Value memory_load(const yang::Type& type, llvm::Value* ptr);
   void memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr);
   void memory_store(const Value& value, llvm::Value* ptr);
   // Raw reference-counting.
   void update_reference_count(const Value& value, int_t change);
+  void update_reference_count(llvm::Value* fptr,
+                              llvm::Value* eptr, int_t change);
   // Emit code to decrement reference count of locals in topmost scope, or
   // all scopes (for returns).
   void dereference_scoped_locals();
@@ -128,10 +151,8 @@ private:
 
   // List of static initialisation functions.
   std::vector<llvm::Function*> _global_inits;
-  // Map from global name to index in the global structure.
-  structure_numbering _global_numbering;
-  // Type of the global structure.
-  llvm::Type* _global_data;
+  // Globals.
+  structure_t _global_data;
 
   // We keep a second symbol table for special metadata entries that don't
   // correspond to actual source code symbols; this way we can add scopes
@@ -156,11 +177,7 @@ private:
   // scope_closures[closure index] and unique_identifier.
   //
   // TODO: clean up these data structures if possible, it's kind of awkward.
-  struct closure_t {
-    llvm::Type* type;
-    structure_numbering numbering;
-  };
-  std::vector<closure_t> _scope_closures;
+  std::vector<structure_t> _scope_closures;
   std::unordered_map<llvm::Value*, std::string> _value_to_unique_name_map;
 
   // List of local variables in scope, for refcounting.
@@ -170,10 +187,6 @@ private:
   llvm::Function* _update_refcount;
   llvm::Function* _cleanup_structures;
   llvm::Function* _destroy_internals;
-  // Map from structure type to destructor function.
-  std::unordered_map<llvm::Type*, llvm::Function*> _destructors;
-  std::unordered_map<llvm::Type*, llvm::Function*> _refout_queries;
-  std::unordered_map<llvm::Type*, std::size_t> _refout_counts;
 
 };
 

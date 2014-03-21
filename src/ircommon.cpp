@@ -29,33 +29,33 @@ void IrCommon::optimise_ir(llvm::Function* function) const
   llvm::PassManager module_optimiser;
   llvm::FunctionPassManager function_optimiser(&_module);
 
-  auto& optimiser = function ?
-      (llvm::PassManager&)function_optimiser : module_optimiser;
-  optimiser.add(new llvm::DataLayout(*_engine.getDataLayout()));
+  auto optimiser = function ?
+      (llvm::PassManager*)&function_optimiser : &module_optimiser;
+  optimiser->add(new llvm::DataLayout(*_engine.getDataLayout()));
 
   // Basic alias analysis and register promotion.
-  optimiser.add(llvm::createBasicAliasAnalysisPass());
-  optimiser.add(llvm::createPromoteMemoryToRegisterPass());
+  optimiser->add(llvm::createBasicAliasAnalysisPass());
+  optimiser->add(llvm::createPromoteMemoryToRegisterPass());
 
   // Optimise instructions, and reassociate for constant propagation.
-  optimiser.add(llvm::createInstructionCombiningPass());
-  optimiser.add(llvm::createReassociatePass());
-  optimiser.add(llvm::createGVNPass());
+  optimiser->add(llvm::createInstructionCombiningPass());
+  optimiser->add(llvm::createReassociatePass());
+  optimiser->add(llvm::createGVNPass());
 
   // Simplify the control-flow graph before tackling loops.
-  optimiser.add(llvm::createCFGSimplificationPass());
+  optimiser->add(llvm::createCFGSimplificationPass());
 
   // Handle loops.
-  optimiser.add(llvm::createIndVarSimplifyPass());
-  optimiser.add(llvm::createLoopIdiomPass());
-  optimiser.add(llvm::createLoopRotatePass());
-  optimiser.add(llvm::createLoopUnrollPass());
-  optimiser.add(llvm::createLoopUnswitchPass());
-  optimiser.add(llvm::createLoopDeletionPass());
+  optimiser->add(llvm::createIndVarSimplifyPass());
+  optimiser->add(llvm::createLoopIdiomPass());
+  optimiser->add(llvm::createLoopRotatePass());
+  optimiser->add(llvm::createLoopUnrollPass());
+  optimiser->add(llvm::createLoopUnswitchPass());
+  optimiser->add(llvm::createLoopDeletionPass());
 
   // Simplify again and delete all the dead code.
-  optimiser.add(llvm::createCFGSimplificationPass());
-  optimiser.add(llvm::createAggressiveDCEPass());
+  optimiser->add(llvm::createCFGSimplificationPass());
+  optimiser->add(llvm::createAggressiveDCEPass());
 
   if (function) {
     function_optimiser.run(*function);
@@ -63,17 +63,17 @@ void IrCommon::optimise_ir(llvm::Function* function) const
   }
 
   // Interprocedural optimisations.
-  optimiser.add(llvm::createFunctionInliningPass());
-  optimiser.add(llvm::createIPConstantPropagationPass());
-  optimiser.add(llvm::createGlobalOptimizerPass());
-  optimiser.add(llvm::createDeadArgEliminationPass());
-  optimiser.add(llvm::createGlobalDCEPass());
-  optimiser.add(llvm::createTailCallEliminationPass());
+  optimiser->add(llvm::createFunctionInliningPass());
+  optimiser->add(llvm::createIPConstantPropagationPass());
+  optimiser->add(llvm::createGlobalOptimizerPass());
+  optimiser->add(llvm::createDeadArgEliminationPass());
+  optimiser->add(llvm::createGlobalDCEPass());
+  optimiser->add(llvm::createTailCallEliminationPass());
 
   // After function inlining run a few passes again.
-  optimiser.add(llvm::createInstructionCombiningPass());
-  optimiser.add(llvm::createReassociatePass());
-  optimiser.add(llvm::createGVNPass());
+  optimiser->add(llvm::createInstructionCombiningPass());
+  optimiser->add(llvm::createReassociatePass());
+  optimiser->add(llvm::createGVNPass());
 
   // TODO: work out if there's others we should run, or in a different order.
   module_optimiser.run(_module);
@@ -137,8 +137,8 @@ llvm::Function* IrCommon::get_trampoline_function(
   if (!forward) {
     return nullptr;
   }
-  auto ext_function_type = get_trampoline_type(
-      _b.raw_function_type(_b.get_llvm_type(function_type)), false);
+  auto ext_function_type =
+      get_trampoline_type(_b.raw_function_type(function_type), false);
 
   // Generate the function code.
   auto function = llvm::Function::Create(
@@ -186,7 +186,7 @@ llvm::Function* IrCommon::get_trampoline_function(
       jt->setName("a" + std::to_string(i) + "_eptr");
       llvm::Value* eptr = jt++;
 
-      call_args.push_back(_b.function_value(t, fptr, eptr).irval);
+      call_args.push_back(_b.function_value(t, fptr, eptr));
       continue;
     }
 
@@ -256,7 +256,7 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
   // Construct the type of the trampoline function (with extra argument for
   // target pointer).
   auto internal_type =
-      get_function_type_with_target(_b.get_llvm_type(function_type));
+      get_function_type_with_target(_b.raw_function_type(function_type));
   // Generate it.
   auto function = llvm::Function::Create(
       internal_type, llvm::Function::InternalLinkage,
@@ -365,20 +365,19 @@ auto IrCommon::get_reverse_trampoline_map() const -> const trampoline_map&
 }
 
 llvm::FunctionType* IrCommon::get_function_type_with_target(
-    llvm::Type* function_type) const
+    llvm::FunctionType* type) const
 {
   // Construct the function type which includes an extra target type at
   // the end. This is kind of weird. We could make every function have an
   // unused target parameter at the end to avoid this weird casting and
   // switching. Not sure whether that's a better idea. It would avoid having
   // to branch on every function call (in case we want to pass a target).
-  auto f_type = _b.raw_function_type(function_type);
   std::vector<llvm::Type*> ft_args;
-  for (auto it = f_type->param_begin(); it != f_type->param_end(); ++it) {
+  for (auto it = type->param_begin(); it != type->param_end(); ++it) {
     ft_args.push_back(*it);
   }
   ft_args.push_back(_b.void_ptr_type());
-  return llvm::FunctionType::get(f_type->getReturnType(), ft_args, false);
+  return llvm::FunctionType::get(type->getReturnType(), ft_args, false);
 }
 
 llvm::Function* IrCommon::get_native_function(

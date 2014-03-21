@@ -142,6 +142,8 @@ export odd_ops = int()
 
 TEST_F(YangTest, SemanticsTest)
 {
+  // TODO: some problem introduced in recent change makes this break
+  // (in debug mode only) with huge stacktrace! Need to study IR.
   auto& inst = instance(TestSemanticsStr);
   // Test recursion.
   EXPECT_EQ(inst.call<int_t>("rec_fac", 6), 720);

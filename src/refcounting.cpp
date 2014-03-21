@@ -88,6 +88,9 @@ void cleanup_cyclic_structures()
   // First, for each structure potentially involved in a cycle, call its
   // reference query function to determine what references it holds.
   for (Prefix* v : copy) {
+    if (!v->refouts) {
+      continue;
+    }
     // Query function takes a pointer to block of memory with space for the
     // pointers.
     Prefix** output = new Prefix*[v->refouts];
