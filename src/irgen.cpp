@@ -645,7 +645,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
         goto type_function;
       }
       std::vector<llvm::Value*> args;
-      llvm::Value* genf = results[0];
+      Value genf = results[0];
 
       // Special logic for member-function calling.
       // TODO: get rid of this now that we have closures.
@@ -660,7 +660,6 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       for (std::size_t i = 1; i < results.size(); ++i) {
         args.push_back(results[i]);
       }
-      // TODO: still using daft types.
 
       // Extract pointers from the struct.
       llvm::Value* fptr = _b.b.CreateExtractValue(genf, 0, "fptr");
@@ -675,7 +674,6 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       auto merge_block =
           llvm::BasicBlock::Create(_b.b.getContext(), "merge", parent);
 
-      auto f_type = _b.raw_function_type(genf->getType());
       llvm::Value* cmp = _b.b.CreateICmpEQ(
           eptr, llvm::ConstantPointerNull::get(_b.void_ptr_type()));
       _b.b.CreateCondBr(cmp, cpp_block, yang_block);
@@ -686,8 +684,8 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
 
       // Don't bother to generate correct code when the C++ path can never be
       // taken.
-      llvm::Value* trampoline = get_reverse_trampoline_function(
-          _b.get_yang_type(f_type), false);
+      llvm::Value* trampoline =
+          get_reverse_trampoline_function(genf.type, false);
       llvm::Value* cpp_val = nullptr;
       _b.b.SetInsertPoint(cpp_block);
       if (trampoline) {
@@ -700,9 +698,9 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       }
 
       _b.b.SetInsertPoint(merge_block);
-      if (!f_type->getReturnType()->isVoidTy()) {
-        const yang::Type& return_t = results[0].type.get_function_return_type();
-        auto phi_v = _b.b.CreatePHI(f_type->getReturnType(), 2, "call");
+      const yang::Type& return_t = genf.type.get_function_return_type();
+      if (!return_t.is_void()) {
+        auto phi_v = _b.b.CreatePHI(_b.get_llvm_type(return_t), 2, "call");
         Value phi(return_t, phi_v);
 
         if (trampoline) {
