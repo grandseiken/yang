@@ -147,8 +147,8 @@ TEST_F(YangTest, SemanticsTest)
   EXPECT_EQ(inst.call<int_t>("rec_fac", 6), 720);
   EXPECT_EQ(inst.call<int_t>("daft_fib", 10), 89);
   // Check tail call optimisation is working.
-  // TODO: after refactoring, tail call optimisation no longer works in debug
-  // mode. Need to compare IR to figure out why.
+  // TODO: after refactoring, tail call optimisation no longer works properly
+  // and causes weird behaviour. Compare IR to figure out why.
   EXPECT_NO_THROW(inst.call<int_t>("rec_fac", 1000000));
 
   EXPECT_EQ(inst.get_global<int_t>("global_inner"), 42);

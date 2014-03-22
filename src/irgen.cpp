@@ -677,7 +677,9 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       _b.b.CreateBr(merge_block);
 
       // Don't bother to generate correct code when the C++ path can never be
-      // taken.
+      // taken. It'd be nice if we could tell LLVM the env pointer argument to
+      // Yang functions will never be null, so this check can be optimised out
+      // in many cases.
       llvm::Value* trampoline =
           get_reverse_trampoline_function(genf.type, false);
       llvm::Value* cpp_val = nullptr;

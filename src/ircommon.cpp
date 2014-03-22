@@ -169,12 +169,11 @@ llvm::Function* IrCommon::get_trampoline_function(
     if (t.is_vector()) {
       std::size_t size = t.get_vector_size();
       llvm::Value* v = (t.is_int_vector() ?
-          _b.constant_int_vector(0, size) :
-          _b.constant_float_vector(0, size)).irval;
+          _b.constant_int_vector(0, size) : _b.constant_float_vector(0, size));
 
       for (std::size_t j = 0; j < size; ++j) {
         jt->setName("a" + std::to_string(i) + "_" + std::to_string(j));
-        v = _b.b.CreateInsertElement(v, jt, _b.constant_int(j).irval, "vec");
+        v = _b.b.CreateInsertElement(v, jt, _b.constant_int(j), "vec");
         ++jt;
       }
       call_args.push_back(v);
@@ -203,7 +202,7 @@ llvm::Function* IrCommon::get_trampoline_function(
     auto it = function->arg_begin();
     for (std::size_t i = 0; i < return_t.get_vector_size(); ++i) {
       llvm::Value* v =
-          _b.b.CreateExtractElement(result, _b.constant_int(i).irval, "vec");
+          _b.b.CreateExtractElement(result, _b.constant_int(i), "vec");
       _b.b.CreateStore(v, it++);
     }
   }
@@ -285,7 +284,7 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
       if (it->getType()->isVectorTy()) {
         for (std::size_t j = 0; j < it->getType()->getVectorNumElements(); ++j) {
           llvm::Value* v =
-              _b.b.CreateExtractElement(it, _b.constant_int(j).irval, "vec");
+              _b.b.CreateExtractElement(it, _b.constant_int(j), "vec");
           args.push_back(v);
         }
         continue;
@@ -322,11 +321,10 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
     handle();
 
     llvm::Value* v = return_t.is_int_vector() ?
-        _b.constant_int_vector(0, size).irval :
-        _b.constant_float_vector(0, size).irval;
+        _b.constant_int_vector(0, size) : _b.constant_float_vector(0, size);
     for (std::size_t i = 0; i < return_t.get_vector_size(); ++i) {
       llvm::Value* load = _b.b.CreateLoad(allocs[i], "load");
-      v = _b.b.CreateInsertElement(v, load, _b.constant_int(i).irval, "vec");
+      v = _b.b.CreateInsertElement(v, load, _b.constant_int(i), "vec");
     }
     _b.b.CreateRet(v);
   }
@@ -340,7 +338,7 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
 
     _b.b.CreateRet(_b.function_value(
         return_t,
-        _b.b.CreateLoad(fptr, "fptr"), _b.b.CreateLoad(eptr, "eptr")).irval);
+        _b.b.CreateLoad(fptr, "fptr"), _b.b.CreateLoad(eptr, "eptr")));
   }
   else {
     llvm::Value* r =
