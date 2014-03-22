@@ -407,6 +407,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     case Node::GLOBAL_ASSIGN:
     {
       auto function = (llvm::Function*)parent;
+      get_trampoline_function(results[1].type, false);
       // Top-level functions Nodes have their int_value set to 1 when defined
       // using the `export` keyword.
       if (node.int_value) {
@@ -446,8 +447,6 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       }
       _refcount_locals.pop_back();
       if (!_metadata.has(FUNCTION)) {
-        // Global functions need a trampoline.
-        get_trampoline_function(results[0].type, false);
         return Value(results[0].type, parent);
       }
       // If this was a nested function, set the insert point back to the last
@@ -1148,9 +1147,7 @@ void IrGenerator::create_function(
   // Linkage will be set later if necessary.
   auto llvm_type = _b.raw_function_type(function_type);
   auto function = llvm::Function::Create(
-      // TODO: this should be internal linkage and set external later, but that
-      // doesn't work for some reason.
-      llvm_type, llvm::Function::ExternalLinkage,
+      llvm_type, llvm::Function::InternalLinkage,
       "anonymous", &_module);
 
   // The code for Node::TYPE_FUNCTION in visit() ensures it takes an environment
