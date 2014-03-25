@@ -26,12 +26,21 @@ IrCommon::IrCommon(llvm::Module& module, llvm::ExecutionEngine& engine)
 
 void IrCommon::optimise_ir(llvm::Function* function) const
 {
+  // I'm not sure exactly what sequence of optimisations e.g. opt -O3 uses.
+  // This sequence may be over the top, but compares favourably.
+  std::size_t passes = 2;
   llvm::PassManager module_optimiser;
   llvm::FunctionPassManager function_optimiser(&_module);
 
   auto optimiser = function ?
       (llvm::PassManager*)&function_optimiser : &module_optimiser;
   optimiser->add(new llvm::DataLayout(*_engine.getDataLayout()));
+
+  // This should come first, so that inlined code can take advantage of e.g.
+  // unreachable hints before they are deleted.
+  if (!function) {
+    optimiser->add(llvm::createFunctionInliningPass());
+  }
 
   // Basic alias analysis and register promotion.
   optimiser->add(llvm::createBasicAliasAnalysisPass());
@@ -58,25 +67,21 @@ void IrCommon::optimise_ir(llvm::Function* function) const
   optimiser->add(llvm::createAggressiveDCEPass());
 
   if (function) {
-    function_optimiser.run(*function);
+    for (std::size_t i = 0; i < passes; ++i) {
+      function_optimiser.run(*function);
+    }
     return;
   }
 
-  // Interprocedural optimisations.
-  optimiser->add(llvm::createFunctionInliningPass());
   optimiser->add(llvm::createIPConstantPropagationPass());
   optimiser->add(llvm::createGlobalOptimizerPass());
   optimiser->add(llvm::createDeadArgEliminationPass());
   optimiser->add(llvm::createGlobalDCEPass());
   optimiser->add(llvm::createTailCallEliminationPass());
 
-  // After function inlining run a few passes again.
-  optimiser->add(llvm::createInstructionCombiningPass());
-  optimiser->add(llvm::createReassociatePass());
-  optimiser->add(llvm::createGVNPass());
-
-  // TODO: work out if there's others we should run, or in a different order.
-  module_optimiser.run(_module);
+  for (std::size_t i = 0; i < passes; ++i) {
+    module_optimiser.run(_module);
+  }
 }
 
 llvm::Function* IrCommon::get_trampoline_function(

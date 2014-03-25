@@ -39,13 +39,7 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   , _metadata(nullptr)
   , _scope_to_function_map{{0, 0}}
   , _function_scope(0)
-  , _update_refcount(get_native_function(
-      "update_refcount", (void_fp)&update_refcount,
-      llvm::FunctionType::get(
-          _b.void_type(),
-          std::vector<llvm::Type*>{
-              _b.void_ptr_type(), _b.void_ptr_type(), _b.int_type()},
-          false)))
+  , _update_refcount(nullptr)
   , _cleanup_structures(get_native_function(
       "cleanup_structures", (void_fp)&cleanup_structures,
       llvm::FunctionType::get(_b.void_type(), false)))
@@ -53,6 +47,54 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
       "destroy_internals", (void_fp)&destroy_internals,
       llvm::FunctionType::get(_b.void_type(), _b.void_ptr_type(), false)))
 {
+  // Create the internal general refcounting function.
+  auto rc_type = llvm::FunctionType::get(
+      _b.void_type(),
+      std::vector<llvm::Type*>{_b.void_ptr_type(), _b.int_type()}, false);
+  auto rc_function = get_native_function(
+      "rc_function", (void_fp)&update_function_refcount, rc_type);
+  auto rc_structure = get_native_function(
+      "rc_structure", (void_fp)&update_structure_refcount, rc_type);
+
+  std::vector<llvm::Type*> args{
+      _b.void_ptr_type(), _b.void_ptr_type(), _b.int_type()};
+  _update_refcount = llvm::Function::Create(
+      llvm::FunctionType::get(_b.void_type(), args, false),
+      llvm::Function::InternalLinkage, "!update_refcount", &_module);
+  auto entry = llvm::BasicBlock::Create(
+      _b.b.getContext(), "entry", _update_refcount);
+  auto function_block = llvm::BasicBlock::Create(
+      _b.b.getContext(), "function", _update_refcount);
+  auto else_block = llvm::BasicBlock::Create(
+      _b.b.getContext(), "else", _update_refcount);
+  auto structure_block = llvm::BasicBlock::Create(
+      _b.b.getContext(), "structure", _update_refcount);
+  auto last_block = llvm::BasicBlock::Create(
+      _b.b.getContext(), "last", _update_refcount);
+
+  _b.b.SetInsertPoint(entry);
+  auto fptr = _update_refcount->arg_begin();
+  auto eptr = ++_update_refcount->arg_begin();
+  auto change = ++++_update_refcount->arg_begin();
+  llvm::Value* fval = _b.b.CreateAnd(
+      _b.b.CreateIsNotNull(fptr), _b.b.CreateIsNull(eptr));
+  llvm::Value* eval = _b.b.CreateIsNotNull(eptr);
+  _b.b.CreateCondBr(fval, function_block, else_block);
+
+  _b.b.SetInsertPoint(function_block);
+  _b.b.CreateCall2(rc_function, fptr, change);
+  _b.b.CreateRetVoid();
+
+  _b.b.SetInsertPoint(else_block);
+  _b.b.CreateCondBr(eval, structure_block, last_block);
+
+  _b.b.SetInsertPoint(structure_block);
+  _b.b.CreateCall2(rc_structure, eptr, change);
+  _b.b.CreateRetVoid();
+
+  _b.b.SetInsertPoint(last_block);
+  _b.b.CreateRetVoid();
+
   // Set up the global data type. Since each program is designed to support
   // multiple independent instances running simultaeneously, the idea is to
   // define a structure type with a field for each global variable. Each
@@ -666,8 +708,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       auto merge_block =
           llvm::BasicBlock::Create(_b.b.getContext(), "merge", parent);
 
-      llvm::Value* cmp = _b.b.CreateICmpEQ(
-          eptr, llvm::ConstantPointerNull::get(_b.void_ptr_type()));
+      llvm::Value* cmp = _b.b.CreateIsNull(eptr);
       _b.b.CreateCondBr(cmp, cpp_block, yang_block);
 
       _b.b.SetInsertPoint(yang_block);
@@ -677,9 +718,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       _b.b.CreateBr(merge_block);
 
       // Don't bother to generate correct code when the C++ path can never be
-      // taken. It'd be nice if we could tell LLVM the env pointer argument to
-      // Yang functions will never be null, so this check can be optimised out
-      // in many cases.
+      // taken (because that trampoline type has never been generated).
       llvm::Value* trampoline =
           get_reverse_trampoline_function(genf.type, false);
       llvm::Value* cpp_val = nullptr;
@@ -1234,6 +1273,22 @@ void IrGenerator::create_function(
     memory_store(Value(arg, &*it), storage);
     _symbol_table.add(name, Value(arg, storage));
   }
+
+  // Inform the optimiser that the eptr will never be null. This allows a lot
+  // of simplification in most cases.
+  // TODO: LLVM doesn't make as much use of it as I'd like, though, for reasons
+  // I can't quite work out. It correctly optimises out the C++ function check
+  // for recursive calls, and similarly for some refcount calls, but somehow
+  // it can't optimise out the very first check for the eptr refcounting?
+  auto notnull_block =
+      llvm::BasicBlock::Create(_b.b.getContext(), "notnull", function);
+  auto main_block =
+      llvm::BasicBlock::Create(_b.b.getContext(), "main", function);
+  llvm::Value* cmp = _b.b.CreateIsNull(eptr);
+  _b.b.CreateCondBr(cmp, notnull_block, main_block);
+  _b.b.SetInsertPoint(notnull_block);
+  _b.b.CreateUnreachable();
+  _b.b.SetInsertPoint(main_block);
 }
 
 Value IrGenerator::i2b(const Value& v)
@@ -1354,7 +1409,7 @@ void IrGenerator::update_reference_count(const Value& value, int_t change)
   if (!value.type.is_function()) {
     return;
   }
-  // TODO: for speed, Yang reference counting at least should be inlined.
+  // This reference counting is inlined.
   llvm::Value* fptr = _b.b.CreateExtractValue(value, 0, "fptr");
   llvm::Value* eptr = _b.b.CreateExtractValue(value, 1, "eptr");
   update_reference_count(fptr, eptr, change);

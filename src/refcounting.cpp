@@ -57,17 +57,6 @@ void update_function_refcount(NativeFunction<void>* target, int_t change)
   }
 }
 
-void update_refcount(
-    NativeFunction<void>* target, Prefix* structure, int_t change)
-{
-  if (target && !structure) {
-    update_function_refcount(target, change);
-  }
-  else if (structure) {
-    update_structure_refcount(structure, change);
-  }
-}
-
 void cleanup_cyclic_structures()
 {
   // This algorithm is just about the simplest one possible. Something more
