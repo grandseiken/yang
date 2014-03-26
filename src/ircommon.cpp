@@ -272,7 +272,8 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
   auto handle = [&]()
   {
     std::size_t i = 0;
-    for (auto it = function->arg_begin(); it != function->arg_end(); ++it, ++i) {
+    for (auto it = function->arg_begin();
+         it != function->arg_end(); ++it, ++i) {
       auto jt = it;
       if (++jt == function->arg_end()) {
         // Target is the last argument.
@@ -287,7 +288,8 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
       }
 
       if (it->getType()->isVectorTy()) {
-        for (std::size_t j = 0; j < it->getType()->getVectorNumElements(); ++j) {
+        for (std::size_t j = 0;
+             j < it->getType()->getVectorNumElements(); ++j) {
           llvm::Value* v =
               _b.b.CreateExtractElement(it, _b.constant_int(j), "vec");
           args.push_back(v);

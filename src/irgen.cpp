@@ -12,16 +12,6 @@ namespace llvm {
   class LLVMContext;
 }
 
-namespace std {
-  template<>
-  struct hash<yang::internal::IrGenerator::metadata> {
-    std::size_t operator()(yang::internal::IrGenerator::metadata v) const
-    {
-      return v;
-    }
-  };
-}
-
 namespace yang {
 namespace internal {
 
@@ -35,11 +25,6 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   : IrCommon(module, engine)
   , _module(module)
   , _context(context)
-  , _symbol_table(Value())
-  , _metadata(nullptr)
-  , _scope_to_function_map{{0, 0}}
-  , _function_scope(0)
-  , _update_refcount(nullptr)
   , _cleanup_structures(get_native_function(
       "cleanup_structures", (void_fp)&cleanup_structures,
       llvm::FunctionType::get(_b.void_type(), false)))
@@ -58,24 +43,24 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
 
   std::vector<llvm::Type*> args{
       _b.void_ptr_type(), _b.void_ptr_type(), _b.int_type()};
-  _update_refcount = llvm::Function::Create(
+  auto update_refcount = llvm::Function::Create(
       llvm::FunctionType::get(_b.void_type(), args, false),
       llvm::Function::InternalLinkage, "!update_refcount", &_module);
   auto entry = llvm::BasicBlock::Create(
-      _b.b.getContext(), "entry", _update_refcount);
+      _b.b.getContext(), "entry", update_refcount);
   auto function_block = llvm::BasicBlock::Create(
-      _b.b.getContext(), "function", _update_refcount);
+      _b.b.getContext(), "function", update_refcount);
   auto else_block = llvm::BasicBlock::Create(
-      _b.b.getContext(), "else", _update_refcount);
+      _b.b.getContext(), "else", update_refcount);
   auto structure_block = llvm::BasicBlock::Create(
-      _b.b.getContext(), "structure", _update_refcount);
+      _b.b.getContext(), "structure", update_refcount);
   auto last_block = llvm::BasicBlock::Create(
-      _b.b.getContext(), "last", _update_refcount);
+      _b.b.getContext(), "last", update_refcount);
 
   _b.b.SetInsertPoint(entry);
-  auto fptr = _update_refcount->arg_begin();
-  auto eptr = ++_update_refcount->arg_begin();
-  auto change = ++++_update_refcount->arg_begin();
+  auto fptr = update_refcount->arg_begin();
+  auto eptr = ++update_refcount->arg_begin();
+  auto change = ++++update_refcount->arg_begin();
   llvm::Value* fval = _b.b.CreateAnd(
       _b.b.CreateIsNotNull(fptr), _b.b.CreateIsNull(eptr));
   llvm::Value* eval = _b.b.CreateIsNotNull(eptr);
@@ -94,6 +79,10 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
 
   _b.b.SetInsertPoint(last_block);
   _b.b.CreateRetVoid();
+
+  // TODO: we're just using one FnScope structure that stores everything. Split
+  // into one per lexical function and simplify everything.
+  _functions.emplace_back(_b, update_refcount);
 
   // Set up the global data type. Since each program is designed to support
   // multiple independent instances running simultaeneously, the idea is to
@@ -150,7 +139,7 @@ void IrGenerator::emit_global_functions()
     auto it = getter->arg_begin();
     it->setName("global");
     _b.b.SetInsertPoint(getter_block);
-    _b.b.CreateRet(memory_load(
+    _b.b.CreateRet(_functions.back().memory_load(
         pair.second.type, structure_ptr(&*it, pair.second.index)));
 
     name = "!global_set_" + pair.first;
@@ -170,18 +159,19 @@ void IrGenerator::emit_global_functions()
     ++jt;
     jt->setName("global");
     _b.b.SetInsertPoint(setter_block);
-    memory_store(Value(pair.second.type, &*it),
-                 structure_ptr(&*jt, pair.second.index));
+    _functions.back().memory_store(Value(pair.second.type, &*it),
+                                   structure_ptr(&*jt, pair.second.index));
     _b.b.CreateRetVoid();
   }
 }
 
 void IrGenerator::preorder(const Node& node)
 {
+  auto& fback = _functions.back();
   switch (node.type) {
     case Node::GLOBAL:
     {
-      _metadata.push();
+      fback.metadata.push();
       // GLOBAL init functions don't need external linkage, since they are
       // called automatically by the externally-visible global structure
       // allocation function.
@@ -196,24 +186,25 @@ void IrGenerator::preorder(const Node& node)
       // structure pointer.
       auto it = function->arg_begin();
       it->setName("env");
-      _metadata.add(ENVIRONMENT_PTR, &*it);
-      _metadata.add(FUNCTION, function);
-      _metadata.add(PARENT_BLOCK, _b.b.GetInsertBlock());
+      fback.metadata.add(FnScope::ENVIRONMENT_PTR, &*it);
+      fback.metadata.add(FnScope::FUNCTION, function);
+      fback.metadata.add(
+          FnScope::PARENT_BLOCK, _b.b.GetInsertBlock());
       allocate_closure_struct(node.static_info.closed_environment, &*it);
 
-      _metadata.add(GLOBAL_INIT_FUNCTION, function);
+      fback.metadata.add(FnScope::GLOBAL_INIT_FUNCTION, function);
       _b.b.SetInsertPoint(block);
-      _symbol_table.push();
-      _refcount_locals.emplace_back();
-      _refcount_locals.back().emplace_back();
+      fback.symbol_table.push();
+      fback.rc_locals.emplace_back();
+      fback.rc_locals.back().emplace_back();
       break;
     }
 
     case Node::FUNCTION:
-      _metadata.push();
-      _metadata.add(TYPE_EXPR_CONTEXT, nullptr);
-      _refcount_locals.emplace_back();
-      _refcount_locals.back().emplace_back();
+      fback.metadata.push();
+      fback.metadata.add(FnScope::TYPE_EXPR_CONTEXT, nullptr);
+      fback.rc_locals.emplace_back();
+      fback.rc_locals.back().emplace_back();
       break;
     case Node::GLOBAL_ASSIGN:
     case Node::ASSIGN_VAR:
@@ -225,48 +216,48 @@ void IrGenerator::preorder(const Node& node)
       break;
 
     case Node::BLOCK:
-      _symbol_table.push();
-      _refcount_locals.back().emplace_back();
+      fback.symbol_table.push();
+      fback.rc_locals.back().emplace_back();
       break;
 
     case Node::IF_STMT:
     {
-      _metadata.push();
-      _symbol_table.push();
-      _refcount_locals.back().emplace_back();
-      create_block(IF_THEN_BLOCK, "then");
-      create_block(MERGE_BLOCK, "merge");
+      fback.metadata.push();
+      fback.symbol_table.push();
+      fback.rc_locals.back().emplace_back();
+      fback.create_block(FnScope::IF_THEN_BLOCK, "then");
+      fback.create_block(FnScope::MERGE_BLOCK, "merge");
       if (node.children.size() > 2) {
-        create_block(IF_ELSE_BLOCK, "else");
+        fback.create_block(FnScope::IF_ELSE_BLOCK, "else");
       }
       break;
     }
 
     case Node::FOR_STMT:
     {
-      _metadata.push();
-      _symbol_table.push();
-      _refcount_locals.back().emplace_back();
-      create_block(LOOP_COND_BLOCK, "cond");
-      create_block(LOOP_BODY_BLOCK, "loop");
-      auto after_block = create_block(LOOP_AFTER_BLOCK, "after");
-      auto merge_block = create_block(MERGE_BLOCK, "merge");
-      _metadata.add(LOOP_BREAK_LABEL, merge_block);
-      _metadata.add(LOOP_CONTINUE_LABEL, after_block);
+      fback.metadata.push();
+      fback.symbol_table.push();
+      fback.rc_locals.back().emplace_back();
+      fback.create_block(FnScope::LOOP_COND_BLOCK, "cond");
+      fback.create_block(FnScope::LOOP_BODY_BLOCK, "loop");
+      auto after_block = fback.create_block(FnScope::LOOP_AFTER_BLOCK, "after");
+      auto merge_block = fback.create_block(FnScope::MERGE_BLOCK, "merge");
+      fback.metadata.add(FnScope::LOOP_BREAK_LABEL, merge_block);
+      fback.metadata.add(FnScope::LOOP_CONTINUE_LABEL, after_block);
       break;
     }
 
     case Node::DO_WHILE_STMT:
     {
-      _metadata.push();
-      _symbol_table.push();
-      _refcount_loop_indices.push_back(_refcount_locals.back().size());
-      _refcount_locals.back().emplace_back();
-      auto loop_block = create_block(LOOP_BODY_BLOCK, "loop");
-      auto cond_block = create_block(LOOP_COND_BLOCK, "cond");
-      auto merge_block = create_block(MERGE_BLOCK, "merge");
-      _metadata.add(LOOP_BREAK_LABEL, merge_block);
-      _metadata.add(LOOP_CONTINUE_LABEL, cond_block);
+      fback.metadata.push();
+      fback.symbol_table.push();
+      fback.rc_loop_indices.push_back(fback.rc_locals.back().size());
+      fback.rc_locals.back().emplace_back();
+      auto loop_block = fback.create_block(FnScope::LOOP_BODY_BLOCK, "loop");
+      auto cond_block = fback.create_block(FnScope::LOOP_COND_BLOCK, "cond");
+      auto merge_block = fback.create_block(FnScope::MERGE_BLOCK, "merge");
+      fback.metadata.add(FnScope::LOOP_BREAK_LABEL, merge_block);
+      fback.metadata.add(FnScope::LOOP_CONTINUE_LABEL, cond_block);
 
       _b.b.CreateBr(loop_block);
       _b.b.SetInsertPoint(loop_block);
@@ -279,19 +270,20 @@ void IrGenerator::preorder(const Node& node)
 
 void IrGenerator::infix(const Node& node, const result_list& results)
 {
+  auto& fback = _functions.back();
   switch (node.type) {
     case Node::FUNCTION:
     {
-      _metadata.pop();
+      fback.metadata.pop();
       create_function(node, results[0].type);
       break;
     }
 
     case Node::IF_STMT:
     {
-      auto then_block = (llvm::BasicBlock*)_metadata[IF_THEN_BLOCK];
-      auto else_block = (llvm::BasicBlock*)_metadata[IF_ELSE_BLOCK];
-      auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
+      auto then_block = fback.get_block(FnScope::IF_THEN_BLOCK);
+      auto else_block = fback.get_block(FnScope::IF_ELSE_BLOCK);
+      auto merge_block = fback.get_block(FnScope::MERGE_BLOCK);
 
       if (results.size() == 1) {
         bool has_else = node.children.size() > 2;
@@ -308,16 +300,16 @@ void IrGenerator::infix(const Node& node, const result_list& results)
 
     case Node::FOR_STMT:
     {
-      auto cond_block = (llvm::BasicBlock*)_metadata[LOOP_COND_BLOCK];
-      auto loop_block = (llvm::BasicBlock*)_metadata[LOOP_BODY_BLOCK];
-      auto after_block = (llvm::BasicBlock*)_metadata[LOOP_AFTER_BLOCK];
-      auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
+      auto cond_block = fback.get_block(FnScope::LOOP_COND_BLOCK);
+      auto loop_block = fback.get_block(FnScope::LOOP_BODY_BLOCK);
+      auto after_block = fback.get_block(FnScope::LOOP_AFTER_BLOCK);
+      auto merge_block = fback.get_block(FnScope::MERGE_BLOCK);
 
       if (results.size() == 1) {
         _b.b.CreateBr(cond_block);
         _b.b.SetInsertPoint(cond_block);
-        _refcount_loop_indices.push_back(_refcount_locals.back().size());
-        _refcount_locals.back().emplace_back();
+        fback.rc_loop_indices.push_back(fback.rc_locals.back().size());
+        fback.rc_locals.back().emplace_back();
       }
       if (results.size() == 2) {
         auto parent = _b.b.GetInsertBlock()->getParent();
@@ -325,7 +317,7 @@ void IrGenerator::infix(const Node& node, const result_list& results)
             llvm::BasicBlock::Create(_b.b.getContext(), "clean", parent);
         _b.b.CreateCondBr(i2b(results[1]), loop_block, clean_block);
         _b.b.SetInsertPoint(clean_block);
-        dereference_scoped_locals();
+        fback.dereference_scoped_locals();
         _b.b.CreateBr(merge_block);
         _b.b.SetInsertPoint(after_block);
       }
@@ -338,13 +330,13 @@ void IrGenerator::infix(const Node& node, const result_list& results)
 
     case Node::DO_WHILE_STMT:
     {
-      auto cond_block = (llvm::BasicBlock*)_metadata[LOOP_COND_BLOCK];
-      dereference_scoped_locals();
-      _refcount_loop_indices.pop_back();
-      _refcount_locals.back().pop_back();
-      _symbol_table.pop();
-      _symbol_table.push();
-      _refcount_locals.back().emplace_back();
+      auto cond_block = fback.get_block(FnScope::LOOP_COND_BLOCK);
+      fback.dereference_scoped_locals();
+      fback.rc_loop_indices.pop_back();
+      fback.rc_locals.back().pop_back();
+      fback.symbol_table.pop();
+      fback.symbol_table.push();
+      fback.rc_locals.back().emplace_back();
       _b.b.CreateBr(cond_block);
       _b.b.SetInsertPoint(cond_block);
       break;
@@ -358,25 +350,25 @@ void IrGenerator::infix(const Node& node, const result_list& results)
       }
 
       if (results.size() == 1) {
-        _metadata.push();
+        fback.metadata.push();
 
         // Blocks and branching are necessary (as opposed to a select
         // instruction) to short-circuit and avoiding evaluating the other path.
-        auto then_block = create_block(IF_THEN_BLOCK, "then");
-        auto else_block = create_block(IF_ELSE_BLOCK, "else");
-        create_block(MERGE_BLOCK, "merge");
+        auto then_block = fback.create_block(FnScope::IF_THEN_BLOCK, "then");
+        auto else_block = fback.create_block(FnScope::IF_ELSE_BLOCK, "else");
+        fback.create_block(FnScope::MERGE_BLOCK, "merge");
 
         _b.b.CreateCondBr(i2b(results[0]), then_block, else_block);
         _b.b.SetInsertPoint(then_block);
       }
       if (results.size() == 2) {
-        auto else_block = (llvm::BasicBlock*)_metadata[IF_ELSE_BLOCK];
-        auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
+        auto else_block = fback.get_block(FnScope::IF_ELSE_BLOCK);
+        auto merge_block = fback.get_block(FnScope::MERGE_BLOCK);
         _b.b.CreateBr(merge_block);
 
         // Metadata blocks must always be updated to the current one, in case we
         // created a bunch of new ones before we got to the end!
-        _metadata[IF_THEN_BLOCK] = _b.b.GetInsertBlock();
+        fback.metadata[FnScope::IF_THEN_BLOCK] = _b.b.GetInsertBlock();
         _b.b.SetInsertPoint(else_block);
       }
       break;
@@ -393,10 +385,11 @@ void IrGenerator::infix(const Node& node, const result_list& results)
       if (results[0].type.is_vector()) {
         break;
       }
-      _metadata.push();
-      _metadata.add(LOGICAL_OP_SOURCE_BLOCK, &*_b.b.GetInsertPoint());
-      auto rhs_block = create_block(LOGICAL_OP_RHS_BLOCK, "rhs");
-      auto merge_block = create_block(MERGE_BLOCK, "merge");
+      fback.metadata.push();
+      fback.metadata.add(FnScope::LOGICAL_OP_SOURCE_BLOCK, 
+                         &*_b.b.GetInsertPoint());
+      auto rhs_block = fback.create_block(FnScope::LOGICAL_OP_RHS_BLOCK, "rhs");
+      auto merge_block = fback.create_block(FnScope::MERGE_BLOCK, "merge");
 
       if (node.type == Node::LOGICAL_OR) {
         _b.b.CreateCondBr(i2b(results[0]), merge_block, rhs_block);
@@ -416,6 +409,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
 {
   auto parent = _b.b.GetInsertBlock() ?
       _b.b.GetInsertBlock()->getParent() : nullptr;
+  auto& fback = _functions.back();
 
   switch (node.type) {
     case Node::TYPE_VOID:
@@ -437,14 +431,14 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     }
 
     case Node::GLOBAL:
-      dereference_scoped_locals(0);
+      fback.dereference_scoped_locals(0);
       if (!node.static_info.closed_environment.empty()) {
-        _scope_closures.pop_back();
+        fback.scope_closures.pop_back();
       }
       _b.b.CreateRetVoid();
-      _symbol_table.pop();
-      _metadata.pop();
-      _refcount_locals.pop_back();
+      fback.symbol_table.pop();
+      fback.metadata.pop();
+      fback.rc_locals.pop_back();
       return results[0];
     case Node::GLOBAL_ASSIGN:
     {
@@ -456,15 +450,16 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
         function->setLinkage(llvm::Function::ExternalLinkage);
       }
       function->setName(node.children[0]->string_value);
-      _symbol_table.add(node.children[0]->string_value, results[1]);
+      fback.symbol_table.add(node.children[0]->string_value, results[1]);
       return results[1];
     }
     case Node::FUNCTION:
     {
       if (results[0].type.get_function_return_type().is_void()) {
-        dereference_scoped_locals(0);
-        if (_metadata[CLOSURE_PTR]) {
-          update_reference_count(nullptr, _metadata[CLOSURE_PTR], -1);
+        fback.dereference_scoped_locals(0);
+        if (fback.metadata[FnScope::CLOSURE_PTR]) {
+          fback.update_reference_count(
+              nullptr, fback.metadata[FnScope::CLOSURE_PTR], -1);
         }
         _b.b.CreateRetVoid();
       }
@@ -473,22 +468,22 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
         // this point; but the block must have a terminator.
         _b.b.CreateBr(_b.b.GetInsertBlock());
       }
-      auto parent_block = (llvm::BasicBlock*)_metadata[PARENT_BLOCK];
+      auto parent_block = fback.get_block(FnScope::PARENT_BLOCK);
 
       if (!node.static_info.closed_environment.empty()) {
-        _scope_closures.pop_back();
+        fback.scope_closures.pop_back();
       }
-      _symbol_table.pop();
-      _symbol_table.pop();
-      _metadata.pop();
+      fback.symbol_table.pop();
+      fback.symbol_table.pop();
+      fback.metadata.pop();
       // After metadata pop, function created closure iff closure pointer
       // exists.
-      if (_metadata[CLOSURE_PTR]) {
-        --_function_scope;
-        _scope_to_function_map.erase(--_scope_to_function_map.end());
+      if (fback.metadata[FnScope::CLOSURE_PTR]) {
+        --fback.function_scope;
+        fback.scope_to_function_map.erase(--fback.scope_to_function_map.end());
       }
-      _refcount_locals.pop_back();
-      if (!_metadata.has(FUNCTION)) {
+      fback.rc_locals.pop_back();
+      if (!fback.metadata.has(FnScope::FUNCTION)) {
         return Value(results[0].type, parent);
       }
       // If this was a nested function, set the insert point back to the last
@@ -500,10 +495,10 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       // of inner functions never creates a closure, where we could instead
       // dereference and pass only the closure scopes they actually access; it's
       // kind of complicated and not really a huge optimisation, though.
-      auto closure = _metadata[CLOSURE_PTR];
+      auto closure = fback.metadata[FnScope::CLOSURE_PTR];
       return _b.function_value(
           results[0].type,
-          parent, closure ? closure : _metadata[ENVIRONMENT_PTR]);
+          parent, closure ? closure : fback.metadata[FnScope::ENVIRONMENT_PTR]);
     }
     case Node::NAMED_EXPRESSION:
       return results[0];
@@ -515,9 +510,9 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
           llvm::BasicBlock::Create(_b.b.getContext(), "after", parent);
       _b.b.CreateBr(after_block);
       _b.b.SetInsertPoint(after_block);
-      _symbol_table.pop();
-      dereference_scoped_locals();
-      _refcount_locals.back().pop_back();
+      fback.symbol_table.pop();
+      fback.dereference_scoped_locals();
+      fback.rc_locals.back().pop_back();
       return Value();
     }
     case Node::EMPTY_STMT:
@@ -529,9 +524,10 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     {
       auto dead_block =
           llvm::BasicBlock::Create(_b.b.getContext(), "dead", parent);
-      dereference_scoped_locals(0);
-      if (_metadata[CLOSURE_PTR]) {
-        update_reference_count(nullptr, _metadata[CLOSURE_PTR], -1);
+      fback.dereference_scoped_locals(0);
+      if (fback.metadata[FnScope::CLOSURE_PTR]) {
+        fback.update_reference_count(
+            nullptr, fback.metadata[FnScope::CLOSURE_PTR], -1);
       }
       node.type == Node::RETURN_STMT ?
           _b.b.CreateRet(results[0]) : _b.b.CreateRetVoid();
@@ -540,39 +536,39 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     }
     case Node::IF_STMT:
     {
-      auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
-      _symbol_table.pop();
-      _metadata.pop();
+      auto merge_block = fback.get_block(FnScope::MERGE_BLOCK);
+      fback.symbol_table.pop();
+      fback.metadata.pop();
 
       _b.b.CreateBr(merge_block);
       _b.b.SetInsertPoint(merge_block);
-      dereference_scoped_locals();
-      _refcount_locals.back().pop_back();
+      fback.dereference_scoped_locals();
+      fback.rc_locals.back().pop_back();
       return results[0];
     }
     case Node::FOR_STMT:
     {
-      auto after_block = (llvm::BasicBlock*)_metadata[LOOP_AFTER_BLOCK];
-      auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
-      _symbol_table.pop();
-      _metadata.pop();
-      dereference_scoped_locals();
-      _refcount_loop_indices.pop_back();
-      _refcount_locals.back().pop_back();
+      auto after_block = fback.get_block(FnScope::LOOP_AFTER_BLOCK);
+      auto merge_block = fback.get_block(FnScope::MERGE_BLOCK);
+      fback.symbol_table.pop();
+      fback.metadata.pop();
+      fback.dereference_scoped_locals();
+      fback.rc_loop_indices.pop_back();
+      fback.rc_locals.back().pop_back();
 
       _b.b.CreateBr(after_block);
       _b.b.SetInsertPoint(merge_block);
-      dereference_scoped_locals();
-      _refcount_locals.back().pop_back();
+      fback.dereference_scoped_locals();
+      fback.rc_locals.back().pop_back();
       return results[0];
     }
     case Node::DO_WHILE_STMT:
     {
-      auto loop_block = (llvm::BasicBlock*)_metadata[LOOP_BODY_BLOCK];
-      auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
-      _metadata.pop();
-      dereference_scoped_locals();
-      _refcount_locals.back().pop_back();
+      auto loop_block = fback.get_block(FnScope::LOOP_BODY_BLOCK);
+      auto merge_block = fback.get_block(FnScope::MERGE_BLOCK);
+      fback.metadata.pop();
+      fback.dereference_scoped_locals();
+      fback.rc_locals.back().pop_back();
 
       _b.b.CreateCondBr(i2b(results[1]), loop_block, merge_block);
       _b.b.SetInsertPoint(merge_block);
@@ -581,12 +577,12 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     case Node::BREAK_STMT:
     case Node::CONTINUE_STMT:
     {
-      dereference_scoped_locals(_refcount_loop_indices.back());
+      fback.dereference_scoped_locals(fback.rc_loop_indices.back());
       auto dead_block =
           llvm::BasicBlock::Create(_b.b.getContext(), "dead", parent);
-      _b.b.CreateBr((llvm::BasicBlock*)_metadata[
-          node.type == Node::BREAK_STMT ? LOOP_BREAK_LABEL :
-                                          LOOP_CONTINUE_LABEL]);
+      _b.b.CreateBr(fback.get_block(
+          node.type == Node::BREAK_STMT ? FnScope::LOOP_BREAK_LABEL :
+                                          FnScope::LOOP_CONTINUE_LABEL));
       _b.b.SetInsertPoint(dead_block);
       return Value();
     }
@@ -607,33 +603,34 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     case Node::IDENTIFIER:
     {
       // In type-context, we just want to return a user type.
-      if (_metadata.has(TYPE_EXPR_CONTEXT)) {
+      if (fback.metadata.has(FnScope::TYPE_EXPR_CONTEXT)) {
         return yang::Type::user_t();
       }
 
       // Load the local variable, if it's there.
-      if (_symbol_table.has(node.string_value) &&
-          _symbol_table.index(node.string_value)) {
-        return memory_load(_symbol_table[node.string_value].type,
-                           get_variable_ptr(node.string_value));
+      if (fback.symbol_table.has(node.string_value) &&
+          fback.symbol_table.index(node.string_value)) {
+        return fback.memory_load(fback.symbol_table[node.string_value].type,
+                                 get_variable_ptr(node.string_value));
       }
       // Otherwise it's a top-level function, global, or context function. We
       // must be careful to only return globals/functions *after* they have been
       // defined, otherwise it might be a reference to a context function of the
       // same name.
-      if (_symbol_table.has(node.string_value)) {
+      if (fback.symbol_table.has(node.string_value)) {
         // If the symbol table entry is non-null it's a top-level function; just
         // get the value.
-        if (_symbol_table.get(node.string_value, 0)) {
+        if (fback.symbol_table.get(node.string_value, 0)) {
           return _b.function_value(
-              _symbol_table.get(node.string_value, 0).type,
-              _symbol_table.get(node.string_value, 0),
+              fback.symbol_table.get(node.string_value, 0).type,
+              fback.symbol_table.get(node.string_value, 0),
               global_ptr());
         }
         // Otherwise it's a global, so look up in the global structure with a
         // byte-aligned load.
-        return memory_load(_symbol_table.get(node.string_value, 0).type,
-                           global_ptr(node.string_value));
+        return fback.memory_load(
+            fback.symbol_table.get(node.string_value, 0).type,
+            global_ptr(node.string_value));
       }
 
       // It's possible that nothing matches, when this is the identifier on the
@@ -656,16 +653,17 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     {
       if (results[0].type.is_vector()) {
         // Vectorised ternary. Short-circuiting isn't possible.
-        return Value(results[1].type,
-                     _b.b.CreateSelect(i2b(results[0]), results[1], results[2]));
+        return Value(
+            results[1].type,
+            _b.b.CreateSelect(i2b(results[0]), results[1], results[2]));
       }
       // Update in case we branched again.
-      _metadata[IF_ELSE_BLOCK] = _b.b.GetInsertBlock();
+      fback.metadata[FnScope::IF_ELSE_BLOCK] = _b.b.GetInsertBlock();
 
-      auto then_block = (llvm::BasicBlock*)_metadata[IF_THEN_BLOCK];
-      auto else_block = (llvm::BasicBlock*)_metadata[IF_ELSE_BLOCK];
-      auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
-      _metadata.pop();
+      auto then_block = fback.get_block(FnScope::IF_THEN_BLOCK);
+      auto else_block = fback.get_block(FnScope::IF_ELSE_BLOCK);
+      auto merge_block = fback.get_block(FnScope::MERGE_BLOCK);
+      fback.metadata.pop();
       _b.b.CreateBr(merge_block);
       _b.b.SetInsertPoint(merge_block);
       auto phi = _b.b.CreatePHI(results[1].llvm_type(), 2, "tern");
@@ -675,7 +673,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     }
     case Node::CALL:
     {
-      if (_metadata.has(TYPE_EXPR_CONTEXT)) {
+      if (fback.metadata.has(FnScope::TYPE_EXPR_CONTEXT)) {
         goto type_function;
       }
       std::vector<llvm::Value*> args;
@@ -743,8 +741,8 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
         }
         phi_v->addIncoming(yang_val, yang_block);
         // Reference count the temporary.
-        update_reference_count(phi, 1);
-        _refcount_locals.back().back().push_back(phi);
+        fback.update_reference_count(phi, 1);
+        fback.rc_locals.back().back().push_back(phi);
         return phi;
       }
       return Value();
@@ -758,13 +756,12 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
         return b2i(binary(node, i2b(results[0]), i2b(results[1])));
       }
       // Update in case we branched again.
-      _metadata[LOGICAL_OP_RHS_BLOCK] = _b.b.GetInsertBlock();
+      fback.metadata[FnScope::LOGICAL_OP_RHS_BLOCK] = _b.b.GetInsertBlock();
 
-      auto source_block =
-          (llvm::BasicBlock*)_metadata[LOGICAL_OP_SOURCE_BLOCK];
-      auto rhs_block = (llvm::BasicBlock*)_metadata[LOGICAL_OP_RHS_BLOCK];
-      auto merge_block = (llvm::BasicBlock*)_metadata[MERGE_BLOCK];
-      _metadata.pop();
+      auto source_block = fback.get_block(FnScope::LOGICAL_OP_SOURCE_BLOCK);
+      auto rhs_block = fback.get_block(FnScope::LOGICAL_OP_RHS_BLOCK);
+      auto merge_block = fback.get_block(FnScope::MERGE_BLOCK);
+      fback.metadata.pop();
 
       auto rhs = b2i(i2b(results[1]));
       _b.b.CreateBr(merge_block);
@@ -879,13 +876,13 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     {
       // See Node::IDENTIFIER.
       const std::string& s = node.children[0]->string_value;
-      if (_symbol_table[s]) {
-        memory_store(results[1], get_variable_ptr(s));
+      if (fback.symbol_table[s]) {
+        fback.memory_store(results[1], get_variable_ptr(s));
       }
       // We can't store values for globals in the symbol table since the lookup
       // depends on the current function's environment pointer argument.
       else {
-        memory_store(results[1], global_ptr(s));
+        fback.memory_store(results[1], global_ptr(s));
       }
       return results[1];
     }
@@ -897,9 +894,10 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       // In a global block, rather than allocating anything we simply store into
       // the prepared fields of the global structure. Also enter the symbol now
       // with a null value so we can distinguish it from top-level functions.
-      if (_metadata.has(GLOBAL_INIT_FUNCTION) && _symbol_table.size() <= 3) {
-        _symbol_table.add(s, 0, Value(results[1].type));
-        memory_store(results[1], global_ptr(s));
+      if (fback.metadata.has(FnScope::GLOBAL_INIT_FUNCTION) &&
+          fback.symbol_table.size() <= 3) {
+        fback.symbol_table.add(s, 0, Value(results[1].type));
+        fback.memory_store(results[1], global_ptr(s));
         return results[1];
       }
 
@@ -907,9 +905,9 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
           s + "/" + std::to_string(node.static_info.scope_number);
 
       llvm::Value* storage = nullptr;
-      if (_symbol_table.has(unique_name)) {
-        storage = _symbol_table[unique_name];
-        _value_to_unique_name_map.emplace(storage, unique_name);
+      if (fback.symbol_table.has(unique_name)) {
+        storage = fback.symbol_table[unique_name];
+        fback.value_to_unique_name_map.emplace(storage, unique_name);
       }
       else {
         // Optimisation passes such as mem2reg work much better when memory
@@ -921,13 +919,13 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
         llvm::IRBuilder<> entry(&entry_block, entry_block.begin());
         storage = entry.CreateAlloca(
             _b.get_llvm_type(results[1].type), nullptr, s);
-        memory_init(entry, storage);
-        _refcount_locals.back().back().push_back(
+        fback.memory_init(entry, storage);
+        fback.rc_locals.back().back().push_back(
             Value(results[1].type, storage));
       }
 
-      memory_store(results[1], storage);
-      _symbol_table.add(s, Value(results[1].type, storage));
+      fback.memory_store(results[1], storage);
+      fback.symbol_table.add(s, Value(results[1].type, storage));
       return results[1];
     }
 
@@ -969,10 +967,12 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
   }
 }
 
-IrGenerator::structure_t IrGenerator::init_structure_type(
+Structure IrGenerator::init_structure_type(
     const symbol_frame& symbols, const std::string& name)
 {
-  structure_t st;
+  auto& fback = _functions.back();
+
+  Structure st;
   // Since the structure may contain pointers to functions which take the type
   // itself as an argument, the variable must be set (to an opaque type).
   auto struct_type =
@@ -1001,7 +1001,7 @@ IrGenerator::structure_t IrGenerator::init_structure_type(
     // Type-calculation must be kept up-to-date with new types, or globals of
     // that type will fail.
     type_list.push_back(_b.get_llvm_type(pair.second));
-    st.table[pair.first] = structure_entry(pair.second, number++);
+    st.table[pair.first] = Structure::entry(pair.second, number++);
   }
   struct_type->setBody(type_list, false);
   bool global_data = name == "global_data";
@@ -1018,17 +1018,17 @@ IrGenerator::structure_t IrGenerator::init_structure_type(
   // Make sure to decrement the reference count on each global variable on
   // destruction.
   for (const auto& pair : st.table) {
-    Value old = memory_load(pair.second.type,
-                            structure_ptr(&*it, pair.second.index));
-    update_reference_count(old, -1);
+    Value old = fback.memory_load(
+        pair.second.type, structure_ptr(&*it, pair.second.index));
+    fback.update_reference_count(old, -1);
   }
-  llvm::Value* parent =
-      memory_load(yang::Type::void_t(), structure_ptr(&*it, 0));
+  llvm::Value* parent = fback.memory_load(
+      yang::Type::void_t(), structure_ptr(&*it, 0));
   if (global_data) {
     _b.b.CreateCall(_destroy_internals, parent);
   }
   else {
-    update_reference_count(nullptr, parent, -1);
+    fback.update_reference_count(nullptr, parent, -1);
   }
   _b.b.CreateRetVoid();
 
@@ -1049,7 +1049,7 @@ IrGenerator::structure_t IrGenerator::init_structure_type(
     if (!pair.second.type.is_function()) {
       continue;
     }
-    llvm::Value* f = memory_load(
+    llvm::Value* f = fback.memory_load(
         pair.second.type, structure_ptr(&*it, pair.second.index));
     llvm::Value* eptr = _b.b.CreateExtractValue(f, 1, "eptr");
     std::vector<llvm::Value*> indices{_b.constant_int(st.refout_count)};
@@ -1058,7 +1058,8 @@ IrGenerator::structure_t IrGenerator::init_structure_type(
   }
   // Also output the parent pointer.
   if (!global_data) {
-    llvm::Value* v = memory_load(yang::Type::void_t(), structure_ptr(&*it, 0));
+    llvm::Value* v = fback.memory_load(
+        yang::Type::void_t(), structure_ptr(&*it, 0));
     std::vector<llvm::Value*> indices{_b.constant_int(st.refout_count)};
     _b.b.CreateAlignedStore(v, _b.b.CreateGEP(jt, indices, "out"), 1);
     ++st.refout_count;
@@ -1069,8 +1070,9 @@ IrGenerator::structure_t IrGenerator::init_structure_type(
   return st;
 }
 
-llvm::Value* IrGenerator::allocate_structure_value(const structure_t& st)
+llvm::Value* IrGenerator::allocate_structure_value(const Structure& st)
 {
+  auto& fback = _functions.back();
   llvm::Type* llvm_size_t =
       llvm::IntegerType::get(_b.b.getContext(), 8 * sizeof(std::size_t));
 
@@ -1088,18 +1090,18 @@ llvm::Value* IrGenerator::allocate_structure_value(const structure_t& st)
   // Call malloc, make sure refcounted memory is initialised, and return the
   // pointer.
   llvm::Value* v = _b.b.CreateCall(malloc_ptr, size_of, "call");
-  memory_store(Value(yang::Type::void_t(), _b.constant_ptr(nullptr)),
-               structure_ptr(v, 0));
+  fback.memory_store(Value(yang::Type::void_t(), _b.constant_ptr(nullptr)),
+                     structure_ptr(v, 0));
 
-  memory_store(_b.constant_int(0), structure_ptr(v, 1));
-  memory_store(Value(yang::Type::void_t(), st.destructor),
-               structure_ptr(v, 2));
+  fback.memory_store(_b.constant_int(0), structure_ptr(v, 1));
+  fback.memory_store(Value(yang::Type::void_t(), st.destructor),
+                     structure_ptr(v, 2));
 
-  memory_store(_b.constant_int(st.refout_count), structure_ptr(v, 3));
-  memory_store(Value(yang::Type::void_t(), st.refout_query),
-               structure_ptr(v, 4));
+  fback.memory_store(_b.constant_int(st.refout_count), structure_ptr(v, 3));
+  fback.memory_store(Value(yang::Type::void_t(), st.refout_query),
+                     structure_ptr(v, 4));
   for (const auto& pair : st.table) {
-    memory_init(_b.b, structure_ptr(v, pair.second.index));
+    fback.memory_init(_b.b, structure_ptr(v, pair.second.index));
   }
   return v;
 }
@@ -1107,25 +1109,26 @@ llvm::Value* IrGenerator::allocate_structure_value(const structure_t& st)
 llvm::Value* IrGenerator::allocate_closure_struct(
     const symbol_frame& symbols, llvm::Value* parent_ptr)
 {
+  auto& fback = _functions.back();
   if (symbols.empty()) {
     // Store a nullptr to be explicit.
-    _metadata.add(CLOSURE_PTR, nullptr);
+    fback.metadata.add(FnScope::CLOSURE_PTR, nullptr);
     return nullptr;
   }
 
   // Handle closure-structure initialisation.
-  structure_t closure_st = init_structure_type(symbols, "closure");
+  Structure closure_st = init_structure_type(symbols, "closure");
   llvm::Value* closure_value = allocate_structure_value(closure_st);
   // Store in metadata.
-  _metadata.add(CLOSURE_PTR, closure_value);
-  _scope_closures.push_back(closure_st);
+  fback.metadata.add(FnScope::CLOSURE_PTR, closure_value);
+  fback.scope_closures.push_back(closure_st);
 
   // Store parent pointer in the first slot.
   auto parent_void_ptr =
       _b.b.CreateBitCast(parent_ptr, _b.void_ptr_type());
-  memory_store(Value(yang::Type::void_t(), parent_void_ptr),
-               structure_ptr(closure_value, 0));
-  update_reference_count(nullptr, parent_void_ptr, 1);
+  fback.memory_store(Value(yang::Type::void_t(), parent_void_ptr),
+                     structure_ptr(closure_value, 0));
+  fback.update_reference_count(nullptr, parent_void_ptr, 1);
   // Set up the symbol-table for all the rest. If a closed variable "v"
   // appears in scope #1, for instance, we store "v/1" in the symbol table
   // with a pointer into the closure-structure.
@@ -1136,7 +1139,7 @@ llvm::Value* IrGenerator::allocate_closure_struct(
   for (const auto& pair : closure_st.table) {
     llvm::Value* ptr =
         structure_ptr(closure_value, pair.second.index);
-    _symbol_table.add(pair.first, Value(pair.second.type, ptr));
+    fback.symbol_table.add(pair.first, Value(pair.second.type, ptr));
   }
   return closure_value;
 }
@@ -1148,7 +1151,7 @@ llvm::Value* IrGenerator::get_parent_struct(
       llvm::StructType::create(_b.b.getContext(), _b.void_ptr_type()), 0);
   llvm::Value* u = v;
   for (std::size_t i = 0; i < parent_steps; ++i) {
-    u = memory_load(
+    u = _functions.back().memory_load(
         yang::Type::void_t(),
         structure_ptr(_b.b.CreateBitCast(u, void_ptr_ptr), 0));
   }
@@ -1157,25 +1160,28 @@ llvm::Value* IrGenerator::get_parent_struct(
 
 llvm::Value* IrGenerator::get_variable_ptr(const std::string& name)
 {
+  auto& fback = _functions.back();
   // See notes in header file about the flow here.
-  auto it = _scope_to_function_map.upper_bound(_symbol_table.index(name));
-  llvm::Value* v = _symbol_table[name];
+  auto it = fback.scope_to_function_map.upper_bound(
+      _functions.back().symbol_table.index(name));
+  llvm::Value* v = _functions.back().symbol_table[name];
 
-  if (it == _scope_to_function_map.begin() ||
-      it == _scope_to_function_map.end()) {
+  if (it == fback.scope_to_function_map.begin() ||
+      it == fback.scope_to_function_map.end()) {
     return v;
   }
 
   // These indices now must be different.
   std::size_t closure_index = (--it)->second;
-  std::size_t current_index = _scope_to_function_map.rbegin()->second;
+  std::size_t current_index = fback.scope_to_function_map.rbegin()->second;
 
-  const std::string& unique_name = _value_to_unique_name_map[v];
+  const std::string& unique_name = fback.value_to_unique_name_map[v];
   llvm::Value* closure_ptr = get_parent_struct(
-      current_index - closure_index - 1, _metadata[ENVIRONMENT_PTR]);
-  llvm::Type* closure_type = _scope_closures[closure_index].type;
+      current_index - closure_index - 1,
+      _functions.back().metadata[FnScope::ENVIRONMENT_PTR]);
+  llvm::Type* closure_type = fback.scope_closures[closure_index].type;
   std::size_t struct_index =
-      _scope_closures[closure_index].table[unique_name].index;
+      fback.scope_closures[closure_index].table[unique_name].index;
   return structure_ptr(
       _b.b.CreateBitCast(closure_ptr, closure_type), struct_index);
 }
@@ -1183,7 +1189,7 @@ llvm::Value* IrGenerator::get_variable_ptr(const std::string& name)
 void IrGenerator::create_function(
     const Node& node, const yang::Type& function_type)
 {
-  _metadata.push();
+  _functions.back().metadata.push();
 
   // Linkage will be set later if necessary.
   auto llvm_type = _b.raw_function_type(function_type);
@@ -1195,18 +1201,21 @@ void IrGenerator::create_function(
   // pointer.
   auto eptr = --function->arg_end();
   eptr->setName("env");
-  _metadata.add(ENVIRONMENT_PTR, &*eptr);
-  _metadata.add(FUNCTION, function);
-  _metadata.add(PARENT_BLOCK, &*_b.b.GetInsertPoint());
+  _functions.back().metadata.add(FnScope::ENVIRONMENT_PTR, &*eptr);
+  _functions.back().metadata.add(FnScope::FUNCTION, function);
+  _functions.back().metadata.add(FnScope::PARENT_BLOCK,
+                                 &*_b.b.GetInsertPoint());
 
   auto block = llvm::BasicBlock::Create(_b.b.getContext(), "entry", function);
   _b.b.SetInsertPoint(block);
 
   // Increase depth of scope pointers if the parent function created a closure.
-  if (_metadata[CLOSURE_PTR]) {
-    _scope_to_function_map.emplace(_symbol_table.size(), ++_function_scope);
+  if (_functions.back().metadata[FnScope::CLOSURE_PTR]) {
+    _functions.back().scope_to_function_map.emplace(
+        _functions.back().symbol_table.size(),
+        ++_functions.back().function_scope);
   }
-  _symbol_table.push();
+  _functions.back().symbol_table.push();
   // Some optimisations may be possible. For example, const variables may not
   // need to go in the closure structure. Maybe LLVM can handle that anyway?
   //
@@ -1216,8 +1225,9 @@ void IrGenerator::create_function(
   // separate structures for each (and potentially return unused memory sooner).
   allocate_closure_struct(node.static_info.closed_environment, &*eptr);
   // Refcounting on closure pointer.
-  if (_metadata[CLOSURE_PTR]) {
-    update_reference_count(nullptr, _metadata[CLOSURE_PTR], 1);
+  if (_functions.back().metadata[FnScope::CLOSURE_PTR]) {
+    _functions.back().update_reference_count(
+        nullptr, _functions.back().metadata[FnScope::CLOSURE_PTR], 1);
   }
 
   // Lambda for deciding whether to put an argument in closure or stack.
@@ -1227,9 +1237,9 @@ void IrGenerator::create_function(
     std::string unique_name =
         name + "/" + std::to_string(node.static_info.scope_number + scope_mod);
 
-    if (_symbol_table.has(unique_name)) {
-      llvm::Value* v = _symbol_table[unique_name];
-      _value_to_unique_name_map.emplace(v, unique_name);
+    if (_functions.back().symbol_table.has(unique_name)) {
+      llvm::Value* v = _functions.back().symbol_table[unique_name];
+      _functions.back().value_to_unique_name_map.emplace(v, unique_name);
       return v;
     }
     // Rather than reference argument values directly, we create an alloca
@@ -1237,8 +1247,8 @@ void IrGenerator::create_function(
     // can emit the same IR code when referencing local variables or
     // function arguments.
     llvm::Value* v = _b.b.CreateAlloca(_b.get_llvm_type(type), nullptr, name);
-    _refcount_locals.back().back().push_back(Value(type, v));
-    memory_init(_b.b, v);
+    _functions.back().rc_locals.back().back().push_back(Value(type, v));
+    _functions.back().memory_init(_b.b, v);
     return v;
   };
 
@@ -1251,11 +1261,13 @@ void IrGenerator::create_function(
     // assignment has its own scope in-between.
     llvm::Value* storage =
         assign_storage(function_type, _immediate_left_assign, -2);
-    memory_store(_b.function_value(function_type, function, eptr), storage);
-    _symbol_table.add(_immediate_left_assign, Value(function_type, storage));
+    _functions.back().memory_store(
+        _b.function_value(function_type, function, eptr), storage);
+    _functions.back().symbol_table.add(
+        _immediate_left_assign, Value(function_type, storage));
     _immediate_left_assign.clear();
   }
-  _symbol_table.push();
+  _functions.back().symbol_table.push();
 
   // Set up the arguments.
   std::size_t arg_num = 0;
@@ -1270,8 +1282,8 @@ void IrGenerator::create_function(
     // It's possible refcounting isn't necessary on arguments, since they're
     // const and will usually be referenced somewhere up the call stack. I'm not
     // convinced, though.
-    memory_store(Value(arg, &*it), storage);
-    _symbol_table.add(name, Value(arg, storage));
+    _functions.back().memory_store(Value(arg, &*it), storage);
+    _functions.back().symbol_table.add(name, Value(arg, storage));
   }
 
   // Inform the optimiser that the eptr will never be null. This allows a lot
@@ -1369,82 +1381,10 @@ llvm::Value* IrGenerator::global_ptr()
   // This always gets the global pointer, even in inner functions of closure
   // scopes.
   llvm::Value* ptr = get_parent_struct(
-      _scope_to_function_map.rbegin()->second, _metadata[ENVIRONMENT_PTR]);
+      _functions.back().scope_to_function_map.rbegin()->second,
+      _functions.back().metadata[FnScope::ENVIRONMENT_PTR]);
   // Bitcast, since it's represented as void pointer.
   return _b.b.CreateBitCast(ptr, _global_data.type);
-}
-
-Value IrGenerator::memory_load(const yang::Type& type, llvm::Value* ptr)
-{
-  // Loads out of the global data structure must be byte-aligned! I don't
-  // entirely understand why, but leaving the default will segfault at random
-  // sometimes for certain types (e.g. float vectors).
-  return Value(type, _b.b.CreateAlignedLoad(ptr, 1, "load"));
-}
-
-void IrGenerator::memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr)
-{
-  // We need to make sure ref-counted memory locations are initialised with
-  // something sensible. Otherwise, the first store will try to decrement
-  // the refcount on something undefined. (Important in particular for variable
-  // declarations which are "executed" more than once.)
-  llvm::Type* elem = ptr->getType()->getPointerElementType();
-  if (elem->isStructTy()) {
-    // Null Yang function. Passing void as type is OK since it isn't used.
-    pos.CreateAlignedStore(
-        _b.function_value_null(yang::Type::void_t()), ptr, 1);
-  }
-}
-
-void IrGenerator::memory_store(const Value& value, llvm::Value* ptr)
-{
-  Value old = memory_load(value.type, ptr);
-  update_reference_count(old, -1);
-  update_reference_count(value, 1);
-  _b.b.CreateAlignedStore(value, ptr, 1);
-}
-
-void IrGenerator::update_reference_count(const Value& value, int_t change)
-{
-  if (!value.type.is_function()) {
-    return;
-  }
-  // This reference counting is inlined.
-  llvm::Value* fptr = _b.b.CreateExtractValue(value, 0, "fptr");
-  llvm::Value* eptr = _b.b.CreateExtractValue(value, 1, "eptr");
-  update_reference_count(fptr, eptr, change);
-}
-
-void IrGenerator::update_reference_count(
-    llvm::Value* fptr, llvm::Value* eptr, int_t change)
-{
-  fptr = fptr ?
-      _b.b.CreateBitCast(fptr, _b.void_ptr_type()) : _b.constant_ptr(nullptr);
-  eptr = eptr ?
-      _b.b.CreateBitCast(eptr, _b.void_ptr_type()) : _b.constant_ptr(nullptr);
-  std::vector<llvm::Value*> args{fptr, eptr, _b.constant_int(change)};
-  _b.b.CreateCall(_update_refcount, args);
-}
-
-void IrGenerator::dereference_scoped_locals()
-{
-  dereference_scoped_locals(_refcount_locals.back().size() - 1);
-}
-
-void IrGenerator::dereference_scoped_locals(std::size_t first_scope)
-{
-  const auto& function = _refcount_locals.back();
-  for (std::size_t i = first_scope; i < function.size(); ++i) {
-    for (const Value& v : function[i]) {
-      if (!v.llvm_type()->isPointerTy()) {
-        update_reference_count(v, -1);
-        continue;
-      }
-      Value load = memory_load(v.type, v);
-      update_reference_count(load, -1);
-      memory_init(_b.b, v);
-    }
-  }
 }
 
 Value IrGenerator::raw_binary(const Node& node, const Value& v, const Value& u)
@@ -1678,16 +1618,6 @@ Value IrGenerator::fold(const Node& node, const Value& value,
     v.irval = _b.b.CreateAnd(v, comparisons[i], "fold");
   }
   return v;
-}
-
-llvm::BasicBlock* IrGenerator::create_block(
-    metadata meta, const std::string& name)
-{
-  auto parent = _b.b.GetInsertBlock() ?
-      _b.b.GetInsertBlock()->getParent() : nullptr;
-  auto block = llvm::BasicBlock::Create(_b.b.getContext(), name, parent);
-  _metadata.add(meta, block);
-  return block;
 }
 
 // End namespace yang::internal.

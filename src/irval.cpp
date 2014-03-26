@@ -3,10 +3,34 @@
 // MIT License. See LICENSE file for details.
 //============================================================================//
 #include "irval.h"
+
+#include <llvm/IR/Module.h>
 #include <yang/type_info.h>
+
+namespace std {
+  std::size_t hash<yang::internal::FnScope::metadata_t>::operator()(
+      yang::internal::FnScope::metadata_t v) const
+  {
+    return v;
+  }
+}
 
 namespace yang {
 namespace internal {
+
+Structure::entry::entry(const yang::Type& type, std::size_t index)
+  : type(type)
+  , index(index)
+{
+}
+
+Structure::Structure()
+  : type(nullptr)
+  , destructor(nullptr)
+  , refout_query(nullptr)
+  , refout_count(0)
+{
+}
 
 Value::Value()
   : type(yang::Type::void_t())
@@ -187,6 +211,104 @@ llvm::Type* Builder::get_llvm_type(const yang::Type& t) const
     return void_ptr_type();
   }
   return void_type();
+}
+
+FnScope::FnScope(Builder& builder, llvm::Function* update_refcount)
+  : symbol_table(Value())
+  , metadata(nullptr)
+  , b(builder)
+  , update_refcount(update_refcount)
+  , scope_to_function_map{{0, 0}}
+  , function_scope(0)
+{
+}
+
+llvm::BasicBlock* FnScope::create_block(
+    metadata_t meta, const std::string& name)
+{
+  auto parent = b.b.GetInsertBlock() ?
+      b.b.GetInsertBlock()->getParent() : nullptr;
+  auto block = llvm::BasicBlock::Create(b.b.getContext(), name, parent);
+  metadata.add(meta, block);
+  return block;
+}
+
+llvm::BasicBlock* FnScope::get_block(metadata_t meta)
+{
+  return (llvm::BasicBlock*)metadata[meta];
+}
+
+Value FnScope::memory_load(const yang::Type& type, llvm::Value* ptr)
+{
+  // Loads out of the global data structure must be byte-aligned! I don't
+  // entirely understand why, but leaving the default will segfault at random
+  // sometimes for certain types (e.g. float vectors).
+  return Value(type, b.b.CreateAlignedLoad(ptr, 1, "load"));
+}
+
+void FnScope::memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr)
+{
+  // We need to make sure ref-counted memory locations are initialised with
+  // something sensible. Otherwise, the first store will try to decrement
+  // the refcount on something undefined. (Important in particular for variable
+  // declarations which are "executed" more than once.)
+  llvm::Type* elem = ptr->getType()->getPointerElementType();
+  if (elem->isStructTy()) {
+    // Null Yang function. Passing void as type is OK since it isn't used.
+    pos.CreateAlignedStore(
+        b.function_value_null(yang::Type::void_t()), ptr, 1);
+  }
+}
+
+void FnScope::memory_store(const Value& value, llvm::Value* ptr)
+{
+  Value old = memory_load(value.type, ptr);
+  update_reference_count(old, -1);
+  update_reference_count(value, 1);
+  b.b.CreateAlignedStore(value, ptr, 1);
+}
+
+void FnScope::update_reference_count(const Value& value, int_t change)
+{
+  if (!value.type.is_function()) {
+    return;
+  }
+  // This reference counting will be inlined by the LLVM optimiser.
+  llvm::Value* fptr = b.b.CreateExtractValue(value, 0, "fptr");
+  llvm::Value* eptr = b.b.CreateExtractValue(value, 1, "eptr");
+  update_reference_count(fptr, eptr, change);
+}
+
+void FnScope::update_reference_count(
+    llvm::Value* fptr, llvm::Value* eptr, int_t change)
+{
+  fptr = fptr ?
+      b.b.CreateBitCast(fptr, b.void_ptr_type()) : b.constant_ptr(nullptr);
+  eptr = eptr ?
+      b.b.CreateBitCast(eptr, b.void_ptr_type()) : b.constant_ptr(nullptr);
+  std::vector<llvm::Value*> args{fptr, eptr, b.constant_int(change)};
+  b.b.CreateCall(update_refcount, args);
+}
+
+void FnScope::dereference_scoped_locals()
+{
+  dereference_scoped_locals(rc_locals.back().size() - 1);
+}
+
+void FnScope::dereference_scoped_locals(std::size_t first_scope)
+{
+  const auto& function = rc_locals.back();
+  for (std::size_t i = first_scope; i < function.size(); ++i) {
+    for (const Value& v : function[i]) {
+      if (!v.llvm_type()->isPointerTy()) {
+        update_reference_count(v, -1);
+        continue;
+      }
+      Value load = memory_load(v.type, v);
+      update_reference_count(load, -1);
+      memory_init(b.b, v);
+    }
+  }
 }
 
 // End namespace yang::internal.
