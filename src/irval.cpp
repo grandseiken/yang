@@ -8,8 +8,8 @@
 #include <yang/type_info.h>
 
 namespace std {
-  std::size_t hash<yang::internal::FnScope::metadata_t>::operator()(
-      yang::internal::FnScope::metadata_t v) const
+  std::size_t hash<yang::internal::LexScope::metadata_t>::operator()(
+      yang::internal::LexScope::metadata_t v) const
   {
     return v;
   }
@@ -213,17 +213,16 @@ llvm::Type* Builder::get_llvm_type(const yang::Type& t) const
   return void_type();
 }
 
-FnScope::FnScope(Builder& builder, llvm::Function* update_refcount)
+LexScope::LexScope(Builder& builder, llvm::Function* update_refcount)
   : symbol_table(Value())
   , metadata(nullptr)
   , b(builder)
   , update_refcount(update_refcount)
-  , scope_to_function_map{{0, 0}}
-  , function_scope(0)
 {
+  rc_locals.emplace_back();
 }
 
-llvm::BasicBlock* FnScope::create_block(
+llvm::BasicBlock* LexScope::create_block(
     metadata_t meta, const std::string& name)
 {
   auto parent = b.b.GetInsertBlock() ?
@@ -233,12 +232,12 @@ llvm::BasicBlock* FnScope::create_block(
   return block;
 }
 
-llvm::BasicBlock* FnScope::get_block(metadata_t meta)
+llvm::BasicBlock* LexScope::get_block(metadata_t meta)
 {
   return (llvm::BasicBlock*)metadata[meta];
 }
 
-Value FnScope::memory_load(const yang::Type& type, llvm::Value* ptr)
+Value LexScope::memory_load(const yang::Type& type, llvm::Value* ptr)
 {
   // Loads out of the global data structure must be byte-aligned! I don't
   // entirely understand why, but leaving the default will segfault at random
@@ -246,7 +245,7 @@ Value FnScope::memory_load(const yang::Type& type, llvm::Value* ptr)
   return Value(type, b.b.CreateAlignedLoad(ptr, 1, "load"));
 }
 
-void FnScope::memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr)
+void LexScope::memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr)
 {
   // We need to make sure ref-counted memory locations are initialised with
   // something sensible. Otherwise, the first store will try to decrement
@@ -260,7 +259,7 @@ void FnScope::memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr)
   }
 }
 
-void FnScope::memory_store(const Value& value, llvm::Value* ptr)
+void LexScope::memory_store(const Value& value, llvm::Value* ptr)
 {
   Value old = memory_load(value.type, ptr);
   update_reference_count(old, -1);
@@ -268,7 +267,7 @@ void FnScope::memory_store(const Value& value, llvm::Value* ptr)
   b.b.CreateAlignedStore(value, ptr, 1);
 }
 
-void FnScope::update_reference_count(const Value& value, int_t change)
+void LexScope::update_reference_count(const Value& value, int_t change)
 {
   if (!value.type.is_function()) {
     return;
@@ -279,7 +278,7 @@ void FnScope::update_reference_count(const Value& value, int_t change)
   update_reference_count(fptr, eptr, change);
 }
 
-void FnScope::update_reference_count(
+void LexScope::update_reference_count(
     llvm::Value* fptr, llvm::Value* eptr, int_t change)
 {
   fptr = fptr ?
@@ -290,16 +289,15 @@ void FnScope::update_reference_count(
   b.b.CreateCall(update_refcount, args);
 }
 
-void FnScope::dereference_scoped_locals()
+void LexScope::dereference_scoped_locals()
 {
-  dereference_scoped_locals(rc_locals.back().size() - 1);
+  dereference_scoped_locals(rc_locals.size() - 1);
 }
 
-void FnScope::dereference_scoped_locals(std::size_t first_scope)
+void LexScope::dereference_scoped_locals(std::size_t first_scope)
 {
-  const auto& function = rc_locals.back();
-  for (std::size_t i = first_scope; i < function.size(); ++i) {
-    for (const Value& v : function[i]) {
+  for (std::size_t i = first_scope; i < rc_locals.size(); ++i) {
+    for (const Value& v : rc_locals[i]) {
       if (!v.llvm_type()->isPointerTy()) {
         update_reference_count(v, -1);
         continue;

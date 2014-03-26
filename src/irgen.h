@@ -34,7 +34,6 @@ public:
   typedef std::unordered_map<std::string, yang::Type> symbol_frame;
   IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
               symbol_frame& globals, const Context& context);
-  ~IrGenerator();
 
   // Emit functions for allocating, freeing, reading and writing to instances
   // of the global structure. This should be called after the tree has been
@@ -55,7 +54,7 @@ private:
   llvm::Value* allocate_closure_struct(
       const symbol_frame& symbols, llvm::Value* parent_ptr);
   llvm::Value* get_parent_struct(std::size_t parent_steps, llvm::Value* v);
-  llvm::Value* get_variable_ptr(const std::string& name);
+  Value get_variable_ptr(const std::string& name);
 
   void create_function(const Node& node, const yang::Type& function_type);
 
@@ -90,7 +89,7 @@ private:
   Structure _global_data;
 
   // Current function stack.
-  std::vector<FnScope> _functions;
+  std::vector<LexScope> _functions;
 
   // Daft hack.
   std::string _immediate_left_assign;

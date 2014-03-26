@@ -85,8 +85,7 @@ struct Builder {
   llvm::IRBuilder<> b;
 };
 
-// TODO: refactor everything now that it's moved in here.
-struct FnScope {
+struct LexScope {
   // Metadata symbols.
   enum metadata_t {
     ENVIRONMENT_PTR,
@@ -112,7 +111,7 @@ struct FnScope {
     MERGE_BLOCK,
   };
 
-  FnScope(Builder& builder, llvm::Function* update_refcount);
+  LexScope(Builder& builder, llvm::Function* update_refcount);
 
   // Create block and insert in the metadata table.
   llvm::BasicBlock* create_block(metadata_t meta, const std::string& name);
@@ -141,25 +140,15 @@ struct FnScope {
   SymbolTable<metadata_t, llvm::Value*> metadata;
 
   // List of local variables in scope, for refcounting.
-  std::vector<std::vector<std::vector<Value>>> rc_locals;
+  std::vector<std::vector<Value>> rc_locals;
   std::vector<std::size_t> rc_loop_indices;
 
-  // Maps general scope indices to function scope indices, so that variable
-  // accesses know how many global pointer dereferences to do.
-  std::map<std::size_t, std::size_t> scope_to_function_map;
-  std::size_t function_scope;
   // To look up a value in a closure, the flow is:
   // [std::string identifier] through _symbol_table to
   // [llvm::Value* value (in defining function)] through
   // _value_to_unique_name_map to [std::string unique_identifier].
-  //
-  // The scope index of the identifier then gives us the closure scope index via
-  // _scope_to_function_map. This lets us look up the correct closure structure
-  // via the environment pointer and index it using
-  // scope_closures[closure index] and unique_identifier.
-  //
-  // TODO: clean up these data structures if possible, it's kind of awkward.
-  std::vector<Structure> scope_closures;
+  // TODO: clean up these data structures if possible; still kind of awkward.
+  Structure closure_struct;
   std::unordered_map<llvm::Value*, std::string> value_to_unique_name_map;
 
   Builder& b;
@@ -172,8 +161,8 @@ struct FnScope {
 
 namespace std {
   template<>
-  struct hash<yang::internal::FnScope::metadata_t> {
-    std::size_t operator()(yang::internal::FnScope::metadata_t v) const;
+  struct hash<yang::internal::LexScope::metadata_t> {
+    std::size_t operator()(yang::internal::LexScope::metadata_t v) const;
   };
 }
 

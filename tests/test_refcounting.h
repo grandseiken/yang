@@ -167,6 +167,7 @@ export loops = int()
   return result;
 }
 
+// TODO: move this to a StructureRefCounting test.
 export cycles = int()()
 {
   var n = 0;
@@ -210,6 +211,8 @@ TEST_F(YangTest, FunctionRefCounting)
 
   auto& inst = instance(ctxt, TestFunctionRefCountingStr);
   typedef Function<int_t()> intf_t;
+  EXPECT_EQ(inst.get_global<intf_t>("stored")(), 0);
+
   // No refcounting necessary.
   auto f = make_fn([]()
   {
