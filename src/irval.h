@@ -85,7 +85,9 @@ struct Builder {
   llvm::IRBuilder<> b;
 };
 
-struct LexScope {
+class LexScope {
+public:
+
   // Metadata symbols.
   enum metadata_t {
     ENVIRONMENT_PTR,
@@ -112,6 +114,8 @@ struct LexScope {
   };
 
   LexScope(Builder& builder, llvm::Function* update_refcount);
+  LexScope next_lex_scope() const;
+
   void push_scope(bool loop_scope = false);
   void pop_scope(bool loop_scope = false);
 
@@ -123,6 +127,7 @@ struct LexScope {
   Value memory_load(const yang::Type& type, llvm::Value* ptr);
   void memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr);
   void memory_store(const Value& value, llvm::Value* ptr);
+  void refcount_init(const Value& value);
 
   // Raw reference-counting.
   void update_reference_count(const Value& value, int_t change);
@@ -133,28 +138,30 @@ struct LexScope {
   // all scopes (for returns).
   void dereference_scoped_locals();
   void dereference_scoped_locals(std::size_t first_scope);
+  void dereference_loop_locals();
 
   // We keep a second symbol table for special metadata entries that don't
   // correspond to actual source code symbols; this way we can add scopes
   // that automatically pop metadata without interfering with scope lookup.
-  friend std::hash<metadata_t>;
   SymbolTable<std::string, Value> symbol_table;
   SymbolTable<metadata_t, llvm::Value*> metadata;
 
-  // List of local variables in scope, for refcounting.
-  std::vector<std::vector<Value>> rc_locals;
-  std::vector<std::size_t> rc_loop_indices;
-
-  // To look up a value in a closure, the flow is:
-  // [std::string identifier] through _symbol_table to
-  // [llvm::Value* value (in defining function)] through
-  // _value_to_unique_name_map to [std::string unique_identifier].
+  // Global data or closure structure.
+  Structure structure;
+  // Closure lookup helper.
   // TODO: clean up these data structures if possible; still kind of awkward.
-  Structure closure_struct;
   std::unordered_map<llvm::Value*, std::string> value_to_unique_name_map;
 
-  Builder& b;
-  llvm::Function* update_refcount;
+private:
+
+  // List of local variables in scope, for refcounting.
+  std::vector<std::vector<Value>> _rc_locals;
+  // Used for knowing what to refcount on BREAK and CONTINUE.
+  std::vector<std::size_t> _rc_loop_indices;
+
+  Builder& _b;
+  llvm::Function* _update_refcount;
+
 };
 
 // End namespace yang::internal.

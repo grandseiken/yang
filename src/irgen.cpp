@@ -15,11 +15,7 @@ namespace llvm {
 namespace yang {
 namespace internal {
 
-// TODO: this whole file needs refactored, to use a wrapped Value class that
-// knows about Yang types instead of LLVM types.
-// In particular, for example, we could store functions as two void pointers
-// rather than two pointers where the first has type information (even though
-// it might not actually be that type).
+// TODO: this whole file still needs a fair amount of refactoring.
 IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
                          symbol_frame& globals, const Context& context)
   : IrCommon(module, engine)
@@ -80,13 +76,13 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   _b.b.SetInsertPoint(last_block);
   _b.b.CreateRetVoid();
 
-  _functions.emplace_back(_b, update_refcount);
+  _scopes.emplace_back(_b, update_refcount);
   // Set up the global data type. Since each program is designed to support
   // multiple independent instances running simultaeneously, the idea is to
   // define a structure type with a field for each global variable. Each
   // function will take a pointer to the global data structure as an implicit
   // final parameter.
-  _global_data = init_structure_type(globals, "global_data");
+  _scopes[0].structure = init_structure_type(globals, true);
 
   // We need to generate a reverse trampoline function for each function in the
   // Context. User type member functions are present in the context function map
@@ -100,7 +96,7 @@ void IrGenerator::emit_global_functions()
 {
   // Create allocator function. It takes a pointer to the Yang program instance.
   auto alloc = llvm::Function::Create(
-      llvm::FunctionType::get(_global_data.type, false),
+      llvm::FunctionType::get(_scopes[0].structure.type, false),
       llvm::Function::ExternalLinkage, "!global_alloc", &_module);
   auto alloc_block = llvm::BasicBlock::Create(
       _b.b.getContext(), "entry", alloc);
@@ -109,18 +105,19 @@ void IrGenerator::emit_global_functions()
   // TODO: here we call the global initialisation functions. It should also be
   // possible to define custom destructor functions that are called when the
   // global structure is freed.
-  llvm::Value* v = allocate_structure_value(_global_data);
+  llvm::Value* v = allocate_structure_value(_scopes[0].structure);
   for (llvm::Function* f : _global_inits) {
     _b.b.CreateCall(f, v);
   }
   _b.b.CreateRet(v);
 
   // Create accessor functions for each field of the global structure.
-  for (const auto pair : _global_data.table) {
+  for (const auto pair : _scopes[0].structure.table) {
     llvm::Type* t = _b.get_llvm_type(pair.second.type);
 
     std::string name = "!global_get_" + pair.first;
-    auto function_type = llvm::FunctionType::get(t, _global_data.type, false);
+    auto function_type =
+        llvm::FunctionType::get(t, _scopes[0].structure.type, false);
     auto getter = llvm::Function::Create(
         function_type, llvm::Function::ExternalLinkage, name, &_module);
     get_trampoline_function(
@@ -131,11 +128,11 @@ void IrGenerator::emit_global_functions()
     auto it = getter->arg_begin();
     it->setName("global");
     _b.b.SetInsertPoint(getter_block);
-    _b.b.CreateRet(_functions.back().memory_load(
+    _b.b.CreateRet(_scopes.back().memory_load(
         pair.second.type, structure_ptr(&*it, pair.second.index)));
 
     name = "!global_set_" + pair.first;
-    std::vector<llvm::Type*> setter_args{t, _global_data.type};
+    std::vector<llvm::Type*> setter_args{t, _scopes[0].structure.type};
     function_type = llvm::FunctionType::get(_b.void_type(), setter_args, false);
     auto setter = llvm::Function::Create(
         function_type, llvm::Function::ExternalLinkage, name, &_module);
@@ -151,26 +148,27 @@ void IrGenerator::emit_global_functions()
     ++jt;
     jt->setName("global");
     _b.b.SetInsertPoint(setter_block);
-    _functions.back().memory_store(Value(pair.second.type, &*it),
-                                   structure_ptr(&*jt, pair.second.index));
+    _scopes.back().memory_store(Value(pair.second.type, &*it),
+                                structure_ptr(&*jt, pair.second.index));
     _b.b.CreateRetVoid();
   }
 }
 
 void IrGenerator::preorder(const Node& node)
 {
-  auto& fback = _functions.back();
+  auto& fback = _scopes.back();
   switch (node.type) {
     case Node::GLOBAL:
     {
-      _functions.emplace_back(_b, _functions.back().update_refcount);
-      auto& fback = _functions.back();
+      _scopes.emplace_back(_scopes.back().next_lex_scope());
+      auto& fback = _scopes.back();
 
       // GLOBAL init functions don't need external linkage, since they are
       // called automatically by the externally-visible global structure
       // allocation function.
       auto function = llvm::Function::Create(
-          llvm::FunctionType::get(_b.void_type(), _global_data.type, false),
+          llvm::FunctionType::get(_b.void_type(),
+                                  _scopes[0].structure.type, false),
           llvm::Function::InternalLinkage, "!global_init", &_module);
       _global_inits.push_back(function);
       auto block =
@@ -253,7 +251,7 @@ void IrGenerator::preorder(const Node& node)
 
 void IrGenerator::infix(const Node& node, const result_list& results)
 {
-  auto& fback = _functions.back();
+  auto& fback = _scopes.back();
   switch (node.type) {
     case Node::FUNCTION:
     {
@@ -388,7 +386,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
 {
   auto parent = _b.b.GetInsertBlock() ?
       _b.b.GetInsertBlock()->getParent() : nullptr;
-  auto& fback = _functions.back();
+  auto& fback = _scopes.back();
 
   switch (node.type) {
     case Node::TYPE_VOID:
@@ -412,7 +410,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     case Node::GLOBAL:
       fback.dereference_scoped_locals(0);
       _b.b.CreateRetVoid();
-      _functions.pop_back();
+      _scopes.pop_back();
       return results[0];
     case Node::GLOBAL_ASSIGN:
     {
@@ -443,9 +441,9 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
         _b.b.CreateBr(_b.b.GetInsertBlock());
       }
       auto parent_block = fback.get_block(LexScope::PARENT_BLOCK);
-      _functions.pop_back();
+      _scopes.pop_back();
 
-      auto& fprev = _functions.back();
+      auto& fprev = _scopes.back();
       if (!fprev.metadata.has(LexScope::FUNCTION)) {
         return Value(results[0].type, parent);
       }
@@ -529,7 +527,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     case Node::BREAK_STMT:
     case Node::CONTINUE_STMT:
     {
-      fback.dereference_scoped_locals(fback.rc_loop_indices.back());
+      fback.dereference_loop_locals();
       auto dead_block =
           llvm::BasicBlock::Create(_b.b.getContext(), "dead", parent);
       _b.b.CreateBr(fback.get_block(
@@ -568,17 +566,17 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       // must be careful to only return globals/functions *after* they have been
       // defined, otherwise it might be a reference to a context function of the
       // same name.
-      if (_functions[0].symbol_table.has(node.string_value)) {
+      if (_scopes[0].symbol_table.has(node.string_value)) {
         // If the symbol table entry is non-null it's a top-level function; just
         // get the value.
-        if (_functions[0].symbol_table[node.string_value]) {
-          const auto& sym = _functions[0].symbol_table[node.string_value];
+        if (_scopes[0].symbol_table[node.string_value]) {
+          const auto& sym = _scopes[0].symbol_table[node.string_value];
           return _b.function_value(sym.type, sym, global_ptr());
         }
         // Otherwise it's a global, so look up in the global structure with a
         // byte-aligned load.
-        return _functions[0].memory_load(
-            _functions[0].symbol_table[node.string_value].type,
+        return _scopes[0].memory_load(
+            _scopes[0].symbol_table[node.string_value].type,
             global_ptr(node.string_value));
       }
 
@@ -691,7 +689,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
         phi_v->addIncoming(yang_val, yang_block);
         // Reference count the temporary.
         fback.update_reference_count(phi, 1);
-        fback.rc_locals.back().push_back(phi);
+        fback.refcount_init(phi);
         return phi;
       }
       return Value();
@@ -832,7 +830,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       // We can't store values for globals in the symbol table since the lookup
       // depends on the current function's environment pointer argument.
       else {
-        _functions[0].memory_store(results[1], global_ptr(s));
+        _scopes[0].memory_store(results[1], global_ptr(s));
       }
       return results[1];
     }
@@ -846,8 +844,8 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       // with a null value so we can distinguish it from top-level functions.
       if (fback.metadata.has(LexScope::GLOBAL_INIT_FUNCTION) &&
           fback.symbol_table.size() <= 2) {
-        _functions[0].symbol_table.add(s, Value(results[1].type));
-        _functions[0].memory_store(results[1], global_ptr(s));
+        _scopes[0].symbol_table.add(s, Value(results[1].type));
+        _scopes[0].memory_store(results[1], global_ptr(s));
         return results[1];
       }
 
@@ -870,7 +868,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
         storage = entry.CreateAlloca(
             _b.get_llvm_type(results[1].type), nullptr, s);
         fback.memory_init(entry, storage);
-        fback.rc_locals.back().push_back(Value(results[1].type, storage));
+        fback.refcount_init(Value(results[1].type, storage));
       }
 
       fback.memory_store(results[1], storage);
@@ -917,9 +915,10 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
 }
 
 Structure IrGenerator::init_structure_type(
-    const symbol_frame& symbols, const std::string& name)
+    const symbol_frame& symbols, bool global_data)
 {
-  auto& fback = _functions.back();
+  std::string name = global_data ? "global_data" : "closure";
+  auto& fback = _scopes.back();
 
   Structure st;
   // Since the structure may contain pointers to functions which take the type
@@ -953,7 +952,6 @@ Structure IrGenerator::init_structure_type(
     st.table[pair.first] = Structure::entry(pair.second, number++);
   }
   struct_type->setBody(type_list, false);
-  bool global_data = name == "global_data";
 
   // Create the destruction function.
   auto prev_block = _b.b.GetInsertBlock();
@@ -1021,7 +1019,7 @@ Structure IrGenerator::init_structure_type(
 
 llvm::Value* IrGenerator::allocate_structure_value(const Structure& st)
 {
-  auto& fback = _functions.back();
+  auto& fback = _scopes.back();
   llvm::Type* llvm_size_t =
       llvm::IntegerType::get(_b.b.getContext(), 8 * sizeof(std::size_t));
 
@@ -1058,7 +1056,8 @@ llvm::Value* IrGenerator::allocate_structure_value(const Structure& st)
 llvm::Value* IrGenerator::allocate_closure_struct(
     const symbol_frame& symbols, llvm::Value* parent_ptr)
 {
-  auto& fback = _functions.back();
+  // TODO: this (and maybe other things) should probably be in LexScope.
+  auto& fback = _scopes.back();
   if (symbols.empty()) {
     // Store a nullptr to be explicit.
     fback.metadata.add(LexScope::CLOSURE_PTR, nullptr);
@@ -1066,8 +1065,8 @@ llvm::Value* IrGenerator::allocate_closure_struct(
   }
 
   // Handle closure-structure initialisation.
-  fback.closure_struct = init_structure_type(symbols, "closure");
-  llvm::Value* closure_value = allocate_structure_value(fback.closure_struct);
+  fback.structure = init_structure_type(symbols, false);
+  llvm::Value* closure_value = allocate_structure_value(fback.structure);
   // Store in metadata.
   fback.metadata.add(LexScope::CLOSURE_PTR, closure_value);
 
@@ -1084,7 +1083,7 @@ llvm::Value* IrGenerator::allocate_closure_struct(
   // Then, when we reach the actual declaration of v in scope #1, we store
   // into "v/1" and copy the symbol table entry for "v/1" to "v" for that
   // scope and its children (as in the argument list code below).
-  for (const auto& pair : fback.closure_struct.table) {
+  for (const auto& pair : fback.structure.table) {
     llvm::Value* ptr = structure_ptr(closure_value, pair.second.index);
     fback.symbol_table.add(pair.first, Value(pair.second.type, ptr));
   }
@@ -1098,7 +1097,7 @@ llvm::Value* IrGenerator::get_parent_struct(
       llvm::StructType::create(_b.b.getContext(), _b.void_ptr_type()), 0);
   llvm::Value* u = v;
   for (std::size_t i = 0; i < parent_steps; ++i) {
-    u = _functions.back().memory_load(
+    u = _scopes.back().memory_load(
         yang::Type::void_t(),
         structure_ptr(_b.b.CreateBitCast(u, void_ptr_ptr), 0));
   }
@@ -1107,24 +1106,29 @@ llvm::Value* IrGenerator::get_parent_struct(
 
 Value IrGenerator::get_variable_ptr(const std::string& name)
 {
+  // To look up a value in a closure, the flow is:
+  // [std::string identifier] through _symbol_table to
+  // [llvm::Value* value (in defining function)] through
+  // _value_to_unique_name_map to [std::string unique_identifier].
   std::size_t steps = 0;
-  auto it = _functions.rbegin();
-  if (it == --_functions.rend()) {
+  auto it = _scopes.rbegin();
+  if (it == --_scopes.rend()) {
     return Value();
   }
   if (it->symbol_table.has(name)) {
     return it->symbol_table[name];
   }
 
-  for (++it; it != _functions.rend(); ++it) {
+  for (++it; it != _scopes.rend(); ++it) {
     // This function doesn't handle global variables in the outermost scope.
-    if (it == --_functions.rend()) {
+    // Now that global data is in the scope stack, maybe it can?
+    if (it == --_scopes.rend()) {
       return Value();
     }
     if (it->symbol_table.has(name)) {
       break;
     }
-    if (it->closure_struct.type) {
+    if (it->structure.type) {
       ++steps;
     }
   }
@@ -1133,19 +1137,19 @@ Value IrGenerator::get_variable_ptr(const std::string& name)
   const std::string& unique_name = it->value_to_unique_name_map[v];
 
   llvm::Value* closure_ptr = get_parent_struct(
-      steps, _functions.back().metadata[LexScope::ENVIRONMENT_PTR]);
+      steps, _scopes.back().metadata[LexScope::ENVIRONMENT_PTR]);
 
-  llvm::Value* cast = _b.b.CreateBitCast(closure_ptr, it->closure_struct.type);
+  llvm::Value* cast = _b.b.CreateBitCast(closure_ptr, it->structure.type);
   return Value(
       it->symbol_table[name].type,
-      structure_ptr(cast, it->closure_struct.table[unique_name].index));
+      structure_ptr(cast, it->structure.table[unique_name].index));
 }
 
 void IrGenerator::create_function(
     const Node& node, const yang::Type& function_type)
 {
-  _functions.emplace_back(_b, _functions.back().update_refcount);
-  auto& fback = _functions.back();
+  _scopes.emplace_back(_scopes.back().next_lex_scope());
+  auto& fback = _scopes.back();
 
   // Linkage will be set later if necessary.
   auto llvm_type = _b.raw_function_type(function_type);
@@ -1196,7 +1200,7 @@ void IrGenerator::create_function(
     // can emit the same IR code when referencing local variables or
     // function arguments.
     llvm::Value* v = _b.b.CreateAlloca(_b.get_llvm_type(type), nullptr, name);
-    fback.rc_locals.back().push_back(Value(type, v));
+    fback.refcount_init(Value(type, v));
     fback.memory_init(_b.b, v);
     return v;
   };
@@ -1322,7 +1326,7 @@ llvm::Value* IrGenerator::structure_ptr(llvm::Value* ptr, std::size_t index)
 
 llvm::Value* IrGenerator::global_ptr(const std::string& name)
 {
-  return structure_ptr(global_ptr(), _global_data.table[name].index);
+  return structure_ptr(global_ptr(), _scopes[0].structure.table[name].index);
 }
 
 llvm::Value* IrGenerator::global_ptr()
@@ -1331,15 +1335,15 @@ llvm::Value* IrGenerator::global_ptr()
   // must be skipped, since even if the innermost function creates a closure it
   // takes the parent as its environment pointer.
   std::size_t steps = 0;
-  for (auto it = ++_functions.rbegin(); it != _functions.rend(); ++it) {
-    if (it->closure_struct.type) {
+  for (auto it = ++_scopes.rbegin(); it != --_scopes.rend(); ++it) {
+    if (it->structure.type) {
       ++steps;
     }
   }
   llvm::Value* ptr = get_parent_struct(
-      steps, _functions.back().metadata[LexScope::ENVIRONMENT_PTR]);
+      steps, _scopes.back().metadata[LexScope::ENVIRONMENT_PTR]);
   // Bitcast, since it's represented as void pointer.
-  return _b.b.CreateBitCast(ptr, _global_data.type);
+  return _b.b.CreateBitCast(ptr, _scopes[0].structure.type);
 }
 
 Value IrGenerator::raw_binary(const Node& node, const Value& v, const Value& u)

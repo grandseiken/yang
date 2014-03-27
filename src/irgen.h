@@ -48,8 +48,7 @@ protected:
 
 private:
 
-  Structure init_structure_type(const symbol_frame& symbols,
-                                const std::string& name);
+  Structure init_structure_type(const symbol_frame& symbols, bool global_data);
   llvm::Value* allocate_structure_value(const Structure& st);
   llvm::Value* allocate_closure_struct(
       const symbol_frame& symbols, llvm::Value* parent_ptr);
@@ -85,11 +84,8 @@ private:
 
   // List of static initialisation functions.
   std::vector<llvm::Function*> _global_inits;
-  // Globals.
-  Structure _global_data;
-
   // Current function stack.
-  std::vector<LexScope> _functions;
+  std::vector<LexScope> _scopes;
 
   // Daft hack.
   std::string _immediate_left_assign;

@@ -216,18 +216,23 @@ llvm::Type* Builder::get_llvm_type(const yang::Type& t) const
 LexScope::LexScope(Builder& builder, llvm::Function* update_refcount)
   : symbol_table(Value())
   , metadata(nullptr)
-  , b(builder)
-  , update_refcount(update_refcount)
+  , _b(builder)
+  , _update_refcount(update_refcount)
 {
-  rc_locals.emplace_back();
+  _rc_locals.emplace_back();
+}
+
+LexScope LexScope::next_lex_scope() const
+{
+  return LexScope(_b, _update_refcount);
 }
 
 void LexScope::push_scope(bool loop_scope)
 {
   if (loop_scope) {
-    rc_loop_indices.emplace_back(rc_locals.size());
+    _rc_loop_indices.emplace_back(_rc_locals.size());
   }
-  rc_locals.emplace_back();
+  _rc_locals.emplace_back();
   metadata.push();
   symbol_table.push();
 }
@@ -237,18 +242,18 @@ void LexScope::pop_scope(bool loop_scope)
   dereference_scoped_locals();
   symbol_table.pop();
   metadata.pop();
-  rc_locals.pop_back();
+  _rc_locals.pop_back();
   if (loop_scope) {
-    rc_loop_indices.pop_back();
+    _rc_loop_indices.pop_back();
   }
 }
 
 llvm::BasicBlock* LexScope::create_block(
     metadata_t meta, const std::string& name)
 {
-  auto parent = b.b.GetInsertBlock() ?
-      b.b.GetInsertBlock()->getParent() : nullptr;
-  auto block = llvm::BasicBlock::Create(b.b.getContext(), name, parent);
+  auto parent = _b.b.GetInsertBlock() ?
+      _b.b.GetInsertBlock()->getParent() : nullptr;
+  auto block = llvm::BasicBlock::Create(_b.b.getContext(), name, parent);
   metadata.add(meta, block);
   return block;
 }
@@ -263,7 +268,7 @@ Value LexScope::memory_load(const yang::Type& type, llvm::Value* ptr)
   // Loads out of the global data structure must be byte-aligned! I don't
   // entirely understand why, but leaving the default will segfault at random
   // sometimes for certain types (e.g. float vectors).
-  return Value(type, b.b.CreateAlignedLoad(ptr, 1, "load"));
+  return Value(type, _b.b.CreateAlignedLoad(ptr, 1, "load"));
 }
 
 void LexScope::memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr)
@@ -276,7 +281,7 @@ void LexScope::memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr)
   if (elem->isStructTy()) {
     // Null Yang function. Passing void as type is OK since it isn't used.
     pos.CreateAlignedStore(
-        b.function_value_null(yang::Type::void_t()), ptr, 1);
+        _b.function_value_null(yang::Type::void_t()), ptr, 1);
   }
 }
 
@@ -285,7 +290,12 @@ void LexScope::memory_store(const Value& value, llvm::Value* ptr)
   Value old = memory_load(value.type, ptr);
   update_reference_count(old, -1);
   update_reference_count(value, 1);
-  b.b.CreateAlignedStore(value, ptr, 1);
+  _b.b.CreateAlignedStore(value, ptr, 1);
+}
+
+void LexScope::refcount_init(const Value& value)
+{
+  _rc_locals.back().push_back(value);
 }
 
 void LexScope::update_reference_count(const Value& value, int_t change)
@@ -294,8 +304,8 @@ void LexScope::update_reference_count(const Value& value, int_t change)
     return;
   }
   // This reference counting will be inlined by the LLVM optimiser.
-  llvm::Value* fptr = b.b.CreateExtractValue(value, 0, "fptr");
-  llvm::Value* eptr = b.b.CreateExtractValue(value, 1, "eptr");
+  llvm::Value* fptr = _b.b.CreateExtractValue(value, 0, "fptr");
+  llvm::Value* eptr = _b.b.CreateExtractValue(value, 1, "eptr");
   update_reference_count(fptr, eptr, change);
 }
 
@@ -303,31 +313,36 @@ void LexScope::update_reference_count(
     llvm::Value* fptr, llvm::Value* eptr, int_t change)
 {
   fptr = fptr ?
-      b.b.CreateBitCast(fptr, b.void_ptr_type()) : b.constant_ptr(nullptr);
+      _b.b.CreateBitCast(fptr, _b.void_ptr_type()) : _b.constant_ptr(nullptr);
   eptr = eptr ?
-      b.b.CreateBitCast(eptr, b.void_ptr_type()) : b.constant_ptr(nullptr);
-  std::vector<llvm::Value*> args{fptr, eptr, b.constant_int(change)};
-  b.b.CreateCall(update_refcount, args);
+      _b.b.CreateBitCast(eptr, _b.void_ptr_type()) : _b.constant_ptr(nullptr);
+  std::vector<llvm::Value*> args{fptr, eptr, _b.constant_int(change)};
+  _b.b.CreateCall(_update_refcount, args);
 }
 
 void LexScope::dereference_scoped_locals()
 {
-  dereference_scoped_locals(rc_locals.size() - 1);
+  dereference_scoped_locals(_rc_locals.size() - 1);
 }
 
 void LexScope::dereference_scoped_locals(std::size_t first_scope)
 {
-  for (std::size_t i = first_scope; i < rc_locals.size(); ++i) {
-    for (const Value& v : rc_locals[i]) {
+  for (std::size_t i = first_scope; i < _rc_locals.size(); ++i) {
+    for (const Value& v : _rc_locals[i]) {
       if (!v.llvm_type()->isPointerTy()) {
         update_reference_count(v, -1);
         continue;
       }
       Value load = memory_load(v.type, v);
       update_reference_count(load, -1);
-      memory_init(b.b, v);
+      memory_init(_b.b, v);
     }
   }
+}
+
+void LexScope::dereference_loop_locals()
+{
+  dereference_scoped_locals(_rc_loop_indices.back());
 }
 
 // End namespace yang::internal.
