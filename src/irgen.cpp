@@ -557,27 +557,13 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
         return yang::Type::user_t();
       }
 
-      // Load the local variable, if it's there.
+      // Load the variable, if it's there. We must be careful to only return
+      // globals/functions *after* they have been defined, otherwise it might
+      // be a reference to a context function of the same name.
       Value variable_ptr = get_variable_ptr(node.string_value);
       if (variable_ptr) {
-        return fback.memory_load(variable_ptr.type, variable_ptr);
-      }
-      // Otherwise it's a top-level function, global, or context function. We
-      // must be careful to only return globals/functions *after* they have been
-      // defined, otherwise it might be a reference to a context function of the
-      // same name.
-      if (_scopes[0].symbol_table.has(node.string_value)) {
-        // If the symbol table entry is non-null it's a top-level function; just
-        // get the value.
-        if (_scopes[0].symbol_table[node.string_value]) {
-          const auto& sym = _scopes[0].symbol_table[node.string_value];
-          return _b.function_value(sym.type, sym, global_ptr());
-        }
-        // Otherwise it's a global, so look up in the global structure with a
-        // byte-aligned load.
-        return _scopes[0].memory_load(
-            _scopes[0].symbol_table[node.string_value].type,
-            global_ptr(node.string_value));
+        return variable_ptr.llvm_type()->isPointerTy() ?
+            fback.memory_load(variable_ptr.type, variable_ptr) : variable_ptr;
       }
 
       // It's possible that nothing matches, when this is the identifier on the
@@ -586,7 +572,6 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       if (it == _context.get_functions().end()) {
         return Value();
       }
-
       // It must be a context function.
       return _b.function_value(it->second);
     }
@@ -821,17 +806,8 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
 
     case Node::ASSIGN:
     {
-      // See Node::IDENTIFIER.
       const std::string& s = node.children[0]->string_value;
-      llvm::Value* variable_ptr = get_variable_ptr(s);
-      if (variable_ptr) {
-        fback.memory_store(results[1], variable_ptr);
-      }
-      // We can't store values for globals in the symbol table since the lookup
-      // depends on the current function's environment pointer argument.
-      else {
-        _scopes[0].memory_store(results[1], global_ptr(s));
-      }
+      fback.memory_store(results[1], get_variable_ptr(s));
       return results[1];
     }
 
@@ -845,7 +821,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       if (fback.metadata.has(LexScope::GLOBAL_INIT_FUNCTION) &&
           fback.symbol_table.size() <= 2) {
         _scopes[0].symbol_table.add(s, Value(results[1].type));
-        _scopes[0].memory_store(results[1], global_ptr(s));
+        _scopes[0].memory_store(results[1], get_variable_ptr(s));
         return results[1];
       }
 
@@ -1106,23 +1082,15 @@ llvm::Value* IrGenerator::get_parent_struct(
 
 Value IrGenerator::get_variable_ptr(const std::string& name)
 {
-  // To look up a value in a closure, the flow is:
-  // [std::string identifier] through _symbol_table to
-  // [llvm::Value* value (in defining function)] through
-  // _value_to_unique_name_map to [std::string unique_identifier].
   std::size_t steps = 0;
   auto it = _scopes.rbegin();
-  if (it == --_scopes.rend()) {
-    return Value();
-  }
+  // Local variables.
   if (it->symbol_table.has(name)) {
     return it->symbol_table[name];
   }
-
-  for (++it; it != _scopes.rend(); ++it) {
-    // This function doesn't handle global variables in the outermost scope.
-    // Now that global data is in the scope stack, maybe it can?
-    if (it == --_scopes.rend()) {
+  // Nonlocal variables.
+  for (++it; ; ++it) {
+    if (it == _scopes.rend()) {
       return Value();
     }
     if (it->symbol_table.has(name)) {
@@ -1133,13 +1101,28 @@ Value IrGenerator::get_variable_ptr(const std::string& name)
     }
   }
 
-  Value v = it->symbol_table[name];
-  const std::string& unique_name = it->value_to_unique_name_map[v];
-
-  llvm::Value* closure_ptr = get_parent_struct(
+  std::string unique_name = name;
+  llvm::Value* struct_ptr = get_parent_struct(
       steps, _scopes.back().metadata[LexScope::ENVIRONMENT_PTR]);
+  llvm::Value* cast = _b.b.CreateBitCast(struct_ptr, it->structure.type);
 
-  llvm::Value* cast = _b.b.CreateBitCast(closure_ptr, it->structure.type);
+  if (it == --_scopes.rend()) {
+    // Global variables.
+    // If the symbol table entry is non-null it's a top-level function and has
+    // to be handled separately.
+    if (it->symbol_table[name]) {
+      const auto& sym = it->symbol_table[name];
+      return _b.function_value(sym.type, sym, cast);
+    }
+  }
+  else {
+    // To look up a value in a closure, the flow is:
+    // [std::string identifier] through _symbol_table to
+    // [llvm::Value* value (in defining function)] through
+    // _value_to_unique_name_map to [std::string unique_identifier].
+    unique_name = it->value_to_unique_name_map[it->symbol_table[name]];
+  }
+
   return Value(
       it->symbol_table[name].type,
       structure_ptr(cast, it->structure.table[unique_name].index));
@@ -1322,28 +1305,6 @@ llvm::Value* IrGenerator::structure_ptr(llvm::Value* ptr, std::size_t index)
   // the one and only global data structure at that memory location.
   std::vector<llvm::Value*> indexes{_b.constant_int(0), _b.constant_int(index)};
   return _b.b.CreateGEP(ptr, indexes, "index");
-}
-
-llvm::Value* IrGenerator::global_ptr(const std::string& name)
-{
-  return structure_ptr(global_ptr(), _scopes[0].structure.table[name].index);
-}
-
-llvm::Value* IrGenerator::global_ptr()
-{
-  // Retrieve the global pointer by walking the closure structures. The first
-  // must be skipped, since even if the innermost function creates a closure it
-  // takes the parent as its environment pointer.
-  std::size_t steps = 0;
-  for (auto it = ++_scopes.rbegin(); it != --_scopes.rend(); ++it) {
-    if (it->structure.type) {
-      ++steps;
-    }
-  }
-  llvm::Value* ptr = get_parent_struct(
-      steps, _scopes.back().metadata[LexScope::ENVIRONMENT_PTR]);
-  // Bitcast, since it's represented as void pointer.
-  return _b.b.CreateBitCast(ptr, _scopes[0].structure.type);
 }
 
 Value IrGenerator::raw_binary(const Node& node, const Value& v, const Value& u)

@@ -64,8 +64,6 @@ private:
 
   // Indexing global and closure data structures.
   llvm::Value* structure_ptr(llvm::Value* ptr, std::size_t index);
-  llvm::Value* global_ptr(const std::string& name);
-  llvm::Value* global_ptr();
 
   Value raw_binary(const Node& node, const Value& v, const Value& u);
   // Power implementation.
