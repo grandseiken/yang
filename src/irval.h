@@ -112,6 +112,8 @@ struct LexScope {
   };
 
   LexScope(Builder& builder, llvm::Function* update_refcount);
+  void push_scope(bool loop_scope = false);
+  void pop_scope(bool loop_scope = false);
 
   // Create block and insert in the metadata table.
   llvm::BasicBlock* create_block(metadata_t meta, const std::string& name);

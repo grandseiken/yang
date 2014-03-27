@@ -222,6 +222,27 @@ LexScope::LexScope(Builder& builder, llvm::Function* update_refcount)
   rc_locals.emplace_back();
 }
 
+void LexScope::push_scope(bool loop_scope)
+{
+  if (loop_scope) {
+    rc_loop_indices.emplace_back(rc_locals.size());
+  }
+  rc_locals.emplace_back();
+  metadata.push();
+  symbol_table.push();
+}
+
+void LexScope::pop_scope(bool loop_scope)
+{
+  dereference_scoped_locals();
+  symbol_table.pop();
+  metadata.pop();
+  rc_locals.pop_back();
+  if (loop_scope) {
+    rc_loop_indices.pop_back();
+  }
+}
+
 llvm::BasicBlock* LexScope::create_block(
     metadata_t meta, const std::string& name)
 {

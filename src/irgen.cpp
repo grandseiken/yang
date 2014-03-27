@@ -205,15 +205,12 @@ void IrGenerator::preorder(const Node& node)
       break;
 
     case Node::BLOCK:
-      fback.symbol_table.push();
-      fback.rc_locals.emplace_back();
+      fback.push_scope();
       break;
 
     case Node::IF_STMT:
     {
-      fback.metadata.push();
-      fback.symbol_table.push();
-      fback.rc_locals.emplace_back();
+      fback.push_scope();
       fback.create_block(LexScope::IF_THEN_BLOCK, "then");
       fback.create_block(LexScope::MERGE_BLOCK, "merge");
       if (node.children.size() > 2) {
@@ -224,9 +221,7 @@ void IrGenerator::preorder(const Node& node)
 
     case Node::FOR_STMT:
     {
-      fback.metadata.push();
-      fback.symbol_table.push();
-      fback.rc_locals.emplace_back();
+      fback.push_scope();
       fback.create_block(LexScope::LOOP_COND_BLOCK, "cond");
       fback.create_block(LexScope::LOOP_BODY_BLOCK, "loop");
       auto after_block =
@@ -239,15 +234,13 @@ void IrGenerator::preorder(const Node& node)
 
     case Node::DO_WHILE_STMT:
     {
-      fback.metadata.push();
-      fback.symbol_table.push();
-      fback.rc_loop_indices.push_back(fback.rc_locals.size());
-      fback.rc_locals.emplace_back();
+      fback.push_scope(true);
       auto loop_block = fback.create_block(LexScope::LOOP_BODY_BLOCK, "loop");
       auto cond_block = fback.create_block(LexScope::LOOP_COND_BLOCK, "cond");
       auto merge_block = fback.create_block(LexScope::MERGE_BLOCK, "merge");
       fback.metadata.add(LexScope::LOOP_BREAK_LABEL, merge_block);
       fback.metadata.add(LexScope::LOOP_CONTINUE_LABEL, cond_block);
+      fback.push_scope(true);
 
       _b.b.CreateBr(loop_block);
       _b.b.SetInsertPoint(loop_block);
@@ -298,8 +291,7 @@ void IrGenerator::infix(const Node& node, const result_list& results)
       if (results.size() == 1) {
         _b.b.CreateBr(cond_block);
         _b.b.SetInsertPoint(cond_block);
-        fback.rc_loop_indices.push_back(fback.rc_locals.size());
-        fback.rc_locals.emplace_back();
+        fback.push_scope(true);
       }
       if (results.size() == 2) {
         auto parent = _b.b.GetInsertBlock()->getParent();
@@ -321,12 +313,8 @@ void IrGenerator::infix(const Node& node, const result_list& results)
     case Node::DO_WHILE_STMT:
     {
       auto cond_block = fback.get_block(LexScope::LOOP_COND_BLOCK);
-      fback.dereference_scoped_locals();
-      fback.rc_loop_indices.pop_back();
-      fback.rc_locals.pop_back();
-      fback.symbol_table.pop();
-      fback.symbol_table.push();
-      fback.rc_locals.emplace_back();
+      fback.pop_scope(true);
+      fback.push_scope();
       _b.b.CreateBr(cond_block);
       _b.b.SetInsertPoint(cond_block);
       break;
@@ -485,9 +473,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
           llvm::BasicBlock::Create(_b.b.getContext(), "after", parent);
       _b.b.CreateBr(after_block);
       _b.b.SetInsertPoint(after_block);
-      fback.symbol_table.pop();
-      fback.dereference_scoped_locals();
-      fback.rc_locals.pop_back();
+      fback.pop_scope();
       return Value();
     }
     case Node::EMPTY_STMT:
@@ -512,38 +498,29 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     case Node::IF_STMT:
     {
       auto merge_block = fback.get_block(LexScope::MERGE_BLOCK);
-      fback.symbol_table.pop();
-      fback.metadata.pop();
 
       _b.b.CreateBr(merge_block);
       _b.b.SetInsertPoint(merge_block);
-      fback.dereference_scoped_locals();
-      fback.rc_locals.pop_back();
+      fback.pop_scope();
       return results[0];
     }
     case Node::FOR_STMT:
     {
       auto after_block = fback.get_block(LexScope::LOOP_AFTER_BLOCK);
       auto merge_block = fback.get_block(LexScope::MERGE_BLOCK);
-      fback.symbol_table.pop();
-      fback.metadata.pop();
-      fback.dereference_scoped_locals();
-      fback.rc_loop_indices.pop_back();
-      fback.rc_locals.pop_back();
+      fback.pop_scope(true);
 
       _b.b.CreateBr(after_block);
       _b.b.SetInsertPoint(merge_block);
-      fback.dereference_scoped_locals();
-      fback.rc_locals.pop_back();
+      fback.pop_scope();
       return results[0];
     }
     case Node::DO_WHILE_STMT:
     {
       auto loop_block = fback.get_block(LexScope::LOOP_BODY_BLOCK);
       auto merge_block = fback.get_block(LexScope::MERGE_BLOCK);
-      fback.metadata.pop();
-      fback.dereference_scoped_locals();
-      fback.rc_locals.pop_back();
+      fback.pop_scope();
+      fback.pop_scope();
 
       _b.b.CreateCondBr(i2b(results[1]), loop_block, merge_block);
       _b.b.SetInsertPoint(merge_block);
@@ -1200,7 +1177,9 @@ void IrGenerator::create_function(
         nullptr, fback.metadata[LexScope::CLOSURE_PTR], 1);
   }
 
-  // Lambda for deciding whether to put an argument in closure or stack.
+  // Lambda for deciding whether to put an argument in closure or stack. These
+  // are refcount-decremented on return statements (or end-of-function for void
+  // returns).
   auto assign_storage = [&](
       const yang::Type& type, const std::string& name, std::int32_t scope_mod)
   {
