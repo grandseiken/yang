@@ -43,8 +43,6 @@ struct Value {
   Value();
   Value(const yang::Type& type);
   Value(const yang::Type& type, llvm::Value* irval);
-
-  llvm::Type* llvm_type() const;
   operator llvm::Value*() const;
 
   yang::Type type;
@@ -66,7 +64,7 @@ struct Builder {
   llvm::StructType* gen_function_type() const;
 
   // Value construction.
-  llvm::Constant* constant_ptr(void* ptr);
+  llvm::Constant* constant_ptr(void* ptr) const;
   Value constant_int(yang::int_t value) const;
   Value constant_float(yang::float_t value) const;
   Value constant_int_vector(yang::int_t value, std::size_t n) const;
@@ -77,6 +75,9 @@ struct Builder {
   Value function_value(const yang::Type& function_type,
                        llvm::Value* fptr, llvm::Value* ptr);
   Value function_value(const GenericFunction& function);
+
+  // Default value for a given type.
+  Value default_for_type(const yang::Type& type, int_t fill = 0) const;
 
   // Convert from Yang type to LLVM type.
   llvm::Type* get_llvm_type(const yang::Type& t) const;

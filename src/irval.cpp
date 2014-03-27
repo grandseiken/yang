@@ -50,11 +50,6 @@ Value::Value(const yang::Type& type, llvm::Value* irval)
 {
 }
 
-llvm::Type* Value::llvm_type() const
-{
-  return irval ? irval->getType() : nullptr;
-}
-
 Value::operator llvm::Value*() const
 {
   return irval;
@@ -116,7 +111,7 @@ llvm::StructType* Builder::gen_function_type() const
   return llvm::StructType::get(b.getContext(), types);
 }
 
-llvm::Constant* Builder::constant_ptr(void* ptr)
+llvm::Constant* Builder::constant_ptr(void* ptr) const
 {
   // To construct a constant pointer, we need to do a bit of machine-dependent
   // stuff.
@@ -190,24 +185,44 @@ Value Builder::function_value(const GenericFunction& function)
   return function_value(function.type, constant_ptr(fptr), constant_ptr(eptr));
 }
 
-llvm::Type* Builder::get_llvm_type(const yang::Type& t) const
+Value Builder::default_for_type(const yang::Type& type, int_t fill) const
 {
-  if (t.is_function()) {
+  if (type.is_function()) {
+    return function_value_null(type);
+  }
+  if (type.is_int()) {
+    return constant_int(fill);
+  }
+  if (type.is_float()) {
+    return constant_float(fill);
+  }
+  if (type.is_int_vector()) {
+    return constant_int_vector(fill, type.get_vector_size());
+  }
+  if (type.is_float_vector()) {
+    return constant_float_vector(fill, type.get_vector_size());
+  }
+  return Value(type, constant_ptr(nullptr));
+}
+
+llvm::Type* Builder::get_llvm_type(const yang::Type& type) const
+{
+  if (type.is_function()) {
     return gen_function_type();
   }
-  if (t.is_int()) {
+  if (type.is_int()) {
     return int_type();
   }
-  if (t.is_float()) {
+  if (type.is_float()) {
     return float_type();
   }
-  if (t.is_int_vector()) {
-    return int_vector_type(t.get_vector_size());
+  if (type.is_int_vector()) {
+    return int_vector_type(type.get_vector_size());
   }
-  if (t.is_float_vector()) {
-    return float_vector_type(t.get_vector_size());
+  if (type.is_float_vector()) {
+    return float_vector_type(type.get_vector_size());
   }
-  if (t.is_user_type()) {
+  if (type.is_user_type()) {
     return void_ptr_type();
   }
   return void_type();
@@ -329,7 +344,7 @@ void LexScope::dereference_scoped_locals(std::size_t first_scope)
 {
   for (std::size_t i = first_scope; i < _rc_locals.size(); ++i) {
     for (const Value& v : _rc_locals[i]) {
-      if (!v.llvm_type()->isPointerTy()) {
+      if (!v.irval->getType()->isPointerTy()) {
         update_reference_count(v, -1);
         continue;
       }
