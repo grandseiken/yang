@@ -166,38 +166,6 @@ export loops = int()
 
   return result;
 }
-
-// TODO: move this to a StructureRefCounting test.
-export cycles = int()()
-{
-  var n = 0;
-  var ff = int() {return ++n;};
-  const f = int()
-  {
-    var m = 0;
-    var gg = int() {return ++m;};
-    const g = int()
-    {
-      var l = 0;
-      var hh = int() {return 0;};
-      const h = int()
-      {
-        const r = ++l + gg() + ff();
-        ff = h;
-        gg = h;
-        hh = h;
-        // TODO: broken (and, apparently, has always been broken, but didn't
-        // show up until recently).
-        // const dasd = g; dasd;
-        return r;
-      };
-      hh = h;
-      return hh();
-    };
-    return g();
-  };
-  return f;
-}
 )";
 
 TEST_F(YangTest, FunctionRefCounting)
@@ -274,8 +242,47 @@ TEST_F(YangTest, FunctionRefCounting)
   EXPECT_EQ(inst.call<int_t>("temporaries"), 13);
   EXPECT_EQ(inst.call<int_t>("loops"), 18);
 
-  auto cycles = inst.call<intf_t>("cycles");
-  EXPECT_EQ(cycles(), 3);
   // It'd be nice to test memory usage and that everything is actually getting
   // destroyed at the end, but it's not clear how to do that unintrusively.
+}
+
+const std::string TestStructureRefCountingStr = R"(
+export cycles = int()()
+{
+  var n = 0;
+  var ff = int() {return ++n;};
+  const f = int()
+  {
+    var m = 0;
+    var gg = int() {return ++m;};
+    const g = int()
+    {
+      var l = 0;
+      var hh = int() {return 0;};
+      const h = int()
+      {
+        const r = ++l + gg() + ff();
+        ff = h;
+        gg = h;
+        hh = h;
+        // TODO: broken. Problem is inside the scope of g, the symbol "g" has
+        // mismatched scope number from enclosing scope.
+        //const dasd = g; dasd;
+        return r;
+      };
+      hh = h;
+      return hh();
+    };
+    return g();
+  };
+  return f;
+}
+)";
+
+TEST_F(YangTest, StructureRefCounting)
+{
+  auto& inst = instance(TestStructureRefCountingStr);
+  typedef Function<int_t()> intf_t;
+  auto cycles = inst.call<intf_t>("cycles");
+  EXPECT_EQ(cycles(), 3);
 }

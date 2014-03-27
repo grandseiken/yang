@@ -66,16 +66,11 @@ private:
       std::size_t index, const Type& type, bool unreferenced_warning = true);
   void error(const Node& node, const std::string& message, bool error = true);
 
-  struct function {
-    Type return_type;
-    std::string name;
-  };
-
   bool _errors;
   std::string _current_function;
   std::string _immediate_left_assign;
 
-  enum metadata {
+  enum metadata_t {
     EXPORT_GLOBAL,
     LOOP_BODY,
     RETURN_TYPE,
@@ -84,34 +79,36 @@ private:
     CALLEE_CONTEXT,
     ASSIGN_LHS_CONTEXT,
   };
-  friend std::hash<metadata>;
-
-  // We store a few bits indicating whether a symbol has been referenced
-  // since it was defined, for the purposes of warning about unused variables.
-  struct unreferenced_t {
-    const Node* declaration;
-    bool warn_writes;
-    bool warn_reads;
-  };
+  friend std::hash<metadata_t>;
+  
   // Along with the type, we need to store the subscope number for
   // disambiguating identically-named closed variables in different subscopes.
   struct symbol_t {
+    symbol_t();
     Type type;
     std::size_t scope_number;
-    unreferenced_t unreferenced;
+
+    // We also store a few bits indicating whether a symbol has been referenced
+    // since it was defined, for the purposes of warning about unused variables.
+    const Node* declaration;
+    bool warn_writes;
+    bool warn_reads;
+
     // Only to deal with immediate-left-assign-hack names in closures while
     // inside the function body.
     std::size_t temporary_index;
   };
 
-  SymbolTable<metadata, Type> _metadata;
-  SymbolTable<std::string, symbol_t> _symbol_table;
+  struct lex_scope_t {
+    lex_scope_t();
+    SymbolTable<metadata_t, Type> metadata;
+    SymbolTable<std::string, symbol_t> symbol_table;
+  };
 
-  // For computing closed environments, we also need a map from symbol table
-  // scope indices to the function node they're contained in. For each function,
-  // we also need to number its scopes uniquely, so that we can distinguish
-  // identically-named variables in the closure structure.
+  std::vector<lex_scope_t> _scopes;
   std::map<std::size_t, const Node*> _scope_to_function_map;
+  // For each function, we also need to number its scopes uniquely, so that we
+  // can distinguish identically-named variables in the closure structure.
   std::vector<std::size_t> _scope_numbering;
   std::size_t _scope_numbering_next;
 
