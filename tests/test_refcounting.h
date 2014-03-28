@@ -265,9 +265,7 @@ export cycles = int()()
         ff = h;
         gg = h;
         hh = h;
-        // TODO: broken. Problem is inside the scope of g, the symbol "g" has
-        // mismatched scope number from enclosing scope.
-        //const dasd = g; dasd;
+        const dasd = g; dasd;
         return r;
       };
       hh = h;

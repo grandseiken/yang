@@ -15,7 +15,9 @@ namespace llvm {
 namespace yang {
 namespace internal {
 
-// TODO: this whole file still needs a fair amount of refactoring.
+// TODO: this whole file still needs a fair amount of refactoring. E.g.
+// allocate_closure_struct (and maybe other things) should probably be in
+// LexScope.
 IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
                          symbol_frame& globals, const Context& context)
   : IrCommon(module, engine)
@@ -1016,7 +1018,6 @@ llvm::Value* IrGenerator::allocate_structure_value(const Structure& st)
 llvm::Value* IrGenerator::allocate_closure_struct(
     const symbol_frame& symbols, llvm::Value* parent_ptr)
 {
-  // TODO: this (and maybe other things) should probably be in LexScope.
   auto& fback = _scopes.back();
   if (symbols.empty()) {
     // Store a nullptr to be explicit.
@@ -1177,10 +1178,8 @@ void IrGenerator::create_function(
   if (_immediate_left_assign.length()) {
     function->setName(_immediate_left_assign);
     // The identifier is registered one scope above the function argument scope.
-    // Confusingly, that's two unique scope-numbers back because the LHS of the
-    // assignment has its own scope in-between.
     llvm::Value* storage =
-        assign_storage(function_type, _immediate_left_assign, -2);
+        assign_storage(function_type, _immediate_left_assign, -1);
     fback.memory_store(
         _b.function_value(function_type, function, eptr), storage);
     fback.symbol_table.add(

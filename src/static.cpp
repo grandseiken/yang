@@ -24,28 +24,17 @@ namespace internal {
 StaticChecker::StaticChecker(
     const yang::Context& context, ParseData& data,
     symbol_frame& functions_output, symbol_frame& globals_output)
-  : _errors(false)
-  , _scope_numbering{0}
-  , _scope_numbering_next(1)
-  , _context(context)
+  : _context(context)
   , _data(data)
   , _functions_output(functions_output)
   , _globals_output(globals_output)
 {
-  // TODO: this now needs to be refactored to match IrGenerator with per-
-  // -function data structures: particularly left-assign temporary_index and
-  // such.
-  _scopes.emplace_back();
+  _scopes.emplace_back(*(Node*)nullptr, "");
 }
 
 StaticChecker::~StaticChecker()
 {
   // Keep hash<metadata> in source file.
-}
-
-bool StaticChecker::errors() const
-{
-  return _errors;
 }
 
 void StaticChecker::preorder(const Node& node)
@@ -72,20 +61,13 @@ void StaticChecker::preorder(const Node& node)
 
   switch (node.type) {
     case Node::GLOBAL:
-      _current_function = ".global";
-      _scope_to_function_map.emplace(_scopes.back().symbol_table.size(), &node);
+      _scopes.emplace_back(node, "<global>");
       push_symbol_tables();
-      _scopes.back().metadata.push();
       if (node.int_value) {
         _scopes.back().metadata.add(EXPORT_GLOBAL, Type::VOID);
       }
       break;
     case Node::GLOBAL_ASSIGN:
-      // Set current top-level function name.
-      if (node.children[0]->type == Node::IDENTIFIER) {
-        _current_function = node.children[0]->string_value;
-      }
-      // Fall-through to recursion handler.
     case Node::ASSIGN_VAR:
     case Node::ASSIGN_CONST:
       // Super big hack: in order to allow recursion, the function has to have
@@ -105,7 +87,8 @@ void StaticChecker::preorder(const Node& node)
       // the name.
       push_symbol_tables();
       if (node.children[0]->type == Node::IDENTIFIER) {
-        add_symbol(node, node.children[0]->string_value, Type::VOID, false);
+        add_symbol(node, node.children[0]->string_value,
+                   Type::VOID, false, false);
       }
       break;
     case Node::ASSIGN:
@@ -145,12 +128,6 @@ void StaticChecker::infix(const Node& node, const result_list& results)
     {
       // Erase type context.
       _scopes.back().metadata.pop();
-      // Only append a suffix if this isn't a top-level function. Make use of
-      // the recursive name hack, if it's there.
-      if (inside_function()) {
-        _current_function += _immediate_left_assign.length() ?
-            "." + _immediate_left_assign : ".anon";
-      }
       Type t = results[0];
       // Make sure it's const so functions can't set themselves to different
       // values inside the body.
@@ -161,23 +138,20 @@ void StaticChecker::infix(const Node& node, const result_list& results)
         t = Type::ERROR;
       }
 
-      // Functions need two symbol table frames: one for the arguments, and one
-      // for the body. The immediate-name-assign hack goes in the previous
-      // frame. They also need to update the scope-to-function map.
-      _scope_to_function_map.emplace(_scopes.back().symbol_table.size(), &node);
-      // Do the recursive hack.
+      // Functions need two symbol table frames: one for recursive hack, one for
+      // the arguments, and one for the body.
+      _scopes.emplace_back(node, _immediate_left_assign.length() ?
+                                 _immediate_left_assign : "<anon>");
+      push_symbol_tables();
+      node.static_info.scope_number = _scopes.back().scope_numbering.back();
       if (_immediate_left_assign.length()) {
-        std::size_t index =
-            inside_function() * (_scopes.back().symbol_table.size() - 1);
-        add_symbol_checking_collision(node, _immediate_left_assign, index, t);
-        _scopes.back().symbol_table.get(_immediate_left_assign, index).
-            temporary_index = _scopes.back().symbol_table.size();
+        add_symbol(node, _immediate_left_assign, t, false);
         _immediate_left_assign = "";
       }
 
       // Do the arguments.
       push_symbol_tables();
-      node.static_info.scope_number = _scope_numbering.back();
+      node.static_info.scope_number = _scopes.back().scope_numbering.back();
       if (!t.is_error()) {
         std::unordered_set<std::string> arg_names;
         std::size_t elem = 0;
@@ -197,14 +171,11 @@ void StaticChecker::infix(const Node& node, const result_list& results)
           // Arguments are implicitly const!
           Type u = t.elements(elem);
           u.set_const(true);
-          add_symbol(*ptr, name, u);
+          add_symbol(*ptr, name, u, false);
           arg_names.insert(name);
           ++elem;
         }
       }
-      // Stores the return type of the current function and the fact we're
-      // inside a function.
-      _scopes.back().metadata.push();
       enter_function(t.elements(0));
       push_symbol_tables();
       break;
@@ -245,9 +216,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
   // before checking for context error; otherwise we might still think we're
   // in a type-context when we aren't.
   if (node.type == Node::GLOBAL) {
-    _scope_to_function_map.erase(--_scope_to_function_map.end());
-    _scopes.back().metadata.pop();
     pop_symbol_tables();
+    _scopes.pop_back();
   }
   else if (node.type == Node::DO_WHILE_STMT || node.type == Node::FOR_STMT) {
     _scopes.back().metadata.pop();
@@ -261,8 +231,15 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     }
     pop_symbol_tables();
     pop_symbol_tables();
-    _scope_to_function_map.erase(--_scope_to_function_map.end());
-    _scopes.back().metadata.pop();
+    // We don't pop the last symbol table (containing only the recursive hack):
+    // instead we just want to merge its unreferenced warning information with
+    // the symbol about to be added in the enclosing scope.
+    std::vector<std::pair<std::string, symbol_t>> symbols;
+    _scopes.back().symbol_table.get_symbols(symbols, 0, 2);
+    for (const auto& pair : symbols) {
+      _immediate_left_assign_warn_reads = pair.second.warn_reads;
+    }
+    _scopes.pop_back();
   }
   else if (node.type == Node::BLOCK || node.type == Node::IF_STMT) {
     pop_symbol_tables();
@@ -319,7 +296,6 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       pop_symbol_tables();
       return Type::VOID;
     case Node::GLOBAL:
-      _current_function = "";
       return Type::VOID;
     case Node::GLOBAL_ASSIGN:
     {
@@ -330,29 +306,27 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         return Type::VOID;
       }
       const std::string& s = node.children[0]->string_value;
+      Type t = results[1];
+      t.set_const(true);
       if (!results[1].function()) {
         error(node, "global assignment of type " + rs[1]);
-        add_symbol_checking_collision(node, s, results[1], false);
+        add_symbol_checking_collision(node, s, results[1], true, false);
       }
-      // Otherwise, the symbol already exists by the immediate-name-assign
-      // recursion hack.
-      const Type& t = _scopes.back().symbol_table.get(s, 0).type;
+      else {
+        add_symbol_checking_collision(node, s, t, true, !t.is_error());
+        _scopes[0].symbol_table[s].warn_reads &=
+            _immediate_left_assign_warn_reads;
+      }
       // Only export functions get added to the function table. They also are
       // automatically assumed to be referenced.
       if (!t.is_error() && node.int_value) {
         _functions_output.emplace(s, t.external(true));
-        _scopes.back().symbol_table[s].warn_reads = false;
+        _scopes[0].symbol_table[s].warn_reads = false;
       }
-      _scopes.back().symbol_table[s].declaration = &node;
-      _current_function = "";
       return Type::VOID;
     }
     case Node::FUNCTION:
     {
-      if (inside_function()) {
-        _current_function =
-            _current_function.substr(0, _current_function.find_last_of('.'));
-      }
       // We've already reported an error in infix() if the first type is not
       // a function type.
       return results[0].function() ? results[0] : Type::ERROR;
@@ -507,34 +481,30 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         return Type(Type::USER_TYPE, node.string_value);
       }
 
-      // Check Context if symbol isn't present in the Program table.
-      bool has = _scopes.back().symbol_table.has(node.string_value);
-      auto context_it = _context.get_functions().find(node.string_value);
-      if (!has && context_it != _context.get_functions().end()) {
-        return context_it->second.type;
+      // Regular symbols.
+      auto it = _scopes.rbegin();
+      for (; it != _scopes.rend(); ++it) {
+        if (it->symbol_table.has(node.string_value)) {
+          break;
+        }
+        if (it == --_scopes.rend()) {
+          // Check Context if symbol isn't present in the Program table.
+          auto context_it = _context.get_functions().find(node.string_value);
+          if (context_it != _context.get_functions().end()) {
+            return context_it->second.type;
+          }
+          error(node, "undeclared identifier `" + node.string_value + "`");
+          add_symbol(node, node.string_value, Type::ERROR, false, false);
+          it = _scopes.rbegin();
+          break;
+        }
       }
 
-      // Regular program symbols.
-      if (!has) {
-        error(node, "undeclared identifier `" + node.string_value + "`");
-        add_symbol(node, node.string_value, Type::ERROR, false);
-      }
+      auto& symbol = it->symbol_table[node.string_value];
       // If this is a reference to variable in an enclosing function, make sure
       // it's added to that function's closed environment.
-      // TODO: can we get rid of the special logic for global variables entirely
-      // and treat them simply as special-case of closed variables? I'm pretty
-      // sure we can.
-      std::size_t index = _scopes.back().symbol_table.index(node.string_value);
-      auto& symbol = _scopes.back().symbol_table[node.string_value];
-      // Make sure we use the right closure scope for recursive lookup hacks
-      // (which have a different temporary_index while in the function body).
-      std::size_t closure_index =
-          symbol.temporary_index ? symbol.temporary_index : index;
-      auto it = _scope_to_function_map.upper_bound(closure_index);
-      if (it != _scope_to_function_map.begin() &&
-          it != _scope_to_function_map.end()) {
-        const Node* function = (--it)->second;
-        function->static_info.closed_environment.emplace(
+      if (it != _scopes.rbegin() && it != --_scopes.rend()) {
+        it->function.static_info.closed_environment.emplace(
             node.string_value + "/" + std::to_string(symbol.scope_number),
             symbol.type.external(false));
       }
@@ -719,26 +689,30 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         return results[1];
       }
       const std::string& s = node.children[0]->string_value;
-      if (!_scopes.back().symbol_table.has(s)) {
-        if (_context.get_functions().count(s)) {
-          error(node, "cannot assign to context function `" + s + "`");
+      for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it) {
+        if (!it->symbol_table.has(s)) {
+          continue;
         }
-        else if (_context.get_types().count(s)) {
-          error(node, "cannot assign to context type `" + s + "`");
+        Type t = it->symbol_table[s].type;
+        if (!t.is(results[1])) {
+          error(node, rs[1] + " assigned to `" + s + "` of type " + t.string());
         }
-        else {
-          error(node, "undeclared identifier `" + s + "`");
+        else if (t.is_const()) {
+          error(node, "assignment to `" + s + "` of type " + t.string());
         }
-        add_symbol(node, s, results[1], false);
         return results[1];
       }
-      Type t = _scopes.back().symbol_table[s].type;
-      if (!t.is(results[1])) {
-        error(node, rs[1] + " assigned to `" + s + "` of type " + t.string());
+
+      if (_context.get_functions().count(s)) {
+        error(node, "cannot assign to context function `" + s + "`");
       }
-      else if (t.is_const()) {
-        error(node, "assignment to `" + s + "` of type " + t.string());
+      else if (_context.get_types().count(s)) {
+        error(node, "cannot assign to context type `" + s + "`");
       }
+      else {
+        error(node, "undeclared identifier `" + s + "`");
+      }
+      add_symbol(node, s, results[1], false, false);
       return results[1];
     }
 
@@ -757,54 +731,40 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       auto add_global = [&]()
       {
         bool exported = _scopes.back().metadata.has(EXPORT_GLOBAL);
-        const Type& t = _scopes.back().symbol_table.get(s, 0).type;
+        const Type& t = _scopes[0].symbol_table.get(s, 0).type;
         if (!t.is_error()) {
           _globals_output.emplace(s, t.external(exported));
         }
         if (exported) {
-          _scopes.back().symbol_table.get(s, 0).warn_writes = false;
-          _scopes.back().symbol_table.get(s, 0).warn_reads = false;
+          _scopes[0].symbol_table.get(s, 0).warn_writes = false;
+          _scopes[0].symbol_table.get(s, 0).warn_reads = false;
         }
       };
       bool global =
           !inside_function() && _scopes.back().symbol_table.size() <= 3;
       if (!global) {
-        node.static_info.scope_number = _scope_numbering.back();
-      }
-
-      if (use_function_immediate_assign_hack(node)) {
-        // Symbol has already been added by immediate-name-assign recursion
-        // hack. But, we may need to make it non-const and enter it in the
-        // global symbol table.
-        std::size_t index =
-            inside_function() * (_scopes.back().symbol_table.size() - 1);
-        auto& symbol = _scopes.back().symbol_table.get(s, index);
-        symbol.declaration = &node;
-        // Remove the temporary index again.
-        symbol.temporary_index = index;
-
-        if (node.type == Node::ASSIGN_VAR && symbol.type.is_const()) {
-          symbol.type.set_const(false);
-          symbol.warn_writes = true;
-        }
-        if (global) {
-          add_global();
-        }
-        return results[1];
+        node.static_info.scope_number = _scopes.back().scope_numbering.back();
       }
 
       Type t = results[1];
       t.set_const(node.type == Node::ASSIGN_CONST);
+      // Merge warnings for immediate assign hack.
+      bool warn_reads = true;
+      if (use_function_immediate_assign_hack(node)) {
+        warn_reads &= _immediate_left_assign_warn_reads;
+      }
 
       // Within global blocks, use the top-level symbol table frame.
       if (global) {
-        add_symbol_checking_collision(node, s, 0, t);
+        add_symbol_checking_collision(node, s, t, true);
         // Store global in the global map for future use.
         add_global();
+        _scopes[0].symbol_table[s].warn_reads &= warn_reads;
         return results[1];
       }
 
-      add_symbol_checking_collision(node, s, t);
+      add_symbol_checking_collision(node, s, t, false);
+      _scopes.back().symbol_table[s].warn_reads &= warn_reads;
       return results[1];
     }
 
@@ -902,15 +862,23 @@ bool StaticChecker::inside_type_context() const
   return _scopes.back().metadata.has(TYPE_EXPR_CONTEXT);
 }
 
+bool StaticChecker::use_function_immediate_assign_hack(const Node& node) const
+{
+  // Node should be type GLOBAL_ASSIGN, ASSIGN_VAR or ASSIGN_CONST.
+  return node.children[0]->type == Node::IDENTIFIER &&
+      node.children[1]->type == Node::FUNCTION;
+}
+
 void StaticChecker::push_symbol_tables()
 {
   _scopes.back().symbol_table.push();
-  _scope_numbering.push_back(_scope_numbering_next++);
+  _scopes.back().scope_numbering.push_back(
+      _scopes.back().scope_numbering_next++);
 }
 
 void StaticChecker::pop_symbol_tables()
 {
-  _scope_numbering.pop_back();
+  _scopes.back().scope_numbering.pop_back();
   typedef std::pair<std::string, symbol_t> pair;
   std::vector<pair> symbols;
   std::size_t size = _scopes.back().symbol_table.size();
@@ -934,67 +902,47 @@ void StaticChecker::pop_symbol_tables()
 }
 
 void StaticChecker::add_symbol(
-    const Node& node, const std::string& name, std::size_t index,
-    const Type& type, bool unreferenced_warning)
+    const Node& node, const std::string& name, const Type& type,
+    bool global, bool unreferenced_warning)
 {
   symbol_t sym;
   sym.type = type;
-  sym.scope_number = _scope_numbering[index];
+  sym.scope_number = global ? 0 : _scopes.back().scope_numbering.back();
   sym.declaration = &node;
   // We don't care if there are no writes to a const symbol, so we just set
   // warn_writes to false.
   sym.warn_writes = unreferenced_warning && !type.is_const();
   sym.warn_reads = unreferenced_warning;
-  _scopes.back().symbol_table.add(name, index, sym);
-}
-
-void StaticChecker::add_symbol(
-    const Node& node, const std::string& name, const Type& type,
-    bool unreferenced_warning)
-{
-  add_symbol(node, name, _scopes.back().symbol_table.size() - 1,
-             type, unreferenced_warning);
-}
-
-bool StaticChecker::use_function_immediate_assign_hack(const Node& node) const
-{
-  // Node should be type GLOBAL_ASSIGN, ASSIGN_VAR or ASSIGN_CONST.
-  return node.children[0]->type == Node::IDENTIFIER &&
-      node.children[1]->type == Node::FUNCTION;
+  (global ? _scopes[0] : _scopes.back()).symbol_table.add(name, sym);
 }
 
 void StaticChecker::add_symbol_checking_collision(
     const Node& node, const std::string& name, const Type& type,
-    bool unreferenced_warning)
+    bool global, bool unreferenced_warning)
 {
-  add_symbol_checking_collision(
-      node, name, _scopes.back().symbol_table.size() - 1,
-      type, unreferenced_warning);
-}
-
-void StaticChecker::add_symbol_checking_collision(
-    const Node& node, const std::string& name, std::size_t index,
-    const Type& type, bool unreferenced_warning)
-{
-  if (_scopes.back().symbol_table.has(name, index)) {
+  auto& table = global ? _scopes[0].symbol_table : _scopes.back().symbol_table;
+  if (table.has(name, table.size() - 1)) {
     // Skipping on error is debatable as to whether it really skips
     // unnecessary messages, or rather hides real name collisions.
-    if (!_scopes.back().symbol_table.get(name, index).type.is_error()) {
-      error(node, (index ? "symbol" : "global ") +
+    if (!table.get(name, table.size() - 1).type.is_error()) {
+      error(node, (global ? "global " : "symbol ") +
                   ("`" + name + "` redefined"));
     }
-    _scopes.back().symbol_table.remove(name, index);
+    table.remove(name, table.size() - 1);
   }
-  add_symbol(node, name, index, type, unreferenced_warning);
+  add_symbol(node, name, type, global, unreferenced_warning);
 }
 
 void StaticChecker::error(
     const Node& node, const std::string& message, bool error)
 {
-  _errors = true;
   std::string m = message;
-  if (_current_function.length()) {
-    m = "in function `" + _current_function + "`: " + m;
+  std::string function = "";
+  for (const auto& scope : _scopes) {
+    function += (function.length() ? "." : "") + scope.name;
+  }
+  if (function.length()) {
+    m = "in function `" + function + "`: " + m;
   }
   auto error_info = _data.format_error(
       node.left_index, node.right_index,
@@ -1008,13 +956,17 @@ StaticChecker::symbol_t::symbol_t()
   , declaration(nullptr)
   , warn_writes(false)
   , warn_reads(false)
-  , temporary_index(0)
 {
 }
 
-StaticChecker::lex_scope_t::lex_scope_t()
-  : symbol_table(symbol_t())
+StaticChecker::lex_scope_t::lex_scope_t(
+    const Node& function, const std::string& name)
+  : function(function)
+  , name(name)
   , metadata(Type::VOID)
+  , symbol_table(symbol_t())
+  , scope_numbering{0}
+  , scope_numbering_next(1)
 {
 }
 

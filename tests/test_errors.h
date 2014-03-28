@@ -238,7 +238,7 @@ TEST_F(YangTest, ErrorTest)
   err("x = UserType() {get_user_type = x; return get_user_type();}", "=");
   err("global {var a = 0;} global {var a = 0;}", "=");
   err("global {const a = 0;} global {a = 0;}", "=");
-  err("x = void() {} x = void() {}", "void()");
+  err("x = void() {} x = void() {}", "=");
   err("x = void() {} global const x = x;", "=");
   err("x = void(int y) {y = 0;}", "=");
 
@@ -290,6 +290,8 @@ TEST_F(YangTest, WarningTest)
   warn("export x = void() {var a = 0; a = a;}", 0);
   warn("export global {var a = 0; const b = 0;}", 0);
   warn("export global {var f = void() {};}", 0);
+  warn("global {const f = void() {f;};}", 0);
+  warn("global {const f = void() {}; f;}", 0);
 
   // Warnings.
   warn("export x = void() {const a = 0;}", 1);
@@ -300,6 +302,8 @@ TEST_F(YangTest, WarningTest)
   warn("global {var a = 0;} export x = void() {a = 1;}", 1);
   warn("export x = void() {var f = void() {}; f;}", 1);
   warn("global {var a = 0;}", 1);
+  warn("global {var f = void() {f;}; f;}", 1);
+  warn("global {const f = void() {};}", 1);
 
   // Empty if-statements.
   warn("export x = void() {if (1);}", 1);

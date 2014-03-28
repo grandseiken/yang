@@ -28,11 +28,6 @@ public:
                 symbol_frame& functions_output, symbol_frame& globals_output);
   ~StaticChecker();
 
-  // True if any errors were detected during the checking. Otherwise, assuming
-  // there are no bugs in the compiler, we can generate the IR without worrying
-  // about malformed AST.
-  bool errors() const;
-
 protected:
 
   void preorder(const Node& node) override;
@@ -48,27 +43,20 @@ private:
   bool is_type_expression(const Node& node) const;
   bool valid_all_contexts(const Node& node) const;
   bool inside_type_context() const;
+  bool use_function_immediate_assign_hack(const Node& node) const;
 
   // Symbol table management that also tracks unreferenced symbols for warnings.
   void push_symbol_tables();
   void pop_symbol_tables();
-  void add_symbol(const Node& node, const std::string& name, std::size_t index,
-                  const Type& type, bool unreferenced_warning = true);
   void add_symbol(const Node& node, const std::string& name, const Type& type,
-                  bool unreferenced_warning = true);
-
-  bool use_function_immediate_assign_hack(const Node& node) const;
-  void add_symbol_checking_collision(
-      const Node& node, const std::string& name, const Type& type,
-      bool unreferenced_warning = true);
+                  bool global, bool unreferenced_warning = true);
   void add_symbol_checking_collision(
       const Node& node, const std::string& name,
-      std::size_t index, const Type& type, bool unreferenced_warning = true);
+      const Type& type, bool global, bool unreferenced_warning = true);
   void error(const Node& node, const std::string& message, bool error = true);
 
-  bool _errors;
-  std::string _current_function;
   std::string _immediate_left_assign;
+  bool _immediate_left_assign_warn_reads;
 
   enum metadata_t {
     EXPORT_GLOBAL,
@@ -93,24 +81,23 @@ private:
     const Node* declaration;
     bool warn_writes;
     bool warn_reads;
-
-    // Only to deal with immediate-left-assign-hack names in closures while
-    // inside the function body.
-    std::size_t temporary_index;
   };
 
   struct lex_scope_t {
-    lex_scope_t();
+    lex_scope_t(const Node& node, const std::string& name);
+    const Node& function;
+    std::string name;
+
     SymbolTable<metadata_t, Type> metadata;
     SymbolTable<std::string, symbol_t> symbol_table;
+
+    // For each function, we also need to number its scopes uniquely, so that we
+    // can distinguish identically-named variables in the closure structure.
+    std::vector<std::size_t> scope_numbering;
+    std::size_t scope_numbering_next;
   };
 
   std::vector<lex_scope_t> _scopes;
-  std::map<std::size_t, const Node*> _scope_to_function_map;
-  // For each function, we also need to number its scopes uniquely, so that we
-  // can distinguish identically-named variables in the closure structure.
-  std::vector<std::size_t> _scope_numbering;
-  std::size_t _scope_numbering_next;
 
   const yang::Context& _context;
   ParseData& _data;

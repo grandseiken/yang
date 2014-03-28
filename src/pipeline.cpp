@@ -74,6 +74,8 @@ Program::Program(const Context& context, const std::string& name,
   if (log_errors()) {
     return;
   }
+  // Now there's no errors so we can generate IR without worrying about
+  // malformed input.
 
   internal::StaticChecker checker(
       _internals->context, data, _internals->functions, _internals->globals);

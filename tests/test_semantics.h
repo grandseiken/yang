@@ -133,6 +133,32 @@ export odd_ops = int()
   return $+((5, 6, 7) % 4) + $+(8 / (1, 2, 4)) +
          $+((1, 2, 3) ** 2) + $+(2 ** (1, 2, 3));
 }
+
+export edit = int()()
+{
+  var ff = int() {return 0;};
+  var step = 0;
+  const f = int()
+  {
+    const val = ff();
+    if (step == 0) {
+      ff = int() {return 1;};
+    }
+    if (step == 1) {
+      ff = int() {return step;};
+    }
+    if (step == 2) {
+      ff = edit();
+    }
+    // TODO: broken re-expression of above. Bad interaction
+    // between ternary and function creation.
+    //ff = step == 0 ? int() {return 1;} :
+    //     step == 1 ? f : edit();
+    ++step;
+    return val;
+  };
+  return f;
+}
 )";
 
 TEST_F(YangTest, SemanticsTest)
@@ -160,6 +186,15 @@ TEST_F(YangTest, SemanticsTest)
 
   EXPECT_EQ(inst.call<int_t>("knuth_man_or_boy_test", 10), -67);
   EXPECT_EQ(inst.call<int_t>("odd_ops"), 48);
+
+  typedef Function<int_t()> intf_t;
+  auto edit = inst.call<intf_t>("edit");
+  EXPECT_EQ(edit(), 0);
+  EXPECT_EQ(edit(), 1);
+  EXPECT_EQ(edit(), 2);
+  EXPECT_EQ(edit(), 0);
+  EXPECT_EQ(edit(), 1);
+  EXPECT_EQ(edit(), 2);
   // TODO: just getting started. Need way more semantic tests.
 }
 
@@ -201,26 +236,4 @@ TEST_F(YangTest, TestTco)
   EXPECT_EQ(inst.call<int_t>("rec_fac", 6), 720);
   EXPECT_EQ(inst.call<int_t>("tco_fac", 6), 720);
   // TODO: EXPECT_NO_THROW(inst.call<int_t>("tco_fac", 1000000)).
-}
-
-TEST_F(YangTest, TestBroken)
-{
-  // TODO: this is broken; something to do with immediate left-assign hack
-  // causes "ff" to have a value "ff" inside that's initialised with a value
-  // from "foo".
-  // Before trying to hack a fix for this, refactor the entire IR generation.
-  const std::string s = R"(
-  export foo = int()
-  {
-    var ff = int() {return 0;};
-    const f = int()
-    {
-      ff = int() {return 1;};
-      ff = f;
-      ff = foo;
-      return ff();
-    };
-    return ff();
-  }
-  )";
 }
