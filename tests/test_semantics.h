@@ -141,19 +141,9 @@ export edit = int()()
   const f = int()
   {
     const val = ff();
-    if (step == 0) {
-      ff = int() {return 1;};
-    }
-    if (step == 1) {
-      ff = int() {return step;};
-    }
-    if (step == 2) {
-      ff = edit();
-    }
-    // TODO: broken re-expression of above. Bad interaction
-    // between ternary and function creation.
-    //ff = step == 0 ? int() {return 1;} :
-    //     step == 1 ? f : edit();
+    ff = step == 0 ? int() {return 1;} :
+         step == 1 ? int() {return step;} :
+         step == 2 ? edit() : ff;
     ++step;
     return val;
   };
@@ -196,6 +186,8 @@ TEST_F(YangTest, SemanticsTest)
   EXPECT_EQ(edit(), 1);
   EXPECT_EQ(edit(), 2);
   // TODO: just getting started. Need way more semantic tests.
+  // TODO: need some exhaustive tests that use every operator and construct and
+  // stick refcounted things in every possible scope.
 }
 
 const std::string TestTcoStr = R"(

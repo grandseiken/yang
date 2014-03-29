@@ -199,6 +199,19 @@ void StaticChecker::infix(const Node& node, const result_list& results)
       }
       break;
 
+    // Right-hand-sides of non-vectorised ternary and logical operators need an
+    // extra scope, as they won't always be run.
+    case Node::TERNARY:
+      if (!results[0].is_vector() && results.size() == 2) {
+        pop_symbol_tables();
+      }
+    case Node::LOGICAL_OR:
+    case Node::LOGICAL_AND:
+      if (!results[0].is_vector()) {
+        push_symbol_tables();
+      }
+      break;
+
     default: {}
   }
 }
@@ -521,6 +534,9 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
 
     case Node::TERNARY:
     {
+      if (!results[0].is_vector()) {
+        pop_symbol_tables();
+      }
       // The ternary operator vectorises, as in:
       // (a, b) ? (c, d) : (e, f) is equivalent to (a ? c : e, b ? d : f).
       //
@@ -579,6 +595,9 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
 
     case Node::LOGICAL_OR:
     case Node::LOGICAL_AND:
+      if (!results[0].is_vector()) {
+        pop_symbol_tables();
+      }
     case Node::BITWISE_OR:
     case Node::BITWISE_AND:
     case Node::BITWISE_XOR:

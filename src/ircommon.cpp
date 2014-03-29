@@ -178,7 +178,7 @@ llvm::Function* IrCommon::get_trampoline_function(
 
       for (std::size_t j = 0; j < size; ++j) {
         jt->setName("a" + std::to_string(i) + "_" + std::to_string(j));
-        v = _b.b.CreateInsertElement(v, jt, _b.constant_int(j), "vec");
+        v = _b.b.CreateInsertElement(v, jt, _b.constant_int(j));
         ++jt;
       }
       call_args.push_back(v);
@@ -206,14 +206,13 @@ llvm::Function* IrCommon::get_trampoline_function(
   if (return_t.is_vector()) {
     auto it = function->arg_begin();
     for (std::size_t i = 0; i < return_t.get_vector_size(); ++i) {
-      llvm::Value* v =
-          _b.b.CreateExtractElement(result, _b.constant_int(i), "vec");
+      llvm::Value* v = _b.b.CreateExtractElement(result, _b.constant_int(i));
       _b.b.CreateStore(v, it++);
     }
   }
   else if (return_t.is_function()) {
-    llvm::Value* fptr = _b.b.CreateExtractValue(result, 0, "fptr");
-    llvm::Value* eptr = _b.b.CreateExtractValue(result, 1, "eptr");
+    llvm::Value* fptr = _b.b.CreateExtractValue(result, 0);
+    llvm::Value* eptr = _b.b.CreateExtractValue(result, 1);
 
     auto it = function->arg_begin();
     _b.b.CreateStore(fptr, it++);
@@ -290,15 +289,14 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
       if (it->getType()->isVectorTy()) {
         for (std::size_t j = 0;
              j < it->getType()->getVectorNumElements(); ++j) {
-          llvm::Value* v =
-              _b.b.CreateExtractElement(it, _b.constant_int(j), "vec");
+          llvm::Value* v = _b.b.CreateExtractElement(it, _b.constant_int(j));
           args.push_back(v);
         }
         continue;
       }
       if (it->getType()->isStructTy()) {
-        llvm::Value* fptr = _b.b.CreateExtractValue(it, 0, "fptr");
-        llvm::Value* eptr = _b.b.CreateExtractValue(it, 1, "eptr");
+        llvm::Value* fptr = _b.b.CreateExtractValue(it, 0);
+        llvm::Value* eptr = _b.b.CreateExtractValue(it, 1);
         args.push_back(fptr);
         args.push_back(eptr);
         continue;
@@ -321,7 +319,7 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
     std::size_t size = return_t.get_vector_size();
     llvm::Type* t = return_t.is_int_vector() ? _b.int_type() : _b.float_type();
     for (std::size_t i = 0; i < size; ++i) {
-      llvm::Value* v = _b.b.CreateAlloca(t, nullptr, "r" + std::to_string(i));
+      llvm::Value* v = _b.b.CreateAlloca(t, nullptr);
       allocs.push_back(v);
       args.push_back(v);
     }
@@ -330,30 +328,28 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
     llvm::Value* v = return_t.is_int_vector() ?
         _b.constant_int_vector(0, size) : _b.constant_float_vector(0, size);
     for (std::size_t i = 0; i < return_t.get_vector_size(); ++i) {
-      llvm::Value* load = _b.b.CreateLoad(allocs[i], "load");
-      v = _b.b.CreateInsertElement(v, load, _b.constant_int(i), "vec");
+      llvm::Value* load = _b.b.CreateLoad(allocs[i]);
+      v = _b.b.CreateInsertElement(v, load, _b.constant_int(i));
     }
     _b.b.CreateRet(v);
   }
   else if (return_t.is_function()) {
     llvm::Type* t = internal_type->getReturnType()->getStructElementType(0);
-    llvm::Value* fptr = _b.b.CreateAlloca(t, nullptr, "r0");
-    llvm::Value* eptr = _b.b.CreateAlloca(_b.void_ptr_type(), nullptr, "r1");
+    llvm::Value* fptr = _b.b.CreateAlloca(t, nullptr);
+    llvm::Value* eptr = _b.b.CreateAlloca(_b.void_ptr_type(), nullptr);
     args.push_back(fptr);
     args.push_back(eptr);
     handle();
 
     _b.b.CreateRet(_b.function_value(
-        return_t,
-        _b.b.CreateLoad(fptr, "fptr"), _b.b.CreateLoad(eptr, "eptr")));
+        return_t, _b.b.CreateLoad(fptr), _b.b.CreateLoad(eptr)));
   }
   else {
-    llvm::Value* r =
-        _b.b.CreateAlloca(internal_type->getReturnType(), nullptr, "r0");
+    llvm::Value* r = _b.b.CreateAlloca(internal_type->getReturnType(), nullptr);
     args.push_back(r);
     handle();
 
-    _b.b.CreateRet(_b.b.CreateLoad(r, "ret"));
+    _b.b.CreateRet(_b.b.CreateLoad(r));
   }
   _reverse_trampoline_map.emplace(function_type.erase_user_types(), function);
   return function;

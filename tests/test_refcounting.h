@@ -50,7 +50,7 @@ export store_in_local = void()
     t;
     tt;
   }
-  for (i = 0; i < 5 && (const t = stored)(); ++i) {
+  for (i = 0; (const t = stored)() && i < 4; ++i) {
     const tt = t;
     tt;
   }

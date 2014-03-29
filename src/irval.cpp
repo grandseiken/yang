@@ -162,12 +162,12 @@ Value Builder::function_value(const yang::Type& function_type,
 {
   Value v = function_value_null(function_type);
   llvm::Value* cast = b.CreateBitCast(fptr, void_ptr_type());
-  v.irval = b.CreateInsertValue(v.irval, cast, 0, "fptr");
+  v.irval = b.CreateInsertValue(v.irval, cast, 0);
   if (eptr) {
     // Must be bitcast to void pointer, since it may be a global data type or
     // closure data type..
     llvm::Value* cast = b.CreateBitCast(eptr, void_ptr_type());
-    v.irval = b.CreateInsertValue(v.irval, cast, 1, "eptr");
+    v.irval = b.CreateInsertValue(v.irval, cast, 1);
   }
   return v;
 }
@@ -283,7 +283,7 @@ Value LexScope::memory_load(const yang::Type& type, llvm::Value* ptr)
   // Loads out of the global data structure must be byte-aligned! I don't
   // entirely understand why, but leaving the default will segfault at random
   // sometimes for certain types (e.g. float vectors).
-  return Value(type, _b.b.CreateAlignedLoad(ptr, 1, "load"));
+  return Value(type, _b.b.CreateAlignedLoad(ptr, 1));
 }
 
 void LexScope::memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr)
@@ -319,8 +319,8 @@ void LexScope::update_reference_count(const Value& value, int_t change)
     return;
   }
   // This reference counting will be inlined by the LLVM optimiser.
-  llvm::Value* fptr = _b.b.CreateExtractValue(value, 0, "fptr");
-  llvm::Value* eptr = _b.b.CreateExtractValue(value, 1, "eptr");
+  llvm::Value* fptr = _b.b.CreateExtractValue(value, 0);
+  llvm::Value* eptr = _b.b.CreateExtractValue(value, 1);
   update_reference_count(fptr, eptr, change);
 }
 
