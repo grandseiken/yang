@@ -12,6 +12,21 @@ namespace llvm {
   class LLVMContext;
 }
 
+// TODO: using LLVM frem, lsh, rsh operations seems to break sometimes when
+// one operand is e.g. loaded from a data structure. I don't understand why.
+// Maybe we can use an inlining IR function?
+namespace {
+  yang::int_t lsh(yang::uint_t a, yang::uint_t b)
+  {
+    return a << b;
+  }
+
+  yang::int_t rsh(yang::uint_t a, yang::uint_t b)
+  {
+    return a >> b;
+  }
+}
+
 namespace yang {
 namespace internal {
 
@@ -690,7 +705,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     {
       if (results[0].type.is_vector()) {
         // Short-circuiting isn't possible.
-        return b2i(binary(node, i2b(results[0]), i2b(results[1])));
+        return binary(node, b2i(i2b(results[0])), b2i(i2b(results[1])));
       }
       fback.pop_scope();
       // Update in case we branched again.
@@ -1308,8 +1323,8 @@ Value IrGenerator::raw_binary(const Node& node, const Value& v, const Value& u)
         type == Node::BITWISE_OR ? _b.b.CreateOr(vi, ui) :
         type == Node::BITWISE_AND ? _b.b.CreateAnd(vi, ui) :
         type == Node::BITWISE_XOR ? _b.b.CreateXor(vi, ui) :
-        type == Node::BITWISE_LSHIFT ? _b.b.CreateShl(vi, ui) :
-        type == Node::BITWISE_RSHIFT ? _b.b.CreateAShr(vi, ui) :
+        type == Node::BITWISE_LSHIFT ? lsh(v, u) :
+        type == Node::BITWISE_RSHIFT ? rsh(v, u) :
         type == Node::POW ? pow(v, u) :
         type == Node::MOD ? mod(v, u) :
         type == Node::ADD ? _b.b.CreateAdd(vi, ui) :
@@ -1343,44 +1358,71 @@ Value IrGenerator::raw_binary(const Node& node, const Value& v, const Value& u)
   return Value(v.type, out);
 }
 
+llvm::Value* IrGenerator::vectorise(
+    const Value& v, const Value& u, llvm::Function* f, bool to_float)
+{
+  auto flt = [&](llvm::Value* t)
+  {
+    Value tt(yang::Type::int_t(), t);
+    return to_float ? i2f(tt) : tt;
+  };
+  if (!v.type.is_vector()) {
+    llvm::Value* r =
+        _b.b.CreateCall(f, std::vector<llvm::Value*>{flt(v), flt(u)});
+    return to_float && v.type.is_int() ?
+        f2i(Value(yang::Type::float_t(), r)) : r;
+  }
+
+  std::size_t size = v.type.get_vector_size();
+  Value result = to_float ?
+      _b.constant_float_vector(0, size) : _b.default_for_type(v.type);
+  for (std::size_t i = 0; i < size; ++i) {
+    std::vector<llvm::Value*> args{
+        flt(_b.b.CreateExtractElement(v, _b.constant_int(i))),
+        flt(_b.b.CreateExtractElement(u, _b.constant_int(i)))};
+    llvm::Value* call = _b.b.CreateCall(f, args);
+    result.irval = _b.b.CreateInsertElement(result, call, _b.constant_int(i));
+  }
+  return to_float && v.type.is_int_vector() ? f2i(result) : result;
+}
+
+llvm::Value* IrGenerator::lsh(const Value& v, const Value& u)
+{
+  std::vector<llvm::Type*> args{_b.int_type(), _b.int_type()};
+  auto lsh_ptr = get_native_function(
+      "lsh", (yang::void_fp)&::lsh,
+      llvm::FunctionType::get(_b.int_type(), args, false));
+  return vectorise(v, u, lsh_ptr);
+}
+
+llvm::Value* IrGenerator::rsh(const Value& v, const Value& u)
+{
+  std::vector<llvm::Type*> args{_b.int_type(), _b.int_type()};
+  auto rsh_ptr = get_native_function(
+      "rsh", (yang::void_fp)&::rsh,
+      llvm::FunctionType::get(_b.int_type(), args, false));
+  return vectorise(v, u, rsh_ptr);
+}
+
 llvm::Value* IrGenerator::pow(const Value& v, const Value& u)
 {
   std::vector<llvm::Type*> args{_b.float_type(), _b.float_type()};
   auto pow_ptr = get_native_function(
       "pow", (yang::void_fp)&::pow,
       llvm::FunctionType::get(_b.float_type(), args, false));
-
-  if (!v.type.is_vector()) {
-    Value vv = v.type.is_int() ? i2f(v) : v;
-    Value uu = u.type.is_int() ? i2f(u) : u;
-
-    std::vector<llvm::Value*> args{vv, uu};
-    Value r(yang::Type::float_t(), _b.b.CreateCall(pow_ptr, args));
-    return v.type.is_int() ? f2i(r) : r;
-  }
-
-  Value result = _b.constant_float_vector(0, v.type.get_vector_size());
-  for (std::size_t i = 0; i < v.type.get_vector_size(); ++i) {
-    Value x(yang::Type::float_t(),
-            _b.b.CreateExtractElement(v, _b.constant_int(i)));
-    Value y(yang::Type::float_t(),
-            _b.b.CreateExtractElement(u, _b.constant_int(i)));
-
-    Value xx = v.type.is_int_vector() ? i2f(x) : x;
-    Value yy = u.type.is_int_vector() ? i2f(y) : y;
-    std::vector<llvm::Value*> args{xx, yy};
-
-    llvm::Value* call = _b.b.CreateCall(pow_ptr, args);
-    result.irval =
-        _b.b.CreateInsertElement(result, call, _b.constant_int(i));
-  }
-  return v.type.is_int_vector() ? f2i(result) : result;
+  return vectorise(v, u, pow_ptr, true);
 }
 
 llvm::Value* IrGenerator::mod(const Value& v, const Value& u)
 {
+  // Should be able to use LLVM "frem" instruction, but breaks on e.g.
+  // const t = 1; return t. % 2.;
   if (!v.type.is_int() && !v.type.is_int_vector()) {
-    return _b.b.CreateFRem(v, u);
+    std::vector<llvm::Type*> args{_b.float_type(), _b.float_type()};
+    auto fmod_ptr = get_native_function(
+        "fmod", (yang::void_fp)&::fmod,
+        llvm::FunctionType::get(_b.float_type(), args, false));
+    return vectorise(v, u, fmod_ptr);
   }
 
   Value zero = _b.default_for_type(v.type);
@@ -1473,7 +1515,7 @@ Value IrGenerator::fold(const Node& node, const Value& value,
     auto it = elements.begin();
     Value v = *it++;
     for (; it != elements.end(); ++it) {
-      v = raw_binary(node, *it, v);
+      v = raw_binary(node, v, *it);
     }
     return v;
   }

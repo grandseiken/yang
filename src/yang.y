@@ -425,7 +425,7 @@ expr
   | expr T_ASSIGN expr
 {$$ = new Node(scan, $2, Node::ASSIGN, $1, $3);}
   | expr T_ASSIGN_LOGICAL_OR expr
-{$$ = new Node(scan, $2, Node::ASSIGN, $1,
+{$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
                new Node(scan, $2, Node::LOGICAL_OR, $1, $3));}
   | expr T_ASSIGN_LOGICAL_AND expr
 {$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
@@ -463,7 +463,8 @@ expr
   | expr T_ASSIGN_DIV expr
 {$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
                new Node(scan, $2, Node::DIV, $1, $3));}
-    /* TODO: increment/decrement should parse on expressions. */
+    /* TODO: increment/decrement should parse on expressions, and work on
+             floats values. */
   | T_INCREMENT T_IDENTIFIER %prec P_UNARY_L
 {$$ = new Node(
      scan, $1, Node::ASSIGN, $2->clone(),

@@ -15,7 +15,9 @@ namespace yang {
 template<bool B, typename T = void>
 using enable_if = typename std::enable_if<B, T>::type;
 
+typedef void void_t;
 typedef int32_t int_t;
+typedef uint32_t uint_t;
 typedef double float_t;
 typedef void (*void_fp)();
 

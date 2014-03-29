@@ -186,8 +186,6 @@ TEST_F(YangTest, SemanticsTest)
   EXPECT_EQ(edit(), 1);
   EXPECT_EQ(edit(), 2);
   // TODO: just getting started. Need way more semantic tests.
-  // TODO: need some exhaustive tests that use every operator and construct and
-  // stick refcounted things in every possible scope.
 }
 
 const std::string TestTcoStr = R"(

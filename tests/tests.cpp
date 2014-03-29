@@ -51,6 +51,7 @@ private:
 // Test headers.
 #include "test_apis.h"
 #include "test_errors.h"
+#include "test_exhaustive.h"
 #include "test_functions.h"
 #include "test_refcounting.h"
 #include "test_semantics.h"

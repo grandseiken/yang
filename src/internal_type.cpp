@@ -33,7 +33,7 @@ Type::Type(type_base base, std::size_t count)
   , _const(false)
 {
   if (base == FUNCTION || count == 0 ||
-      (count != 1 && base != INT && base != FLOAT)) {
+      (count != 1 && base != INT && base != FLOAT && base != ERROR)) {
     _base = ERROR;
     _count = 1;
   }

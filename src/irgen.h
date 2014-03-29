@@ -66,6 +66,11 @@ private:
   llvm::Value* structure_ptr(llvm::Value* ptr, std::size_t index);
 
   Value raw_binary(const Node& node, const Value& v, const Value& u);
+  llvm::Value* vectorise(
+      const Value& v, const Value& u, llvm::Function* f, bool to_float = false);
+  // Lsh/rsh implementation.
+  llvm::Value* lsh(const Value& v, const Value& u);
+  llvm::Value* rsh(const Value& v, const Value& u);
   // Power implementation.
   llvm::Value* pow(const Value& v, const Value& u);
   // Euclidean mod and div implementations.

@@ -241,6 +241,9 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {} x = void() {}", "=");
   err("x = void() {} global const x = x;", "=");
   err("x = void(int y) {y = 0;}", "=");
+  err("x = void() {var a = 0; a += 1.;}", "+=");
+  err("x = void() {var a = 0; a += (1, 1);}", "+=");
+  err("x = void() {var a = 0; a += void() {};}", "+=");
 
   // Name resolution / scope errors.
   err("x = void() {y;}", "y");

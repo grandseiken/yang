@@ -715,6 +715,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         Type t = it->symbol_table[s].type;
         if (!t.is(results[1])) {
           error(node, rs[1] + " assigned to `" + s + "` of type " + t.string());
+          return Type::ERROR;
         }
         else if (t.is_const()) {
           error(node, "assignment to `" + s + "` of type " + t.string());
@@ -829,6 +830,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
       if (unify_error) {
         error(node, s + " applied to different types " + ts);
+        return Type(Type::ERROR, results.size());
       }
       return Type(t.base(), results.size());
     }
