@@ -315,8 +315,10 @@ export adiv3 = int() {return [v /= t.];}
 export adiv4 = int() {return $+[(vv /= (t, 2).)];}
 export adiv5 = int() {return $+[(vv /= t.)];}
 
-export pfix0 = int() {--u; return ++u;}
-export pfix1 = int() {++uu; return $+--uu;}
+export pfix0 = int() {++u; return --u;}
+export pfix1 = int() {++uu; return $+--++--uu;}
+export pfix2 = int() {return [++v - --v];}
+export pfix3 = int() {++vv; return $+[--++--vv];}
 
 export to_int0 = int() {return [v];}
 export to_int1 = int() {return [vv][0];}

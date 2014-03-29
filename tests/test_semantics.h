@@ -142,8 +142,8 @@ export edit = int()()
   {
     const val = ff();
     ff = step == 0 ? int() {return 1;} :
-         step == 1 ? int() {return step;} :
-         step == 2 ? edit() : ff;
+         step == ++0 ? int() {return step;} :
+         step == ++++0 ? edit() : ff;
     ++step;
     return val;
   };

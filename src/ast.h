@@ -97,6 +97,8 @@ struct Node {
     LOGICAL_NEGATION,
     BITWISE_NEGATION,
     ARITHMETIC_NEGATION,
+    INCREMENT,
+    DECREMENT,
     ASSIGN,
     ASSIGN_VAR,
     ASSIGN_CONST,
@@ -107,8 +109,7 @@ struct Node {
   };
 
   // Child nodes passed to constructors or add transfer ownership, and are
-  // destroyed when the parent is destroyed. These would take explicit
-  // unique_ptr<Node> parameters but for sake of brevity in the parser.
+  // destroyed when the parent is destroyed.
 
   // Construct nodes with source indices based on an inner node.
   Node(scan_t scan, const Node* inner, node_type type);
@@ -123,6 +124,7 @@ struct Node {
   Node(scan_t scan, node_type type, yang::float_t value);
   Node(scan_t scan, node_type type, const std::string& value);
 
+  ~Node();
   // Clone an entire tree.
   Node* clone(bool clone_children = true) const;
 
@@ -145,7 +147,7 @@ struct Node {
 
   // Type and children.
   node_type type;
-  std::vector<std::unique_ptr<Node>> children;
+  std::vector<Node*> children;
 
   // Literal values.
   yang::int_t int_value;

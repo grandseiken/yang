@@ -224,6 +224,7 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {(1)[1];}", "[");
   err("x = void() {[0];}", "[");
   err("x = void() {1..;}", ".");
+  err("x = void() {++x;}", "++");
 
   // Variable declaration and assignment errors.
   err("x = void() {var a;}", ";");
@@ -244,6 +245,8 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {var a = 0; a += 1.;}", "+=");
   err("x = void() {var a = 0; a += (1, 1);}", "+=");
   err("x = void() {var a = 0; a += void() {};}", "+=");
+  err("x = void() {const a = 0; ++a;}", "++");
+  err("x = void() {var a = 0; ++a = 1;}", "=");
 
   // Name resolution / scope errors.
   err("x = void() {y;}", "y");
@@ -291,6 +294,7 @@ TEST_F(YangTest, WarningTest)
   warn("export x = void(int a) {a;}", 0);
   warn("export x = void() {const a = 0; a;}", 0);
   warn("export x = void() {var a = 0; a = a;}", 0);
+  warn("export x = void() {var a = 0; ++a;}", 0);
   warn("export global {var a = 0; const b = 0;}", 0);
   warn("export global {var f = void() {};}", 0);
   warn("global {const f = void() {f;};}", 0);

@@ -809,6 +809,19 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
           _b.b.CreateSub(v, results[0]) : _b.b.CreateFSub(v, results[0]);
       return v;
     }
+    case Node::INCREMENT:
+    case Node::DECREMENT:
+    {
+      Value v = _b.default_for_type(
+          results[0].type, node.type == Node::INCREMENT ? 1 : -1);
+      v.irval = results[0].type.is_int() || results[0].type.is_int_vector() ?
+          _b.b.CreateAdd(results[0], v) : _b.b.CreateFAdd(results[0], v);
+      if (node.children[0]->type == Node::IDENTIFIER) {
+        const std::string& s = node.children[0]->string_value;
+        fback.memory_store(v, get_variable_ptr(s));
+      }
+      return v;
+    }
 
     case Node::ASSIGN:
     {

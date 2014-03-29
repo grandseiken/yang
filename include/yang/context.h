@@ -37,8 +37,8 @@
 // TODO: as alternative to textual include, allow code-sharing by way of
 // treating a Program as a Context (using LLVM modules to avoid the need for
 // complicated trampolining back and forth).
-// TODO: vectorised assignment, or pattern-matching assignment? Also, indexed
-// assignment.
+// TODO: better assignment with "references". E.g. a[i] and ++i should both be
+// assignable-to. Vectorised assignment? Pattern-matching assignment?
 // TODO: code hot-swapping. Careful with pointer values (e.g. functions) in
 // global data struct which probably need to be left as default values.
 // TODO: possibly allow ref-counted user types. Set up some template that

@@ -106,6 +106,25 @@ Node::Node(scan_t scan, node_type type, const std::string& value)
   data(scan).orphans.insert(this);
 }
 
+Node::~Node()
+{
+  // Paranoid: avoid blowing the stack on deep AST trees.
+  std::vector<Node*> stack;
+  stack.emplace_back(this);
+  while (!stack.empty()) {
+    Node* n = stack.back();
+    stack.pop_back();
+
+    for (const auto& child : n->children) {
+      stack.emplace_back(child);
+    }
+    n->children.clear();
+    if (n != this) {
+      delete n;
+    }
+  }
+}
+
 Node* Node::clone(bool clone_children) const
 {
   Node* node = new Node(scan, type);
@@ -122,8 +141,6 @@ Node* Node::clone(bool clone_children) const
   }
 
   // Paranoid: avoid blowing the stack on deep AST trees.
-  // TODO: I guess we need to do the same thing in the destructor (rather than
-  // using unique_ptr).
   std::vector<std::pair<const Node*, Node*>> stack;
   stack.emplace_back(this, node);
   while (!stack.empty()) {
@@ -133,7 +150,7 @@ Node* Node::clone(bool clone_children) const
     for (const auto& child : pair.first->children) {
       Node* n = child->clone(false);
       pair.second->add(n);
-      stack.emplace_back(child.get(), n);
+      stack.emplace_back(child, n);
     }
   }
   return node;
@@ -142,7 +159,7 @@ Node* Node::clone(bool clone_children) const
 void Node::add_front(Node* node)
 {
   ((ParseData*)yang_get_extra(scan))->orphans.erase(node);
-  children.insert(children.begin(), std::unique_ptr<Node>(node));
+  children.insert(children.begin(), node);
   left_tree_index = std::min(left_tree_index, node->left_tree_index);
   right_tree_index = std::max(right_tree_index, node->right_tree_index);
 }
@@ -150,7 +167,7 @@ void Node::add_front(Node* node)
 void Node::add(Node* node)
 {
   ((ParseData*)yang_get_extra(scan))->orphans.erase(node);
-  children.push_back(std::unique_ptr<Node>(node));
+  children.push_back(node);
   left_tree_index = std::min(left_tree_index, node->left_tree_index);
   right_tree_index = std::max(right_tree_index, node->right_tree_index);
 }
@@ -223,6 +240,8 @@ std::string node_op_string(Node::node_type t)
       t == Node::LOGICAL_NEGATION ? "!" :
       t == Node::BITWISE_NEGATION ? "~" :
       t == Node::ARITHMETIC_NEGATION ? "-" :
+      t == Node::INCREMENT ? "++" :
+      t == Node::DECREMENT ? "--" :
       t == Node::INT_CAST ? "[]" :
       t == Node::FLOAT_CAST ? "." :
       t == Node::VECTOR_CONSTRUCT ? "()" :

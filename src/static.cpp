@@ -92,6 +92,7 @@ void StaticChecker::preorder(const Node& node)
       }
       break;
     case Node::ASSIGN:
+      // Change which warning references affect.
       _scopes.back().metadata.push();
       _scopes.back().metadata.add(ASSIGN_LHS_CONTEXT, Type::VOID);
       break;
@@ -188,8 +189,6 @@ void StaticChecker::infix(const Node& node, const result_list& results)
       pop_symbol_tables();
       break;
     case Node::ASSIGN:
-      // Remove temporary treatment of identifier as non-referencing for warning
-      // purposes.
       _scopes.back().metadata.pop();
       break;
 
@@ -223,7 +222,6 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
   for (const Type& t : results) {
     rs.push_back(t.string());
   }
-
 
   // Pop the correct tables before returning an error. Make sure to do this
   // before checking for context error; otherwise we might still think we're
@@ -698,6 +696,28 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         return Type::ERROR;
       }
       return results[0];
+    case Node::INCREMENT:
+    case Node::DECREMENT:
+    {
+      if (!(results[0].is_int() || results[0].is_float())) {
+        error(node, s + " applied to " + rs[0]);
+        return Type::ERROR;
+      }
+      Type t = results[0];
+      if (node.children[0]->type == Node::IDENTIFIER) {
+        if (results[0].is_const()) {
+          error(node, s + " applied to " + rs[0]);
+          t.set_const(false);
+        }
+        std::string s = node.children[0]->string_value;
+        for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it) {
+          if (it->symbol_table.has(s)) {
+            it->symbol_table[s].warn_writes = false;
+          }
+        }
+      }
+      return t;
+    }
 
     case Node::ASSIGN:
     {

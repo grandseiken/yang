@@ -176,13 +176,17 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
     case Node::FOLD_LE:
     case Node::FOLD_GT:
     case Node::FOLD_LT:
-      return "($" + results[0] + s + ")";
+      return "($" + s + results[0] + ")";
 
     case Node::LOGICAL_NEGATION:
     case Node::BITWISE_NEGATION:
     case Node::ARITHMETIC_NEGATION:
       return "(" + s + results[0] + ")";
 
+    case Node::INCREMENT:
+      return "(++" + results[0] + ")";
+    case Node::DECREMENT:
+      return "(--" + results[0] + ")";
     case Node::ASSIGN:
       return "(" + results[0] + " = " + results[1] + ")";
     case Node::ASSIGN_VAR:

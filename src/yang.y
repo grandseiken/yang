@@ -463,18 +463,10 @@ expr
   | expr T_ASSIGN_DIV expr
 {$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
                new Node(scan, $2, Node::DIV, $1, $3));}
-    /* TODO: increment/decrement should parse on expressions, and work on
-             floats values. */
-  | T_INCREMENT T_IDENTIFIER %prec P_UNARY_L
-{$$ = new Node(
-     scan, $1, Node::ASSIGN, $2->clone(),
-     new Node(scan, $1, Node::ADD, $2, new Node(scan, Node::INT_LITERAL, 1)));
- $$->string_value = $2->string_value;}
-  | T_DECREMENT T_IDENTIFIER %prec P_UNARY_L
-{$$ = new Node(
-     scan, $1, Node::ASSIGN, $2->clone(),
-     new Node(scan, $1, Node::SUB, $2, new Node(scan, Node::INT_LITERAL, 1)));
- $$->string_value = $2->string_value;}
+  | T_INCREMENT expr %prec P_UNARY_L
+{$$ = new Node(scan, $1, Node::INCREMENT, $2);}
+  | T_DECREMENT expr %prec P_UNARY_L
+{$$ = new Node(scan, $1, Node::DECREMENT, $2);}
 
   /* Type-conversion operators. */
 
