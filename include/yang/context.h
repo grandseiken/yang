@@ -53,14 +53,15 @@
 //   from different Instances where one happens to hold a reference to a
 //   function from the other.
 // The last is the trickiest bit and should probably be optional.
+// TODO: add a layer of abstraction so the LLVM backend can be swapped out
+// easily (e.g. for a bytecode backend).
 //
 // Further off (helpful stuff that can be emulated without needing to be built-
 // -in right away):
 // TODO: a standard library (as a Context).
-// TODO: add a LuaValue-like generic value class.
+// TODO: add a generic value class for easy generic behaviour on C++ side.
 // TODO: add some kind of built-in data structures, including at least a generic
-// map<K, V> type. May require garbage-collection, unless we place tight
-// restrictions on their usage (e.g. only global variables).
+// map<K, V> type. Decide on semantics (e.g. garbage collection).
 // TODO: make sure the exposed APIs have sensible and useful interfaces; e.g.,
 // should they have accessors to retrieve all possible useful data; do they
 // return strings or output to streams; etc.

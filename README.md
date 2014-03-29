@@ -13,7 +13,7 @@ Some planned features:
 * Scripts can be combined either statically (one script acts as a library of functions for another) or dynamically (one script is passed as an argument to another via an abstract interface).
 
 Some drawbacks:
-* Using Yang involves linking your program against a decent chunk of LLVM, which will increase the size of your distribution by a good 10 megabytes or so.
+* Using Yang involves linking your program against a decent chunk of LLVM, which will increase the size of your distribution by a good 10 megabytes or so. There may be some sort of bytecode backend in the future.
 * Yang makes heavy use of C++11 language and library features, so you'll need a recent compiler. At the moment there's no C API.
 
 The language and API are still in early stages and very much in flux, so you probably don't want to use this for anything serious just yet.
