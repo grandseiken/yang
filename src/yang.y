@@ -37,6 +37,7 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
 
 %token <node> T_GLOBAL
 %token <node> T_EXPORT
+%token <node> T_CLOSED
 %token <node> T_VAR
 %token <node> T_CONST
 %token <node> T_IF
@@ -128,6 +129,7 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
 %type <node> elem_list
 %type <node> elem
 %type <node> opt_export
+%type <node> opt_closed
 %type <node> stmt_list
 %type <node> stmt
 %type <node> opt_expr
@@ -141,14 +143,6 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
 %%
 
   /* Language grammar. */
-  /* TODO: we could require variables referenced in inner functions be declared
-     with a keyword like "closed" or similar. This seems like a pretty great
-     idea; the only problem is how to handle arguments cleanly:
-     - also allow "closed" in argument lists?
-     - make arguments implicitly "closed"?
-     - make *all* const variables implicitly "closed"?
-     We can then also warn when a closed variable is never referenced in an
-     inner scope. */
   /* TODO: for better error-reporting, some nodes (e.g. WHILE and
      shortcut-assigns should really be nodes in their own right rather than
      specialisations of other nodes.
@@ -189,6 +183,13 @@ elem
 
 opt_export
   : T_EXPORT
+{$$ = new Node(scan, Node::INT_LITERAL, 1);}
+  |
+{$$ = new Node(scan, Node::INT_LITERAL, 0);}
+  ;
+
+opt_closed
+  : T_CLOSED
 {$$ = new Node(scan, Node::INT_LITERAL, 1);}
   |
 {$$ = new Node(scan, Node::INT_LITERAL, 0);}
@@ -417,11 +418,13 @@ expr
 
   /* Assignment operators. */
 
-  | T_VAR expr T_ASSIGN expr
-{$$ = new Node(scan, $3, Node::ASSIGN_VAR, $2, $4);
+  | opt_closed T_VAR expr T_ASSIGN expr
+{$$ = new Node(scan, $4, Node::ASSIGN_VAR, $3, $5);
+ $$->int_value = $1->int_value;
  $$->extend_bounds($1);}
-  | T_CONST expr T_ASSIGN expr
-{$$ = new Node(scan, $3, Node::ASSIGN_CONST, $2, $4);
+  | opt_closed T_CONST expr T_ASSIGN expr
+{$$ = new Node(scan, $4, Node::ASSIGN_CONST, $3, $5);
+ $$->int_value = $1->int_value;
  $$->extend_bounds($1);}
   | expr T_ASSIGN expr
 {$$ = new Node(scan, $2, Node::ASSIGN, $1, $3);}

@@ -113,7 +113,7 @@ export knuth_man_or_boy_test = int(int n)
 {
   const a = int(int k, int() x1, int() x2, int() x3, int() x4, int() x5)
   {
-    var kk = k;
+    closed var kk = k;
     const b = int()
     {
       --kk;
@@ -136,8 +136,8 @@ export odd_ops = int()
 
 export edit = int()()
 {
-  var ff = int() {return 0;};
-  var step = 0;
+  closed var ff = int() {return 0;};
+  closed var step = 0;
   const f = int()
   {
     const val = ff();

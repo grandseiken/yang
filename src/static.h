@@ -74,6 +74,7 @@ private:
   struct symbol_t {
     symbol_t();
     Type type;
+    bool closed;
     std::size_t scope_number;
 
     // We also store a few bits indicating whether a symbol has been referenced
@@ -81,6 +82,7 @@ private:
     const Node* declaration;
     bool warn_writes;
     bool warn_reads;
+    bool warn_closed;
   };
 
   struct lex_scope_t {

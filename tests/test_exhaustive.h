@@ -339,7 +339,7 @@ TEST_F(YangTest, Exhaustive)
 const std::string TestExhaustiveRefCountStr = R"(
 fn = int()()
 {
-  var v = 0;
+  closed var v = 0;
   return int()
   {
     return ++v;

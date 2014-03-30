@@ -146,7 +146,9 @@ void StaticChecker::infix(const Node& node, const result_list& results)
       push_symbol_tables();
       node.static_info.scope_number = _scopes.back().scope_numbering.back();
       if (_immediate_left_assign.length()) {
+        // Immediate left assigns are implicitly closed.
         add_symbol(node, _immediate_left_assign, t, false);
+        _scopes.back().symbol_table[_immediate_left_assign].closed = true;
         _immediate_left_assign = "";
       }
 
@@ -173,6 +175,9 @@ void StaticChecker::infix(const Node& node, const result_list& results)
           Type u = t.elements(elem);
           u.set_const(true);
           add_symbol(*ptr, name, u, false);
+          // TODO: arguments are implicitly closed so far, since it's a bit
+          // tricky to allow closed on arglists in the parser. Fix that.
+          _scopes.back().symbol_table[name].closed = true;
           arg_names.insert(name);
           ++elem;
         }
@@ -515,6 +520,12 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       // If this is a reference to variable in an enclosing function, make sure
       // it's added to that function's closed environment.
       if (it != _scopes.rbegin() && it != --_scopes.rend()) {
+        if (!symbol.closed) {
+          error(node, "symbol `" + node.string_value + "` declared without "
+                      "`closed` modifier in enclosing function");
+          symbol.closed = true;
+        }
+        symbol.warn_closed = false;
         it->function.static_info.closed_environment.emplace(
             node.string_value + "/" + std::to_string(symbol.scope_number),
             symbol.type.external(false));
@@ -799,12 +810,18 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         add_symbol_checking_collision(node, s, t, true);
         // Store global in the global map for future use.
         add_global();
-        _scopes[0].symbol_table[s].warn_reads &= warn_reads;
-        return results[1];
       }
-
-      add_symbol_checking_collision(node, s, t, false);
-      _scopes.back().symbol_table[s].warn_reads &= warn_reads;
+      else {
+        add_symbol_checking_collision(node, s, t, false);
+      }
+      auto& sym = (global ? _scopes[0] : _scopes.back()).symbol_table[s];
+      sym.warn_reads &= warn_reads;
+      sym.closed = sym.warn_closed = node.int_value;
+      if (global && sym.closed) {
+        sym.warn_closed = false;
+        error(node, "`closed` modifier has no effect on global " +
+                    node.string_value, false);
+      }
       return results[1];
     }
 
@@ -930,6 +947,10 @@ void StaticChecker::pop_symbol_tables()
       error(*p.second.declaration,
             "symbol `" + p.first + "` is never referenced", false);
     }
+    else if (p.second.warn_closed) {
+      error(*p.second.declaration,
+            "symbol `" + p.first + "` is never closed over", false);
+    }
     else if (p.second.warn_writes) {
       error(*p.second.declaration,
             "symbol `" + p.first + "` is never written to", false);
@@ -993,10 +1014,12 @@ void StaticChecker::error(
 
 StaticChecker::symbol_t::symbol_t()
   : type(Type::VOID)
+  , closed(false)
   , scope_number(0)
   , declaration(nullptr)
   , warn_writes(false)
   , warn_reads(false)
+  , warn_closed(false)
 {
 }
 

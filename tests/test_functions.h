@@ -183,7 +183,7 @@ global {
   const global_a = 33;
   const global_b = int()
   {
-    const a = global_a / 3;
+    closed const a = global_a / 3;
     return int()
     {
       return a + global_a;
@@ -200,24 +200,24 @@ export internal = int(int a)
 {
   var result = 0;
 
-  const b = 4;
+  closed const b = 4;
   if (true) {
-    const b = 8;
+    closed const b = 8;
     const f = int() {return b;};
     result += f();
   }
   {
-    const b = 1;
+    closed const b = 1;
     result += int() {return b * 2;}();
   }
   result += int() {return a + b;}();
 
-  const c = 5;
+  closed const c = 5;
   result += int()
   {
     return int()
     {
-      const d = 4;
+      closed const d = 4;
       return c + int()
       {
         return int()
@@ -228,7 +228,7 @@ export internal = int(int a)
     }();
   }();
 
-  var d = 1;
+  closed var d = 1;
   const f = int()
   {
     return d *= 2;
@@ -240,7 +240,7 @@ export internal = int(int a)
 
 export external = int()(int c)
 {
-  var v = 1;
+  closed var v = 1;
   return int()
   {
     return v += c + ++global_var;
@@ -249,8 +249,8 @@ export external = int()(int c)
 
 export store = void()
 {
-  const t = stored;
-  const v = ++global_var;
+  closed const t = stored;
+  closed const v = ++global_var;
   const f = int()
   {
     return v + 2 * t();
@@ -260,7 +260,7 @@ export store = void()
 
 export double = int(int n)
 {
-  const fac = int(int n)
+  closed const fac = int(int n)
   {
     const next = int()
     {

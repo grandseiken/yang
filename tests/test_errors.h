@@ -245,6 +245,8 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {var a = 0; a += void() {};}", "+=");
   err("x = void() {const a = 0; ++a;}", "++");
   err("x = void() {var a = 0; ++a = 1;}", "=");
+  err("x = void() {const a = 0; void() {a;};}", "a");
+  err("x = void() {closed const a = 0; void() {--a;};}", "--");
 
   // Name resolution / scope errors.
   err("x = void() {y;}", "y");
@@ -322,6 +324,9 @@ TEST_F(YangTest, WarningTest)
   warn("global {var a = 0;}", "=");
   warn("global {var f = void() {f;}; f;}", "=");
   warn("global {const f = void() {};}", "=");
+  warn("export x = void() {closed const a = 0;}", "=");
+  warn("export x = void() {closed var a = 0; void() {a;};}", "=");
+  warn("global {closed const a = 0; void() {a;};}", "=");
 
   // Whitespace warnings.
   warn("\texport x = void() {}", "\t");

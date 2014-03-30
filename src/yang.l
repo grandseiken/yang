@@ -117,6 +117,7 @@ vector_size [1-9]{digit}*
 
 global {TOKEN; return T_GLOBAL;}
 export {TOKEN; return T_EXPORT;}
+closed {TOKEN; return T_CLOSED;}
 var {TOKEN; return T_VAR;}
 const {TOKEN; return T_CONST;}
 if {TOKEN; return T_IF;}

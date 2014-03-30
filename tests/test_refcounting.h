@@ -111,7 +111,7 @@ export loops = int()
 {
   const alloc = int()()
   {
-    var n = 0;
+    closed var n = 0;
     return int()
     {
       return ++n;
@@ -249,16 +249,16 @@ TEST_F(YangTest, FunctionRefCounting)
 const std::string TestStructureRefCountingStr = R"(
 export cycles = int()()
 {
-  var n = 0;
-  var ff = int() {return ++n;};
+  closed var n = 0;
+  closed var ff = int() {return ++n;};
   const f = int()
   {
-    var m = 0;
-    var gg = int() {return ++m;};
+    closed var m = 0;
+    closed var gg = int() {return ++m;};
     const g = int()
     {
-      var l = 0;
-      var hh = int() {return 0;};
+      closed var l = 0;
+      closed var hh = int() {return 0;};
       const h = int()
       {
         const r = ++l + gg() + ff();
