@@ -31,7 +31,6 @@ namespace internal {
 class IrGenerator : public IrCommon, public ConstAstWalker<Value> {
 public:
 
-  typedef std::unordered_map<std::string, yang::Type> symbol_frame;
   IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
               symbol_frame& globals, const Context& context);
 
@@ -48,22 +47,14 @@ protected:
 
 private:
 
-  Structure init_structure_type(const symbol_frame& symbols, bool global_data);
-  llvm::Value* allocate_structure_value(const Structure& st);
-  llvm::Value* allocate_closure_struct(
-      const symbol_frame& symbols, llvm::Value* parent_ptr);
   llvm::Value* get_parent_struct(std::size_t parent_steps, llvm::Value* v);
   Value get_variable_ptr(const std::string& name);
-
   void create_function(const Node& node, const yang::Type& function_type);
 
   Value i2b(const Value& v);
   Value b2i(const Value& v);
   Value i2f(const Value& v);
   Value f2i(const Value& v);
-
-  // Indexing global and closure data structures.
-  llvm::Value* structure_ptr(llvm::Value* ptr, std::size_t index);
 
   Value raw_binary(const Node& node, const Value& v, const Value& u);
   llvm::Value* vectorise(
@@ -92,10 +83,6 @@ private:
 
   // Daft hack.
   std::string _immediate_left_assign;
-
-  // Hooks out to the refcount runtime.
-  llvm::Function* _cleanup_structures;
-  llvm::Function* _destroy_internals;
 
 };
 

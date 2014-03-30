@@ -10,9 +10,6 @@
 
 namespace llvm {
   class Constant;
-  class ExecutionEngine;
-  class Function;
-  class Module;
   class PassManager;
 }
 
@@ -56,19 +53,11 @@ protected:
   llvm::FunctionType* get_function_type_with_target(
       llvm::FunctionType* function_type) const;
 
-  // Get an LLVM function pointer to a native function.
-  llvm::Function* get_native_function(
-      const std::string& name, yang::void_fp native_fp,
-      llvm::FunctionType* type) const;
-
 private:
 
   // Get the trampoline type used either way.
   llvm::FunctionType* get_trampoline_type(
       llvm::FunctionType* function_type, bool reverse) const;
-
-  llvm::Module& _module;
-  llvm::ExecutionEngine& _engine;
 
   // Generated trampolines (map from type of function to corresponding
   // trampoline function).

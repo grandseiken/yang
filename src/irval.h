@@ -12,12 +12,12 @@
 #include "table.h"
 
 namespace llvm {
-  class Type;
-  class Value;
+  class ExecutionEngine;
 }
 
 namespace yang {
 namespace internal {
+typedef std::unordered_map<std::string, yang::Type> symbol_frame;
 
 struct Structure {
   struct entry {
@@ -82,8 +82,15 @@ struct Builder {
   // Convert from Yang type to LLVM type.
   llvm::Type* get_llvm_type(const yang::Type& t) const;
 
+  // Get an LLVM function pointer to a native function.
+  llvm::Function* get_native_function(
+      const std::string& name, yang::void_fp native_fp,
+      llvm::FunctionType* type) const;
+
   // Builder functions.
   llvm::IRBuilder<> b;
+  llvm::Module& module;
+  llvm::ExecutionEngine& engine;
 };
 
 class LexScope {
@@ -114,11 +121,17 @@ public:
     MERGE_BLOCK,
   };
 
-  LexScope(Builder& builder, llvm::Function* update_refcount);
+  LexScope(Builder& builder, bool create_functions = true);
   LexScope next_lex_scope() const;
 
   void push_scope(bool loop_scope = false);
   void pop_scope(bool loop_scope = false);
+
+  // Structure functions.
+  void init_structure_type(const symbol_frame& symbols, bool global_data);
+  llvm::Value* allocate_structure_value();
+  llvm::Value* allocate_closure_struct(llvm::Value* parent_ptr);
+  llvm::Value* structure_ptr(llvm::Value* ptr, std::size_t index);
 
   // Create block and insert in the metadata table.
   llvm::BasicBlock* create_block(metadata_t meta, const std::string& name);
@@ -161,6 +174,10 @@ private:
   std::vector<std::size_t> _rc_loop_indices;
 
   Builder& _b;
+
+  // Hooks out to the refcount runtime.
+  llvm::Function* _cleanup_structures;
+  llvm::Function* _destroy_internals;
   llvm::Function* _update_refcount;
 
 };

@@ -18,9 +18,7 @@ namespace yang {
 namespace internal {
 
 IrCommon::IrCommon(llvm::Module& module, llvm::ExecutionEngine& engine)
-  : _module(module)
-  , _engine(engine)
-  , _b{llvm::IRBuilder<>(module.getContext())}
+  : _b{llvm::IRBuilder<>(module.getContext()), module, engine}
 {
 }
 
@@ -30,11 +28,11 @@ void IrCommon::optimise_ir(llvm::Function* function) const
   // This sequence may be over the top, but compares favourably.
   std::size_t passes = 2;
   llvm::PassManager module_optimiser;
-  llvm::FunctionPassManager function_optimiser(&_module);
+  llvm::FunctionPassManager function_optimiser(&_b.module);
 
   auto optimiser = function ?
       (llvm::PassManager*)&function_optimiser : &module_optimiser;
-  optimiser->add(new llvm::DataLayout(*_engine.getDataLayout()));
+  optimiser->add(new llvm::DataLayout(*_b.engine.getDataLayout()));
 
   // This should come first, so that inlined code can take advantage of e.g.
   // unreachable hints before they are deleted.
@@ -80,7 +78,7 @@ void IrCommon::optimise_ir(llvm::Function* function) const
   optimiser->add(llvm::createTailCallEliminationPass());
 
   for (std::size_t i = 0; i < passes; ++i) {
-    module_optimiser.run(_module);
+    module_optimiser.run(_b.module);
   }
 }
 
@@ -148,7 +146,7 @@ llvm::Function* IrCommon::get_trampoline_function(
   // Generate the function code.
   auto function = llvm::Function::Create(
       ext_function_type, llvm::Function::ExternalLinkage,
-      "!trampoline", &_module);
+      "!trampoline", &_b.module);
   auto block = llvm::BasicBlock::Create(_b.b.getContext(), "entry", function);
   _b.b.SetInsertPoint(block);
 
@@ -263,7 +261,7 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
   // Generate it.
   auto function = llvm::Function::Create(
       internal_type, llvm::Function::InternalLinkage,
-      "!reverse_trampoline", &_module);
+      "!reverse_trampoline", &_b.module);
   auto block = llvm::BasicBlock::Create(_b.b.getContext(), "entry", function);
   _b.b.SetInsertPoint(block);
 
@@ -305,7 +303,7 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
     }
 
     auto external_type = get_trampoline_type(internal_type, true);
-    auto external_trampoline = get_native_function(
+    auto external_trampoline = _b.get_native_function(
         "external_trampoline", external_trampoline_ptr, external_type);
     _b.b.CreateCall(external_trampoline, args);
   };
@@ -379,21 +377,6 @@ llvm::FunctionType* IrCommon::get_function_type_with_target(
   }
   ft_args.push_back(_b.void_ptr_type());
   return llvm::FunctionType::get(type->getReturnType(), ft_args, false);
-}
-
-llvm::Function* IrCommon::get_native_function(
-    const std::string& name, yang::void_fp native_fp,
-    llvm::FunctionType* type) const
-{
-  // We use special !-prefixed names for native functions so that they can't
-  // be confused with regular user-defined functions (e.g. "malloc" is not
-  // reserved).
-  llvm::Function* llvm_function = llvm::Function::Create(
-      type, llvm::Function::ExternalLinkage, "!" + name, &_module);
-  // We need to explicitly link the LLVM function to the native function.
-  // More (technically) undefined behaviour here.
-  _engine.addGlobalMapping(llvm_function, (void*)(std::intptr_t)native_fp);
-  return llvm_function;
 }
 
 llvm::FunctionType* IrCommon::get_trampoline_type(

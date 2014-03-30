@@ -4,7 +4,9 @@
 //============================================================================//
 #include "irval.h"
 
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/Module.h>
+#include <yang/refcounting.h>
 #include <yang/type_info.h>
 
 namespace std {
@@ -228,18 +230,97 @@ llvm::Type* Builder::get_llvm_type(const yang::Type& type) const
   return void_type();
 }
 
-LexScope::LexScope(Builder& builder, llvm::Function* update_refcount)
+llvm::Function* Builder::get_native_function(
+    const std::string& name, yang::void_fp native_fp,
+    llvm::FunctionType* type) const
+{
+  // We use special !-prefixed names for native functions so that they can't
+  // be confused with regular user-defined functions (e.g. "malloc" is not
+  // reserved).
+  llvm::Function* llvm_function = llvm::Function::Create(
+      type, llvm::Function::ExternalLinkage, "!" + name, &module);
+  // We need to explicitly link the LLVM function to the native function.
+  // More (technically) undefined behaviour here.
+  engine.addGlobalMapping(llvm_function, (void*)(std::intptr_t)native_fp);
+  return llvm_function;
+}
+
+LexScope::LexScope(Builder& builder, bool create_functions)
   : symbol_table(Value())
   , metadata(nullptr)
   , _b(builder)
-  , _update_refcount(update_refcount)
+  , _cleanup_structures(nullptr)
+  , _destroy_internals(nullptr)
+  , _update_refcount(nullptr)
 {
   _rc_locals.emplace_back();
+  if (!create_functions) {
+    return;
+  }
+
+  _cleanup_structures = _b.get_native_function(
+      "cleanup_structures", (void_fp)&cleanup_structures,
+      llvm::FunctionType::get(_b.void_type(), false));
+  _destroy_internals = _b.get_native_function(
+      "destroy_internals", (void_fp)&::yang::internal::destroy_internals,
+      llvm::FunctionType::get(_b.void_type(), _b.void_ptr_type(), false));
+
+  // Create the internal general refcounting function.
+  auto rc_type = llvm::FunctionType::get(
+      _b.void_type(),
+      std::vector<llvm::Type*>{_b.void_ptr_type(), _b.int_type()}, false);
+  auto rc_function = _b.get_native_function(
+      "rc_function", (void_fp)&update_function_refcount, rc_type);
+  auto rc_structure = _b.get_native_function(
+      "rc_structure", (void_fp)&update_structure_refcount, rc_type);
+
+  std::vector<llvm::Type*> args{
+      _b.void_ptr_type(), _b.void_ptr_type(), _b.int_type()};
+  _update_refcount = llvm::Function::Create(
+      llvm::FunctionType::get(_b.void_type(), args, false),
+      llvm::Function::InternalLinkage, "!update_refcount", &_b.module);
+  auto entry = llvm::BasicBlock::Create(
+      _b.b.getContext(), "entry", _update_refcount);
+  auto function_block = llvm::BasicBlock::Create(
+      _b.b.getContext(), "function", _update_refcount);
+  auto else_block = llvm::BasicBlock::Create(
+      _b.b.getContext(), "else", _update_refcount);
+  auto structure_block = llvm::BasicBlock::Create(
+      _b.b.getContext(), "structure", _update_refcount);
+  auto last_block = llvm::BasicBlock::Create(
+      _b.b.getContext(), "last", _update_refcount);
+
+  _b.b.SetInsertPoint(entry);
+  auto fptr = _update_refcount->arg_begin();
+  auto eptr = ++_update_refcount->arg_begin();
+  auto change = ++++_update_refcount->arg_begin();
+  llvm::Value* fval = _b.b.CreateAnd(
+      _b.b.CreateIsNotNull(fptr), _b.b.CreateIsNull(eptr));
+  llvm::Value* eval = _b.b.CreateIsNotNull(eptr);
+  _b.b.CreateCondBr(fval, function_block, else_block);
+
+  _b.b.SetInsertPoint(function_block);
+  _b.b.CreateCall2(rc_function, fptr, change);
+  _b.b.CreateRetVoid();
+
+  _b.b.SetInsertPoint(else_block);
+  _b.b.CreateCondBr(eval, structure_block, last_block);
+
+  _b.b.SetInsertPoint(structure_block);
+  _b.b.CreateCall2(rc_structure, eptr, change);
+  _b.b.CreateRetVoid();
+
+  _b.b.SetInsertPoint(last_block);
+  _b.b.CreateRetVoid();
 }
 
 LexScope LexScope::next_lex_scope() const
 {
-  return LexScope(_b, _update_refcount);
+  LexScope scope(_b, false);
+  scope._cleanup_structures = _cleanup_structures;
+  scope._destroy_internals = _destroy_internals;
+  scope._update_refcount = _update_refcount;
+  return scope;
 }
 
 void LexScope::push_scope(bool loop_scope)
@@ -261,6 +342,178 @@ void LexScope::pop_scope(bool loop_scope)
   if (loop_scope) {
     _rc_loop_indices.pop_back();
   }
+}
+
+void LexScope::init_structure_type(
+    const symbol_frame& symbols, bool global_data)
+{
+  std::string name = global_data ? "global_data" : "closure";
+
+  // Since the structure may contain pointers to functions which take the type
+  // itself as an argument, the variable must be set (to an opaque type).
+  auto struct_type =
+      llvm::StructType::create(_b.b.getContext(), name);
+  structure.type = llvm::PointerType::get(struct_type, 0);
+  auto free_type =
+      llvm::FunctionType::get(_b.void_type(), structure.type, false);
+  std::vector<llvm::Type*> query_args{
+      structure.type, llvm::PointerType::get(_b.void_ptr_type(), 0)};
+  auto query_type = llvm::FunctionType::get(_b.void_type(), query_args, false);
+  std::vector<llvm::Type*> type_list;
+
+  // The first element in closure structures is a pointer to the parent
+  // structure. For global data, this will be null.
+  type_list.push_back(_b.void_ptr_type());
+  // The second element is a pointer to the reference counter.
+  type_list.push_back(_b.int_type());
+  // The third is a pointer to the destructor.
+  type_list.push_back(llvm::PointerType::get(free_type, 0));
+  // The fourth is the number of outgoing references this structure has.
+  type_list.push_back(_b.int_type());
+  // The fifth is the pointer to the reference query function.
+  type_list.push_back(llvm::PointerType::get(query_type, 0));
+  // The destructor and refcount information could totally be factored out into
+  // some static "vtable" block if we wanted.
+
+  std::size_t number = 5;
+  for (const auto& pair : symbols) {
+    // Type-calculation must be kept up-to-date with new types, or globals of
+    // that type will fail.
+    type_list.push_back(_b.get_llvm_type(pair.second));
+    structure.table[pair.first] = Structure::entry(pair.second, number++);
+  }
+  struct_type->setBody(type_list, false);
+
+  // Create the destruction function.
+  auto prev_block = _b.b.GetInsertBlock();
+  structure.destructor = llvm::Function::Create(
+      free_type, llvm::Function::InternalLinkage, "!free_" + name, &_b.module);
+  auto free_block = llvm::BasicBlock::Create(
+      _b.b.getContext(), "entry", structure.destructor);
+  _b.b.SetInsertPoint(free_block);
+  auto it = structure.destructor->arg_begin();
+  it->setName("struct");
+  // Make sure to decrement the reference count on each global variable on
+  // destruction.
+  for (const auto& pair : structure.table) {
+    Value old = memory_load(
+        pair.second.type, structure_ptr(&*it, pair.second.index));
+    update_reference_count(old, -1);
+  }
+  llvm::Value* parent = memory_load(
+      yang::Type::void_t(), structure_ptr(&*it, 0));
+  if (global_data) {
+    _b.b.CreateCall(_destroy_internals, parent);
+  }
+  else {
+    update_reference_count(nullptr, parent, -1);
+  }
+  _b.b.CreateRetVoid();
+
+  // Create the reference query function.
+  structure.refout_query = llvm::Function::Create(
+      query_type, llvm::Function::InternalLinkage,
+      "!query_" + name, &_b.module);
+  auto query_block = llvm::BasicBlock::Create(
+      _b.b.getContext(), "entry", structure.refout_query);
+  it = structure.refout_query->arg_begin();
+  auto jt = it;
+  ++jt;
+  it->setName("struct");
+  jt->setName("output");
+
+  // Output pointers for each function value environment and parent pointer.
+  _b.b.SetInsertPoint(query_block);
+  auto refout = [&](llvm::Value* v)
+  {
+    std::vector<llvm::Value*> indices{
+        _b.constant_int(structure.refout_count++)};
+    _b.b.CreateAlignedStore(v, _b.b.CreateGEP(jt, indices), 1);
+  };
+
+  for (const auto& pair : structure.table) {
+    if (!pair.second.type.is_function()) {
+      continue;
+    }
+    llvm::Value* f = memory_load(
+        pair.second.type, structure_ptr(&*it, pair.second.index));
+    refout(_b.b.CreateExtractValue(f, 1));
+  }
+  if (!global_data) {
+    refout(memory_load(yang::Type::void_t(), structure_ptr(&*it, 0)));
+  }
+  _b.b.CreateRetVoid();
+
+  _b.b.SetInsertPoint(prev_block);
+}
+
+llvm::Value* LexScope::allocate_structure_value()
+{
+  llvm::Type* llvm_size_t =
+      llvm::IntegerType::get(_b.b.getContext(), 8 * sizeof(std::size_t));
+
+  _b.b.CreateCall(_cleanup_structures);
+  auto malloc_ptr = _b.get_native_function(
+      "malloc", (yang::void_fp)&malloc,
+      llvm::FunctionType::get(structure.type, llvm_size_t, false));
+
+  // Compute sizeof(type) by indexing one past the null pointer.
+  llvm::Value* size_of =
+      _b.b.CreateIntToPtr(_b.constant_int(0), structure.type);
+  size_of = _b.b.CreateGEP(size_of, _b.constant_int(1));
+  size_of = _b.b.CreatePtrToInt(size_of, llvm_size_t);
+
+  // Call malloc, make sure refcounted memory is initialised, and return the
+  // pointer.
+  llvm::Value* v = _b.b.CreateCall(malloc_ptr, size_of);
+  memory_store(Value(yang::Type::void_t(), _b.constant_ptr(nullptr)),
+               structure_ptr(v, 0));
+
+  memory_store(_b.constant_int(0), structure_ptr(v, 1));
+  memory_store(Value(yang::Type::void_t(), structure.destructor),
+               structure_ptr(v, 2));
+
+  memory_store(_b.constant_int(structure.refout_count), structure_ptr(v, 3));
+  memory_store(Value(yang::Type::void_t(), structure.refout_query),
+                     structure_ptr(v, 4));
+  for (const auto& pair : structure.table) {
+    memory_init(_b.b, structure_ptr(v, pair.second.index));
+  }
+  return v;
+}
+
+llvm::Value* LexScope::allocate_closure_struct(llvm::Value* parent_ptr)
+{
+  llvm::Value* closure_value = allocate_structure_value();
+  // Store in metadata.
+  metadata.add(LexScope::CLOSURE_PTR, closure_value);
+
+  // Store parent pointer in the first slot.
+  auto parent_void_ptr =
+      _b.b.CreateBitCast(parent_ptr, _b.void_ptr_type());
+  memory_store(Value(yang::Type::void_t(), parent_void_ptr),
+               structure_ptr(closure_value, 0));
+  update_reference_count(nullptr, parent_void_ptr, 1);
+  // Set up the symbol-table for all the rest. If a closed variable "v"
+  // appears in scope #1, for instance, we store "v/1" in the symbol table
+  // with a pointer into the closure-structure.
+  //
+  // Then, when we reach the actual declaration of v in scope #1, we store
+  // into "v/1" and copy the symbol table entry for "v/1" to "v" for that
+  // scope and its children (as in the argument list code below).
+  for (const auto& pair : structure.table) {
+    llvm::Value* ptr = structure_ptr(closure_value, pair.second.index);
+    symbol_table.add(pair.first, Value(pair.second.type, ptr));
+  }
+  return closure_value;
+}
+
+llvm::Value* LexScope::structure_ptr(llvm::Value* ptr, std::size_t index)
+{
+  // The first index indexes the structure data pointer itself, i.e. to obtain
+  // the one and only global data structure at that memory location.
+  std::vector<llvm::Value*> indexes{_b.constant_int(0), _b.constant_int(index)};
+  return _b.b.CreateGEP(ptr, indexes);
 }
 
 llvm::BasicBlock* LexScope::create_block(
