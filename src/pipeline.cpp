@@ -56,6 +56,7 @@ Program::Program(const Context& context, const std::string& name,
       print(warning);
       _warnings.push_back(warning);
     }
+    data.warnings.clear();
     return bool(data.errors.size());
   };
 

@@ -79,8 +79,8 @@ x = void()
 TEST_F(YangTest, ErrorTest)
 {
   auto& ctxt = context();
-  auto err_count = [&](const std::string& str,
-                       const std::string& text, std::size_t count)
+  auto erc = [&](const std::string& str,
+                 const std::string& text, std::size_t count)
   {
 #ifdef DEBUG
     auto& prog = program(ctxt, str, true);
@@ -99,12 +99,10 @@ TEST_F(YangTest, ErrorTest)
   };
   auto err = [&](const std::string& str, const std::string& text)
   {
-    err_count(str, text, 1);
+    erc(str, text, 1);
   };
 
   // Miscellaneous syntax errors.
-  err("\tworks = void() {}", "\t");
-  err("works = void () {} \n", " \n");
   err("/* comment", "t");
   err("broken = {}\n", "{");
   err("EXPORT broken = void() {}", "broken");
@@ -164,7 +162,7 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {return 0;}", "0");
   err("x = int() {}", "int()");
   err("x = int() {return 1.;}", ".");
-  err_count("x = int() {return;}", "return;", 2);
+  erc("x = int() {return;}", "return;", 2);
 
   // Statement errors.
   err("x = void() {if (0.);}", ".");
@@ -218,7 +216,7 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {0 0;}", "0");
   err("x = void() {((1, 1), (1, 1));}", "(");
   err("x = void() {(x, x);}", "x");
-  err_count("x = void() {(x, (1, 1));}", "x", 2);
+  erc("x = void() {(x, (1, 1));}", "x", 2);
   err("x = void() {(1 a, 2);}", "1 a");
   err("x = void() {(1, 2)[1.];}", "[");
   err("x = void() {(1)[1];}", "[");
@@ -228,7 +226,7 @@ TEST_F(YangTest, ErrorTest)
 
   // Variable declaration and assignment errors.
   err("x = void() {var a;}", ";");
-  err_count("x = void() {var a + 1 = 0;}", "a", 2);
+  erc("x = void() {var a + 1 = 0;}", "a", 2);
   err("x = void() {var a = 0; a + 1 = 1;}", "=");
   err("x = void() {a = 0;}", "a");
   err("x = void() {x = x;}", "=");
@@ -270,13 +268,13 @@ TEST_F(YangTest, ErrorTest)
   // Some multi-line errors, just for fun.
   err(TestMultilineErrorStrA, "int\n/**/()");
   err(TestMultilineErrorStrB, "+");
-  err_count("x = void()\n{\n\treturn;  \n}", "\t", 2);
 }
 
 TEST_F(YangTest, WarningTest)
 {
   auto& ctxt = context();
-  auto warn = [&](const std::string& str, std::size_t count)
+  auto warc = [&](const std::string& str,
+                  const std::string& text, std::size_t count)
   {
 #ifdef DEBUG
     auto& prog = program(ctxt, str, true);
@@ -285,45 +283,69 @@ TEST_F(YangTest, WarningTest)
 #endif
     EXPECT_TRUE(prog.success()) <<
         "Should compile successfully:\n" << str << std::endl;
-    EXPECT_EQ(prog.get_warnings().size(), count) <<
+    const auto& warnings = prog.get_warnings();
+    EXPECT_EQ(warnings.size(), count) <<
         "Should have " << count << " warning(s):\n" << str << std::endl;
+    if (warnings.size() >= 1) {
+      EXPECT_EQ(warnings[0].node.text, text) <<
+          "Warning should reference given text:\n" << str << std::endl;
+    }
+  };
+  auto warn = [&](const std::string& str, const std::string& text)
+  {
+    warc(str, text, 1);
+  };
+  auto no_warn = [&](const std::string& str)
+  {
+    warc(str, "", 0);
   };
 
   // Avoid warnings.
-  warn("export x = void(int) {}", 0);
-  warn("export x = void(int a) {a;}", 0);
-  warn("export x = void() {const a = 0; a;}", 0);
-  warn("export x = void() {var a = 0; a = a;}", 0);
-  warn("export x = void() {var a = 0; ++a;}", 0);
-  warn("export global {var a = 0; const b = 0;}", 0);
-  warn("export global {var f = void() {};}", 0);
-  warn("global {const f = void() {f;};}", 0);
-  warn("global {const f = void() {}; f;}", 0);
+  no_warn("export x = void(int) {}");
+  no_warn("export x = void(int a) {a;}");
+  no_warn("export x = void() {const a = 0; a;}");
+  no_warn("export x = void() {var a = 0; a = a;}");
+  no_warn("export x = void() {var a = 0; ++a;}");
+  no_warn("export global {var a = 0; const b = 0;}");
+  no_warn("export global {var f = void() {};}");
+  no_warn("global {const f = void() {f;};}");
+  no_warn("global {const f = void() {}; f;}");
 
   // Warnings.
-  warn("export x = void() {const a = 0;}", 1);
-  warn("export x = void() {var a = 0; a = 1;}", 1);
-  warn("export x = void(int a) {}", 1);
-  warn("x = void() {}", 1);
-  warn("global {const a = 0;}", 1);
-  warn("global {var a = 0;} export x = void() {a = 1;}", 1);
-  warn("export x = void() {var f = void() {}; f;}", 1);
-  warn("global {var a = 0;}", 1);
-  warn("global {var f = void() {f;}; f;}", 1);
-  warn("global {const f = void() {};}", 1);
+  warn("export x = void() {const a = 0;}", "=");
+  warn("export x = void() {var a = 0; a = 1;}", "=");
+  warn("export x = void(int a) {}", "int a");
+  warn("x = void() {}", "=");
+  warn("global {const a = 0;}", "=");
+  warn("global {var a = 0;} export x = void() {a = 1;}", "=");
+  warn("export x = void() {var f = void() {}; f;}", "=");
+  warn("global {var a = 0;}", "=");
+  warn("global {var f = void() {f;}; f;}", "=");
+  warn("global {const f = void() {};}", "=");
+
+  // Whitespace warnings.
+  warn("\texport x = void() {}", "\t");
+  warn("export x = void () {} \n", " \n");
+  warn("export x = void() {} //\t", "\t");
+  warn("export x = void() {} /* \n*/", " \n");
+  warc("export x = void()\n{\n\treturn;  \n}", "\t", 2);
 
   // Empty if-statements.
-  warn("export x = void() {if (1);}", 1);
-  warn("export x = void() {if (1) 0; else;}", 1);
-  warn("export x = void() {if (1); else;}", 1);
-  warn("export x = void() {if (1); else 0;}", 0);
+  warn("export x = void() {if (1);}", ";");
+  warn("export x = void() {if (1) 0; else;}", ";");
+  warn("export x = void() {if (1); else;}", ";");
+  no_warn("export x = void() {if (1); else 0;}");
 
   // Dead code.
-  warn("export x = void() {return; 0;}", 1);
-  warn("export x = int() {return 0; return 0;}", 1);
-  warn("export x = void() {if (1) {return; return;}}", 1);
-  warn("export x = void() {if (1) {return; return;} return; return;}", 2);
-  warn("export x = void() {if (1) return; else return; return;}", 1);
-  warn("export x = void() {if (1) return; else {return; return;} return;}", 2);
-  warn("export x = void() {if (1) return; return;}", 0);
+  warn("export x = void() {return; 0;}", "0;");
+  warn("export x = int() {return 0; return 0;}", "return 0;");
+  warn("export x = void() {if (1) {return; return;}}", "return;");
+  warn("export x = void() {if (1) return; else return; return;}", "return;");
+  warc(
+      "export x = void() {if (1) {return; return;} return; return;}",
+      "return;", 2);
+  warc(
+      "export x = void() {if (1) return; else {return; return;} return;}",
+      "return;", 2);
+  no_warn("export x = void() {if (1) return; return;}");
 }

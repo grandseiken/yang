@@ -11,7 +11,7 @@ typedef yang::internal::Node Node;
 typedef yang::internal::ParseData ParseData;
 
 void* yang_get_extra(yyscan_t);
-int yang_error(yyscan_t scan, const char* message);
+int yang_error(yyscan_t scan, const char* message, bool error = true);
 
 namespace {
 
@@ -93,13 +93,12 @@ vector_size [1-9]{digit}*
 %%
 
   /* Comments and whitespace. */
-  /* TODO: whitespace errors should probably be warnings. */
 
 <*>{tab} {
-  yang_error(yyscanner, "tab character");
+  yang_error(yyscanner, "tab character", false);
 }
 <*>{whitespace_newline} {
-  yang_error(yyscanner, "end-of-line whitespace");
+  yang_error(yyscanner, "end-of-line whitespace", false);
 }
 <long_comment><<EOF>> {
   yang_error(yyscanner, "end-of-input inside comment");
