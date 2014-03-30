@@ -147,19 +147,18 @@ void IrGenerator::preorder(const Node& node)
       it->setName("env");
       _scopes.emplace_back(_scopes.back().next_lex_scope());
       auto& fback = _scopes.back();
+      _b.b.SetInsertPoint(block);
 
       fback.metadata.add(LexScope::ENVIRONMENT_PTR, &*it);
       fback.metadata.add(LexScope::FUNCTION, function);
       if (!node.static_info.closed_environment.empty()) { 
         fback.init_structure_type(node.static_info.closed_environment, false);
-        fback.metadata[LexScope::CLOSURE_PTR] =
-            fback.allocate_closure_struct(&*it);
-        // TODO: why doesn't this have refcounting? Why does FUNCTION closure
-        // ptr explicitly refcount rather than using rc_locals?
+        llvm::Value* v = fback.allocate_closure_struct(&*it);
+        fback.metadata[LexScope::CLOSURE_PTR] = v;
+        fback.update_reference_count(nullptr, v, 1);
       }
 
       fback.metadata.add(LexScope::GLOBAL_INIT_FUNCTION, function);
-      _b.b.SetInsertPoint(block);
       break;
     }
 
@@ -387,9 +386,14 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
 
     case Node::GLOBAL:
       fback.dereference_scoped_locals(0);
-      _b.b.CreateRetVoid();
+      // TODO: can we stick this in refcount_init instead somehow?
+      if (fback.metadata[LexScope::CLOSURE_PTR]) {
+        fback.update_reference_count(
+            nullptr, fback.metadata[LexScope::CLOSURE_PTR], -1);
+      }
       _scopes.pop_back();
-      return results[0];
+      _b.b.CreateRetVoid();
+      return Value();
     case Node::GLOBAL_ASSIGN:
     {
       auto function = (llvm::Function*)parent;
@@ -533,9 +537,11 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
           _member_function_closure.structure.table["object"].index;
       _member_function_closure.memory_store(
           results[0], _member_function_closure.structure_ptr(env, index));
-      // TODO: need to do refcounting on this value.
       Value v = get_member_function(s);
-      return _b.function_value(v.type, v, env);
+      v = _b.function_value(v.type, v, env);
+      fback.update_reference_count(v, 1);
+      fback.refcount_init(v);
+      return v;
     }
 
     case Node::IDENTIFIER:
@@ -910,11 +916,10 @@ void IrGenerator::create_function(
   // separate structures for each (and potentially return unused memory sooner).i
   if (!node.static_info.closed_environment.empty()) {
     fback.init_structure_type(node.static_info.closed_environment, false);
-    fback.metadata[LexScope::CLOSURE_PTR] =
-        fback.allocate_closure_struct(&*eptr);
+    llvm::Value* v = fback.allocate_closure_struct(&*eptr);
+    fback.metadata[LexScope::CLOSURE_PTR] = v;
     // Refcounting on closure pointer.
-    fback.update_reference_count(
-        nullptr, fback.metadata[LexScope::CLOSURE_PTR], 1);
+    fback.update_reference_count(nullptr, v, 1);
   }
 
   // Lambda for deciding whether to put an argument in closure or stack. These

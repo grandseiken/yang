@@ -275,12 +275,36 @@ export cycles = int()()
   };
   return f;
 }
+
+global const u = get_user_type();
+export global {
+  var f = int(int) {return 0;};
+  var g = f;
+  do {
+    closed const t = u.f;
+    void() {
+      f = t;
+      g = get_user_type().f;
+    }();
+  } while (false);
+}
 )";
 
 TEST_F(YangTest, StructureRefCounting)
 {
-  auto& inst = instance(TestStructureRefCountingStr);
+  auto& ctxt = context();
+  auto member = make_fn([](user_type* t, int_t a)
+  {
+    return int_t(t->id * 2 * a);
+  });
+  ctxt.register_member_function<user_type>("f", member);
+
+  auto& inst = instance(ctxt, TestStructureRefCountingStr);
   typedef Function<int_t()> intf_t;
   auto cycles = inst.call<intf_t>("cycles");
   EXPECT_EQ(cycles(), 3);
+
+  typedef Function<int_t(int_t)> intf2_t;
+  EXPECT_EQ(inst.get_global<intf2_t>("f")(4), 0);
+  EXPECT_EQ(inst.get_global<intf2_t>("g")(4), 8);
 }
