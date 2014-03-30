@@ -26,11 +26,11 @@ struct Structure {
     yang::Type type;
     std::size_t index;
   };
+  typedef std::unordered_map<std::string, entry> table_t;
 
   Structure();
-
   llvm::Type* type;
-  std::unordered_map<std::string, entry> table;
+  table_t table;
 
   llvm::Function* destructor;
   llvm::Function* refout_query;
@@ -130,11 +130,12 @@ public:
   // Structure functions.
   void init_structure_type(const symbol_frame& symbols,
                            bool global_data, bool has_parent = true);
+  llvm::Type* structure_type() const;
+  const Structure::table_t structure_table() const;
   llvm::Value* allocate_structure_value();
   llvm::Value* allocate_closure_struct(llvm::Value* parent_ptr);
-  // TODO: instead of exposed "structure" and structure_ptr we should just
-  // have structure_ptr(ptr, field_name).
   llvm::Value* structure_ptr(llvm::Value* ptr, std::size_t index);
+  Value structure_ptr(llvm::Value* ptr, const std::string& name);
 
   // Create block and insert in the metadata table.
   llvm::BasicBlock* create_block(metadata_t meta, const std::string& name);
@@ -142,9 +143,13 @@ public:
 
   // Storing to some structure (global data or closure) with refcounting.
   Value memory_load(const yang::Type& type, llvm::Value* ptr);
-  void memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr);
   void memory_store(const Value& value, llvm::Value* ptr);
+  void memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr);
   void refcount_init(const Value& value);
+  // Same with convenient lookup.
+  Value memory_load(llvm::Value* ptr, const std::string& name);
+  void memory_store(
+      llvm::Value* val, llvm::Value* ptr, const std::string& name);
 
   // Raw reference-counting.
   void update_reference_count(const Value& value, int_t change);
@@ -162,15 +167,14 @@ public:
   // that automatically pop metadata without interfering with scope lookup.
   SymbolTable<std::string, Value> symbol_table;
   SymbolTable<metadata_t, llvm::Value*> metadata;
-
-  // Global data or closure structure.
-  Structure structure;
   // Closure lookup helper.
   // TODO: clean up these data structures if possible; still kind of awkward.
   std::unordered_map<llvm::Value*, std::string> value_to_unique_name_map;
 
 private:
 
+  // Global data or closure structure.
+  Structure _structure;
   // List of local variables in scope, for refcounting.
   std::vector<std::vector<Value>> _rc_locals;
   // Used for knowing what to refcount on BREAK and CONTINUE.

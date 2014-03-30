@@ -348,11 +348,11 @@ void LexScope::init_structure_type(
   // itself as an argument, the variable must be set (to an opaque type).
   auto struct_type =
       llvm::StructType::create(_b.b.getContext(), name);
-  structure.type = llvm::PointerType::get(struct_type, 0);
+  _structure.type = llvm::PointerType::get(struct_type, 0);
   auto free_type =
-      llvm::FunctionType::get(_b.void_type(), structure.type, false);
+      llvm::FunctionType::get(_b.void_type(), _structure.type, false);
   std::vector<llvm::Type*> query_args{
-      structure.type, llvm::PointerType::get(_b.void_ptr_type(), 0)};
+      _structure.type, llvm::PointerType::get(_b.void_ptr_type(), 0)};
   auto query_type = llvm::FunctionType::get(_b.void_type(), query_args, false);
   std::vector<llvm::Type*> type_list;
 
@@ -374,25 +374,23 @@ void LexScope::init_structure_type(
   for (const auto& pair : symbols) {
     // Type-calculation must be kept up-to-date with new types.
     type_list.push_back(_b.get_llvm_type(pair.second));
-    structure.table[pair.first] = Structure::entry(pair.second, number++);
+    _structure.table[pair.first] = Structure::entry(pair.second, number++);
   }
   struct_type->setBody(type_list, false);
 
   // Create the destruction function.
   auto prev_block = _b.b.GetInsertBlock();
-  structure.destructor = llvm::Function::Create(
+  _structure.destructor = llvm::Function::Create(
       free_type, llvm::Function::InternalLinkage, "!free_" + name, &_b.module);
   auto free_block = llvm::BasicBlock::Create(
-      _b.b.getContext(), "entry", structure.destructor);
+      _b.b.getContext(), "entry", _structure.destructor);
   _b.b.SetInsertPoint(free_block);
-  auto it = structure.destructor->arg_begin();
+  auto it = _structure.destructor->arg_begin();
   it->setName("struct");
   // Make sure to decrement the reference count on each global variable on
   // destruction.
-  for (const auto& pair : structure.table) {
-    Value old = memory_load(
-        pair.second.type, structure_ptr(&*it, pair.second.index));
-    update_reference_count(old, -1);
+  for (const auto& pair : _structure.table) {
+    update_reference_count(memory_load(&*it, pair.first), -1);
   }
   if (has_parent) {
     llvm::Value* parent = memory_load(
@@ -407,12 +405,12 @@ void LexScope::init_structure_type(
   _b.b.CreateRetVoid();
 
   // Create the reference query function.
-  structure.refout_query = llvm::Function::Create(
+  _structure.refout_query = llvm::Function::Create(
       query_type, llvm::Function::InternalLinkage,
       "!query_" + name, &_b.module);
   auto query_block = llvm::BasicBlock::Create(
-      _b.b.getContext(), "entry", structure.refout_query);
-  it = structure.refout_query->arg_begin();
+      _b.b.getContext(), "entry", _structure.refout_query);
+  it = _structure.refout_query->arg_begin();
   auto jt = it;
   ++jt;
   it->setName("struct");
@@ -423,17 +421,15 @@ void LexScope::init_structure_type(
   auto refout = [&](llvm::Value* v)
   {
     std::vector<llvm::Value*> indices{
-        _b.constant_int(structure.refout_count++)};
+        _b.constant_int(_structure.refout_count++)};
     _b.b.CreateAlignedStore(v, _b.b.CreateGEP(jt, indices), 1);
   };
 
-  for (const auto& pair : structure.table) {
+  for (const auto& pair : _structure.table) {
     if (!pair.second.type.is_function()) {
       continue;
     }
-    llvm::Value* f = memory_load(
-        pair.second.type, structure_ptr(&*it, pair.second.index));
-    refout(_b.b.CreateExtractValue(f, 1));
+    refout(_b.b.CreateExtractValue(memory_load(&*it, pair.first), 1));
   }
   if (has_parent && !global_data) {
     refout(memory_load(yang::Type::void_t(), structure_ptr(&*it, 0)));
@@ -441,6 +437,16 @@ void LexScope::init_structure_type(
   _b.b.CreateRetVoid();
 
   _b.b.SetInsertPoint(prev_block);
+}
+
+llvm::Type* LexScope::structure_type() const
+{
+  return _structure.type;
+}
+
+const Structure::table_t LexScope::structure_table() const
+{
+  return _structure.table;
 }
 
 llvm::Value* LexScope::allocate_structure_value()
@@ -451,11 +457,11 @@ llvm::Value* LexScope::allocate_structure_value()
   _b.b.CreateCall(_cleanup_structures);
   auto malloc_ptr = _b.get_native_function(
       "malloc", (yang::void_fp)&malloc,
-      llvm::FunctionType::get(structure.type, llvm_size_t, false));
+      llvm::FunctionType::get(_structure.type, llvm_size_t, false));
 
   // Compute sizeof(type) by indexing one past the null pointer.
   llvm::Value* size_of =
-      _b.b.CreateIntToPtr(_b.constant_int(0), structure.type);
+      _b.b.CreateIntToPtr(_b.constant_int(0), _structure.type);
   size_of = _b.b.CreateGEP(size_of, _b.constant_int(1));
   size_of = _b.b.CreatePtrToInt(size_of, llvm_size_t);
 
@@ -466,14 +472,14 @@ llvm::Value* LexScope::allocate_structure_value()
                structure_ptr(v, 0));
 
   memory_store(_b.constant_int(0), structure_ptr(v, 1));
-  memory_store(Value(yang::Type::void_t(), structure.destructor),
+  memory_store(Value(yang::Type::void_t(), _structure.destructor),
                structure_ptr(v, 2));
 
-  memory_store(_b.constant_int(structure.refout_count), structure_ptr(v, 3));
-  memory_store(Value(yang::Type::void_t(), structure.refout_query),
-                     structure_ptr(v, 4));
-  for (const auto& pair : structure.table) {
-    memory_init(_b.b, structure_ptr(v, pair.second.index));
+  memory_store(_b.constant_int(_structure.refout_count), structure_ptr(v, 3));
+  memory_store(Value(yang::Type::void_t(), _structure.refout_query),
+               structure_ptr(v, 4));
+  for (const auto& pair : _structure.table) {
+    memory_init(_b.b, structure_ptr(v, pair.first));
   }
   return v;
 }
@@ -494,9 +500,8 @@ llvm::Value* LexScope::allocate_closure_struct(llvm::Value* parent_ptr)
   // Then, when we reach the actual declaration of v in scope #1, we store
   // into "v/1" and copy the symbol table entry for "v/1" to "v" for that
   // scope and its children (as in the argument list code).
-  for (const auto& pair : structure.table) {
-    llvm::Value* ptr = structure_ptr(closure_value, pair.second.index);
-    symbol_table.add(pair.first, Value(pair.second.type, ptr));
+  for (const auto& pair : _structure.table) {
+    symbol_table.add(pair.first, structure_ptr(closure_value, pair.first));
   }
   return closure_value;
 }
@@ -507,6 +512,12 @@ llvm::Value* LexScope::structure_ptr(llvm::Value* ptr, std::size_t index)
   // the one and only global data structure at that memory location.
   std::vector<llvm::Value*> indexes{_b.constant_int(0), _b.constant_int(index)};
   return _b.b.CreateGEP(ptr, indexes);
+}
+
+Value LexScope::structure_ptr(llvm::Value* ptr, const std::string& name)
+{
+  std::size_t index = _structure.table[name].index;
+  return Value(_structure.table[name].type, structure_ptr(ptr, index));
 }
 
 llvm::BasicBlock* LexScope::create_block(
@@ -532,6 +543,14 @@ Value LexScope::memory_load(const yang::Type& type, llvm::Value* ptr)
   return Value(type, _b.b.CreateAlignedLoad(ptr, 1));
 }
 
+void LexScope::memory_store(const Value& value, llvm::Value* ptr)
+{
+  Value old = memory_load(value.type, ptr);
+  update_reference_count(old, -1);
+  update_reference_count(value, 1);
+  _b.b.CreateAlignedStore(value, ptr, 1);
+}
+
 void LexScope::memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr)
 {
   // We need to make sure ref-counted memory locations are initialised with
@@ -546,17 +565,22 @@ void LexScope::memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr)
   }
 }
 
-void LexScope::memory_store(const Value& value, llvm::Value* ptr)
-{
-  Value old = memory_load(value.type, ptr);
-  update_reference_count(old, -1);
-  update_reference_count(value, 1);
-  _b.b.CreateAlignedStore(value, ptr, 1);
-}
-
 void LexScope::refcount_init(const Value& value)
 {
   _rc_locals.back().push_back(value);
+}
+
+Value LexScope::memory_load(llvm::Value* ptr, const std::string& name)
+{
+  Value v = structure_ptr(ptr, name);
+  return memory_load(v.type, v);
+}
+
+void LexScope::memory_store(
+    llvm::Value* val, llvm::Value* ptr, const std::string& name)
+{
+  Value v = structure_ptr(ptr, name);
+  memory_store(Value(v.type, val), v);
 }
 
 void LexScope::update_reference_count(const Value& value, int_t change)
