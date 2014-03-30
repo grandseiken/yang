@@ -50,6 +50,8 @@ private:
   llvm::Value* get_parent_struct(std::size_t parent_steps, llvm::Value* v);
   Value get_variable_ptr(const std::string& name);
   void create_function(const Node& node, const yang::Type& function_type);
+  Value get_member_function(const std::string& name);
+  Value create_call(const Value& f, const std::vector<Value>& args);
 
   Value i2b(const Value& v);
   Value b2i(const Value& v);
@@ -73,13 +75,14 @@ private:
       const Node& node, const Value& value,
       bool to_bool = false, bool with_ands = false, bool right_assoc = false);
 
-  llvm::Module& _module;
   const Context& _context;
-
   // List of static initialisation functions.
   std::vector<llvm::Function*> _global_inits;
   // Current function stack.
   std::vector<LexScope> _scopes;
+  // Scope for member-function closure indirection.
+  LexScope _member_function_closure;
+  std::unordered_map<std::string, Value> _member_functions;
 
   // Daft hack.
   std::string _immediate_left_assign;

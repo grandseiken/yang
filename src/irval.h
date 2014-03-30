@@ -128,9 +128,12 @@ public:
   void pop_scope(bool loop_scope = false);
 
   // Structure functions.
-  void init_structure_type(const symbol_frame& symbols, bool global_data);
+  void init_structure_type(const symbol_frame& symbols,
+                           bool global_data, bool has_parent = true);
   llvm::Value* allocate_structure_value();
   llvm::Value* allocate_closure_struct(llvm::Value* parent_ptr);
+  // TODO: instead of exposed "structure" and structure_ptr we should just
+  // have structure_ptr(ptr, field_name).
   llvm::Value* structure_ptr(llvm::Value* ptr, std::size_t index);
 
   // Create block and insert in the metadata table.

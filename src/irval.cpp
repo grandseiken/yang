@@ -104,12 +104,7 @@ llvm::FunctionType* Builder::raw_function_type(const yang::Type& type) const
 
 llvm::StructType* Builder::gen_function_type() const
 {
-  std::vector<llvm::Type*> types;
-  // Pointer to function.
-  types.push_back(void_ptr_type());
-  // Pointer to environment (global data structure or closure structure).
-  types.push_back(void_ptr_type());
-
+  std::vector<llvm::Type*> types{void_ptr_type(), void_ptr_type()};
   return llvm::StructType::get(b.getContext(), types);
 }
 
@@ -345,7 +340,7 @@ void LexScope::pop_scope(bool loop_scope)
 }
 
 void LexScope::init_structure_type(
-    const symbol_frame& symbols, bool global_data)
+    const symbol_frame& symbols, bool global_data, bool has_parent)
 {
   std::string name = global_data ? "global_data" : "closure";
 
@@ -362,7 +357,7 @@ void LexScope::init_structure_type(
   std::vector<llvm::Type*> type_list;
 
   // The first element in closure structures is a pointer to the parent
-  // structure. For global data, this will be null.
+  // structure. When has_parent is false this will be null.
   type_list.push_back(_b.void_ptr_type());
   // The second element is a pointer to the reference counter.
   type_list.push_back(_b.int_type());
@@ -377,8 +372,7 @@ void LexScope::init_structure_type(
 
   std::size_t number = 5;
   for (const auto& pair : symbols) {
-    // Type-calculation must be kept up-to-date with new types, or globals of
-    // that type will fail.
+    // Type-calculation must be kept up-to-date with new types.
     type_list.push_back(_b.get_llvm_type(pair.second));
     structure.table[pair.first] = Structure::entry(pair.second, number++);
   }
@@ -400,13 +394,15 @@ void LexScope::init_structure_type(
         pair.second.type, structure_ptr(&*it, pair.second.index));
     update_reference_count(old, -1);
   }
-  llvm::Value* parent = memory_load(
-      yang::Type::void_t(), structure_ptr(&*it, 0));
-  if (global_data) {
-    _b.b.CreateCall(_destroy_internals, parent);
-  }
-  else {
-    update_reference_count(nullptr, parent, -1);
+  if (has_parent) {
+    llvm::Value* parent = memory_load(
+        yang::Type::void_t(), structure_ptr(&*it, 0));
+    if (global_data) {
+      _b.b.CreateCall(_destroy_internals, parent);
+    }
+    else {
+      update_reference_count(nullptr, parent, -1);
+    }
   }
   _b.b.CreateRetVoid();
 
@@ -439,7 +435,7 @@ void LexScope::init_structure_type(
         pair.second.type, structure_ptr(&*it, pair.second.index));
     refout(_b.b.CreateExtractValue(f, 1));
   }
-  if (!global_data) {
+  if (has_parent && !global_data) {
     refout(memory_load(yang::Type::void_t(), structure_ptr(&*it, 0)));
   }
   _b.b.CreateRetVoid();
@@ -485,9 +481,6 @@ llvm::Value* LexScope::allocate_structure_value()
 llvm::Value* LexScope::allocate_closure_struct(llvm::Value* parent_ptr)
 {
   llvm::Value* closure_value = allocate_structure_value();
-  // Store in metadata.
-  metadata.add(LexScope::CLOSURE_PTR, closure_value);
-
   // Store parent pointer in the first slot.
   auto parent_void_ptr =
       _b.b.CreateBitCast(parent_ptr, _b.void_ptr_type());
@@ -500,7 +493,7 @@ llvm::Value* LexScope::allocate_closure_struct(llvm::Value* parent_ptr)
   //
   // Then, when we reach the actual declaration of v in scope #1, we store
   // into "v/1" and copy the symbol table entry for "v/1" to "v" for that
-  // scope and its children (as in the argument list code below).
+  // scope and its children (as in the argument list code).
   for (const auto& pair : structure.table) {
     llvm::Value* ptr = structure_ptr(closure_value, pair.second.index);
     symbol_table.add(pair.first, Value(pair.second.type, ptr));

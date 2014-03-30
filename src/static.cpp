@@ -113,10 +113,6 @@ void StaticChecker::preorder(const Node& node)
       // statements can check for.
       _scopes.back().metadata.add(LOOP_BODY, Type::VOID);
       break;
-    case Node::CALL:
-      _scopes.back().metadata.push();
-      _scopes.back().metadata.add(CALLEE_CONTEXT, Type::VOID);
-      break;
 
     default: {}
   }
@@ -197,12 +193,6 @@ void StaticChecker::infix(const Node& node, const result_list& results)
       _scopes.back().metadata.pop();
       break;
 
-    case Node::CALL:
-      if (results.size() == 1) {
-        _scopes.back().metadata.pop();
-      }
-      break;
-
     // Right-hand-sides of non-vectorised ternary and logical operators need an
     // extra scope, as they won't always be run.
     case Node::TERNARY:
@@ -260,9 +250,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
   else if (node.type == Node::BLOCK || node.type == Node::IF_STMT) {
     pop_symbol_tables();
   }
-  // Make sure to pop callee context on nullary calls.
-  else if (node.type == Node::SCOPE_RESOLUTION ||
-           (node.type == Node::CALL && results.size() == 1)) {
+  else if (node.type == Node::SCOPE_RESOLUTION) {
     _scopes.back().metadata.pop();
   }
 
@@ -451,16 +439,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
 
     case Node::MEMBER_SELECTION:
     {
-      // Without something like closures (to store the user object), it's not
-      // possible to do much with a member function access other than call it
-      // immediately.
-      // TODO: fix that.
       if (!results[0].user_type()) {
         error(node, "member function access on " + rs[0]);
-        return Type::ERROR;
-      }
-      if (!_scopes.back().metadata.has(CALLEE_CONTEXT)) {
-        error(node, "member function access outside of call context");
         return Type::ERROR;
       }
       if (results[0].is_error()) {

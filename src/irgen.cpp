@@ -32,8 +32,8 @@ namespace internal {
 IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
                          symbol_frame& globals, const Context& context)
   : IrCommon(module, engine)
-  , _module(module)
   , _context(context)
+  , _member_function_closure(_b)
 {
   _scopes.emplace_back(_b);
   // Set up the global data type. Since each program is designed to support
@@ -42,6 +42,16 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // function will take a pointer to the global data structure as an implicit
   // final parameter.
   _scopes[0].init_structure_type(globals, true);
+  // Suppose a user type T has a member R(A...) f. So that an expression t.f
+  // can be used as a generic function value, it creates an implicit closure;
+  // that is, "val = t.f;" is equivalent to:
+  // const bind = t; val = R(A... a) {return T::f(bind, a...);};
+  // Rather than transforming the AST to do this, we do it manually: use a
+  // single closure structure type with just a void pointer, and transform t.f
+  // to (mem[T::f], env_mem(t)).
+  symbol_frame user_type;
+  user_type.emplace("object", yang::Type::user_t());
+  _member_function_closure.init_structure_type(user_type, false, false);
 
   // We need to generate a reverse trampoline function for each function in the
   // Context. User type member functions are present in the context function map
@@ -57,7 +67,7 @@ void IrGenerator::emit_global_functions()
   // Create allocator function. It takes a pointer to the Yang program instance.
   auto alloc = llvm::Function::Create(
       llvm::FunctionType::get(scope.structure.type, false),
-      llvm::Function::ExternalLinkage, "!global_alloc", &_module);
+      llvm::Function::ExternalLinkage, "!global_alloc", &_b.module);
   auto alloc_block = llvm::BasicBlock::Create(
       _b.b.getContext(), "entry", alloc);
   _b.b.SetInsertPoint(alloc_block);
@@ -79,7 +89,7 @@ void IrGenerator::emit_global_functions()
     auto function_type =
         llvm::FunctionType::get(t, scope.structure.type, false);
     auto getter = llvm::Function::Create(
-        function_type, llvm::Function::ExternalLinkage, name, &_module);
+        function_type, llvm::Function::ExternalLinkage, name, &_b.module);
     get_trampoline_function(
         yang::Type::function_t(pair.second.type, {}), false);
 
@@ -95,7 +105,7 @@ void IrGenerator::emit_global_functions()
     std::vector<llvm::Type*> setter_args{t, scope.structure.type};
     function_type = llvm::FunctionType::get(_b.void_type(), setter_args, false);
     auto setter = llvm::Function::Create(
-        function_type, llvm::Function::ExternalLinkage, name, &_module);
+        function_type, llvm::Function::ExternalLinkage, name, &_b.module);
     get_trampoline_function(
         yang::Type::function_t(yang::Type::void_t(), {pair.second.type}),
         false);
@@ -126,7 +136,7 @@ void IrGenerator::preorder(const Node& node)
       auto function = llvm::Function::Create(
           llvm::FunctionType::get(_b.void_type(),
                                   _scopes[0].structure.type, false),
-          llvm::Function::InternalLinkage, "!global_init", &_module);
+          llvm::Function::InternalLinkage, "!global_init", &_b.module);
       _global_inits.push_back(function);
       auto block =
           llvm::BasicBlock::Create(_b.b.getContext(), "entry", function);
@@ -142,7 +152,10 @@ void IrGenerator::preorder(const Node& node)
       fback.metadata.add(LexScope::FUNCTION, function);
       if (!node.static_info.closed_environment.empty()) { 
         fback.init_structure_type(node.static_info.closed_environment, false);
-        fback.allocate_closure_struct(&*it);
+        fback.metadata[LexScope::CLOSURE_PTR] =
+            fback.allocate_closure_struct(&*it);
+        // TODO: why doesn't this have refcounting? Why does FUNCTION closure
+        // ptr explicitly refcount rather than using rc_locals?
       }
 
       fback.metadata.add(LexScope::GLOBAL_INIT_FUNCTION, function);
@@ -511,9 +524,19 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       return _b.function_value(it->second);
     }
     case Node::MEMBER_SELECTION:
-      // Just return the object directly; the call site has special logic to
-      // deal with member functions.
-      return results[0];
+    {
+      std::string s =
+          node.static_info.user_type_name + "::" + node.string_value;
+      llvm::Value* env = _member_function_closure.allocate_closure_struct(
+          _b.constant_ptr(nullptr));
+      std::size_t index =
+          _member_function_closure.structure.table["object"].index;
+      _member_function_closure.memory_store(
+          results[0], _member_function_closure.structure_ptr(env, index));
+      // TODO: need to do refcounting on this value.
+      Value v = get_member_function(s);
+      return _b.function_value(v.type, v, env);
+    }
 
     case Node::IDENTIFIER:
     {
@@ -574,76 +597,17 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       if (fback.metadata.has(LexScope::TYPE_EXPR_CONTEXT)) {
         goto type_function;
       }
-      std::vector<llvm::Value*> args;
-      Value genf = results[0];
-
-      // Special logic for member-function calling.
-      // TODO: get rid of this now that we have closures.
-      if (node.children[0]->type == Node::MEMBER_SELECTION) {
-        std::string s = node.children[0]->static_info.user_type_name +
-            "::" + node.children[0]->string_value;
-        auto it = _context.get_functions().find(s);
-        genf = _b.function_value(it->second);
-
-        args.push_back(results[0]);
-      }
+      std::vector<Value> args;
       for (std::size_t i = 1; i < results.size(); ++i) {
         args.push_back(results[i]);
       }
-
-      // Extract pointers from the struct.
-      llvm::Value* fptr = _b.b.CreateExtractValue(genf, 0);
-      llvm::Value* eptr = _b.b.CreateExtractValue(genf, 1);
-      args.push_back(eptr);
-
-      // Switch on the presence of a trampoline function pointer.
-      auto cpp_block =
-          llvm::BasicBlock::Create(_b.b.getContext(), "cpp", parent);
-      auto yang_block =
-          llvm::BasicBlock::Create(_b.b.getContext(), "yang", parent);
-      auto merge_block =
-          llvm::BasicBlock::Create(_b.b.getContext(), "merge", parent);
-
-      llvm::Value* cmp = _b.b.CreateIsNull(eptr);
-      _b.b.CreateCondBr(cmp, cpp_block, yang_block);
-
-      _b.b.SetInsertPoint(yang_block);
-      llvm::Value* cast = _b.b.CreateBitCast(
-          fptr, llvm::PointerType::get(_b.raw_function_type(genf.type), 0));
-      llvm::Value* yang_val = _b.b.CreateCall(cast, args);
-      _b.b.CreateBr(merge_block);
-
-      // Don't bother to generate correct code when the C++ path can never be
-      // taken (because that trampoline type has never been generated).
-      llvm::Value* trampoline =
-          get_reverse_trampoline_function(genf.type, false);
-      llvm::Value* cpp_val = nullptr;
-      _b.b.SetInsertPoint(cpp_block);
-      if (trampoline) {
-        args.push_back(_b.b.CreateBitCast(fptr, _b.void_ptr_type()));
-        cpp_val = _b.b.CreateCall(trampoline, args);
-        _b.b.CreateBr(merge_block);
+      Value r = create_call(results[0], args);
+      // Reference count the temporary.
+      if (r) {
+        fback.update_reference_count(r, 1);
+        fback.refcount_init(r);
       }
-      else {
-        _b.b.CreateBr(yang_block);
-      }
-
-      _b.b.SetInsertPoint(merge_block);
-      const yang::Type& return_t = genf.type.get_function_return_type();
-      if (!return_t.is_void()) {
-        auto phi_v = _b.b.CreatePHI(_b.get_llvm_type(return_t), 2);
-        Value phi(return_t, phi_v);
-
-        if (trampoline) {
-          phi_v->addIncoming(cpp_val, cpp_block);
-        }
-        phi_v->addIncoming(yang_val, yang_block);
-        // Reference count the temporary.
-        fback.update_reference_count(phi, 1);
-        fback.refcount_init(phi);
-        return phi;
-      }
-      return Value();
+      return r;
     }
 
     case Node::LOGICAL_OR:
@@ -921,7 +885,7 @@ void IrGenerator::create_function(
   // Linkage will be set later if necessary.
   auto llvm_type = _b.raw_function_type(function_type);
   auto function = llvm::Function::Create(
-      llvm_type, llvm::Function::InternalLinkage, "anonymous", &_module);
+      llvm_type, llvm::Function::InternalLinkage, "anonymous", &_b.module);
 
   auto eptr = --function->arg_end();
   eptr->setName("env");
@@ -946,7 +910,8 @@ void IrGenerator::create_function(
   // separate structures for each (and potentially return unused memory sooner).i
   if (!node.static_info.closed_environment.empty()) {
     fback.init_structure_type(node.static_info.closed_environment, false);
-    fback.allocate_closure_struct(&*eptr);
+    fback.metadata[LexScope::CLOSURE_PTR] =
+        fback.allocate_closure_struct(&*eptr);
     // Refcounting on closure pointer.
     fback.update_reference_count(
         nullptr, fback.metadata[LexScope::CLOSURE_PTR], 1);
@@ -1023,6 +988,113 @@ void IrGenerator::create_function(
   _b.b.SetInsertPoint(notnull_block);
   _b.b.CreateUnreachable();
   _b.b.SetInsertPoint(main_block);
+}
+
+Value IrGenerator::get_member_function(const std::string& name)
+{
+  auto it = _member_functions.find(name);
+  if (it != _member_functions.end()) {
+    return it->second;
+  }
+
+  auto jt = _context.get_functions().find(name);
+  const yang::Type& full_type = jt->second.type;
+  std::vector<yang::Type> args;
+  for (std::size_t i = 1; i < full_type.get_function_num_args(); ++i) {
+    args.push_back(full_type.get_function_arg_type(i));
+  }
+  yang::Type closed_type =
+      yang::Type::function_t(full_type.get_function_return_type(), args);
+
+  auto llvm_type = _b.raw_function_type(closed_type);
+  auto f = llvm::Function::Create(
+      llvm_type, llvm::Function::InternalLinkage, name, &_b.module);
+
+  llvm::Value* closure = --f->arg_end();
+  closure->setName("boxed_object");
+  llvm::BasicBlock* prev = _b.b.GetInsertBlock();
+  auto block = llvm::BasicBlock::Create(_b.b.getContext(), "entry", f);
+  _b.b.SetInsertPoint(block);
+
+  Value genf = _b.function_value(jt->second);
+  closure = _b.b.CreateBitCast(
+      closure, _member_function_closure.structure.type);
+  std::size_t index = _member_function_closure.structure.table["object"].index;
+  auto object = _member_function_closure.memory_load(
+      yang::Type::void_t(),
+      _member_function_closure.structure_ptr(closure, index));
+
+  std::vector<Value> fargs;
+  fargs.emplace_back(full_type.get_function_arg_type(0), object);
+  std::size_t i = 0;
+  for (auto it = f->arg_begin(); it != --f->arg_end(); ++it) {
+    fargs.emplace_back(full_type.get_function_arg_type(++i), it);
+  }
+  _b.b.CreateRet(create_call(genf, fargs));
+  _b.b.SetInsertPoint(prev);
+
+  Value v(closed_type, f);
+  _member_functions.emplace(name, v);
+  return v;
+}
+
+Value IrGenerator::create_call(const Value& f, const std::vector<Value>& args)
+{
+  std::vector<llvm::Value*> llvm_args;
+  for (const auto& a : args) {
+    llvm_args.push_back(a);
+  }
+
+  // Extract pointers from the struct.
+  llvm::Value* fptr = _b.b.CreateExtractValue(f, 0);
+  llvm::Value* eptr = _b.b.CreateExtractValue(f, 1);
+  llvm_args.push_back(eptr);
+
+  // Switch on the presence of a trampoline function pointer.
+  auto parent = _b.b.GetInsertBlock()->getParent();
+  auto cpp_block =
+      llvm::BasicBlock::Create(_b.b.getContext(), "cpp", parent);
+  auto yang_block =
+      llvm::BasicBlock::Create(_b.b.getContext(), "yang", parent);
+  auto merge_block =
+      llvm::BasicBlock::Create(_b.b.getContext(), "merge", parent);
+
+  llvm::Value* cmp = _b.b.CreateIsNull(eptr);
+  _b.b.CreateCondBr(cmp, cpp_block, yang_block);
+
+  _b.b.SetInsertPoint(yang_block);
+  llvm::Value* cast = _b.b.CreateBitCast(
+      fptr, llvm::PointerType::get(_b.raw_function_type(f.type), 0));
+  llvm::Value* yang_val = _b.b.CreateCall(cast, llvm_args);
+  _b.b.CreateBr(merge_block);
+
+  // Don't bother to generate correct code when the C++ path can never be
+  // taken (because that trampoline type has never been generated).
+  llvm::Value* trampoline = get_reverse_trampoline_function(f.type, false);
+  llvm::Value* cpp_val = nullptr;
+  _b.b.SetInsertPoint(cpp_block);
+  if (trampoline) {
+    llvm_args.push_back(_b.b.CreateBitCast(fptr, _b.void_ptr_type()));
+    cpp_val = _b.b.CreateCall(trampoline, llvm_args);
+    _b.b.CreateBr(merge_block);
+  }
+  else {
+    _b.b.CreateBr(yang_block);
+  }
+
+  _b.b.SetInsertPoint(merge_block);
+  const yang::Type& return_t = f.type.get_function_return_type();
+  if (!return_t.is_void()) {
+    auto phi_v = _b.b.CreatePHI(_b.get_llvm_type(return_t), 2);
+    Value phi(return_t, phi_v);
+
+    if (trampoline) {
+      phi_v->addIncoming(cpp_val, cpp_block);
+    }
+    phi_v->addIncoming(yang_val, yang_block);
+    return phi;
+  }
+  return Value();
 }
 
 Value IrGenerator::i2b(const Value& v)

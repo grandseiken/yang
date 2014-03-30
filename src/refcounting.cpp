@@ -30,8 +30,7 @@ std::unordered_set<Prefix*>& get_structure_possible_cycle_list()
 
 void update_structure_refcount(Prefix* structure, int_t change)
 {
-  auto t = (Prefix*)structure;
-  if (!(t->refcount += change)) {
+  if (!(structure->refcount += change)) {
     get_structure_cleanup_list().insert(structure);
     get_structure_possible_cycle_list().erase(structure);
   }

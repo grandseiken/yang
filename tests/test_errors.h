@@ -178,7 +178,6 @@ TEST_F(YangTest, ErrorTest)
   err("x = void(err f) {}", "err");
   err("x = void() {UserType::foo();}", "(");
   err("x = void() {0.foo();}", ".");
-  err("x = void() {get_user_type().foo;}", ".");
   err("x = void() {get_user_type().bar();}", ".");
   err("x = void() {get_user_type().foo(1);}", "(");
 

@@ -13,7 +13,8 @@ export takes_user_type = int(UserType u)
 export takes_other_type = void(Other o)
 {
   oo = o;
-  o.extract();
+  const extract = o.extract;
+  extract();
 }
 export extract_oo = void()
 {
