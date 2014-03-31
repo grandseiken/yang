@@ -26,7 +26,7 @@ const std::string TestUserTypesStrB = R"(
 export global {
   var u = get_user_type();
   const v = u;
-  v;
+  var f = int() {return -1;};
 }
 export returns_user_type = UserType()
 {
@@ -44,6 +44,11 @@ export call_user_type = void(void(UserType) x, UserType u)
 export call_void = void(void() x)
 {
   x();
+}
+
+export steal_function = void(UserType u)
+{
+  f = u.get_id;
 }
 )";
 
@@ -117,4 +122,9 @@ TEST_F(YangTest, UserTypes)
   auto extract_oo = prog.get_function<Function<void()>>("extract_oo");
   qrog.call<void>("call_void", extract_oo);
   EXPECT_EQ(extract_value, 64);
+
+  typedef Function<int_t()> intf_t;
+  EXPECT_EQ(qrog.get_global<intf_t>("f")(), -1);
+  qrog.call<void>("steal_function", u);
+  EXPECT_EQ(qrog.get_global<intf_t>("f")(), 99);
 }
