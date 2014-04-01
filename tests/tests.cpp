@@ -3,6 +3,7 @@
 // MIT License. See LICENSE file for details.
 //============================================================================//
 #include <memory>
+#include <string>
 #include <gtest/gtest.h>
 #include <yang/yang.h>
 
@@ -152,5 +153,26 @@ Instance& YangTest::instance(const Program& program)
 int main(int argc, char** argv)
 {
   testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+  // Run with commandline argument --forever to run tests over and over, and use
+  // "top" or similar to check for memory leaks.
+  // TODO: in fact, this *is* leaking (a very small amount of) memory that
+  // doesn't seem to be down to the test framework itself. A few kilobytes per
+  // second. Fix that.
+  bool forever = false;
+  for (std::size_t i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+    if (arg != "--forever" && arg != "-forever") {
+      std::cerr << "unrecognised argument " << arg << std::endl;
+      return 1;
+    }
+    forever = true;
+  }
+
+  do {
+    if (RUN_ALL_TESTS()) {
+      return 1;
+    }
+  }
+  while (forever);
+  return 0;
 }
