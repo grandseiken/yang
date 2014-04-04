@@ -2,8 +2,16 @@
 // This file is part of the Yang software project. It is distributed under the
 // MIT License. See LICENSE file for details.
 //============================================================================//
+#include "tests.h"
+
+namespace yang {
+
 TEST_F(YangTest, FunctionTest)
 {
+  if (!filter("apis")) {
+    return;
+  }
+
   // A weird function type that's never used. Make sure the global trampoline
   // works anyway.
   auto unused = [](int_t, int_t, int_t){return 1;};
@@ -29,6 +37,9 @@ TEST_F(YangTest, FunctionTest)
 
 TEST_F(YangTest, ContextTest)
 {
+  if (!filter("apis")) {
+    return;
+  }
   auto& ctxt = context();
 
   struct type_a {};
@@ -101,6 +112,10 @@ global {
 
 TEST_F(YangTest, ProgramTest)
 {
+  if (!filter("apis")) {
+    return;
+  }
+
   // General program API.
   auto& ctxt = context();
   auto& prog = program(ctxt, TestApisStr);
@@ -165,6 +180,10 @@ TEST_F(YangTest, ProgramTest)
 
 TEST_F(YangTest, InstanceTest)
 {
+  if (!filter("apis")) {
+    return;
+  }
+
   typedef Function<int_t(int_t)> intf_t;
   typedef Function<void()> voidf_t;
   auto& prog = program(TestApisStr);
@@ -211,4 +230,7 @@ TEST_F(YangTest, InstanceTest)
   // Internal const.
   EXPECT_EQ(inst.get_global<int_t>("d"), 18);
   EXPECT_THROW(inst.set_global("d", 1), runtime_error);
+}
+
+// End namespace yang.
 }

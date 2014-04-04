@@ -2,6 +2,10 @@
 // This file is part of the Yang software project. It is distributed under the
 // MIT License. See LICENSE file for details.
 //============================================================================//
+#include "tests.h"
+
+namespace yang {
+
 const std::string TestCppFunctionsStr = R"(
 export via_context = int(int x)
 {
@@ -32,6 +36,10 @@ export via_return = int()
 
 TEST_F(YangTest, CppFunctions)
 {
+  if (!filter("functions")) {
+    return;
+  }
+
   auto cpp = make_fn([](int_t a)
   {
     return a * 11;
@@ -96,6 +104,10 @@ export call_add = int(int(int) x)
 
 TEST_F(YangTest, YangFunctions)
 {
+  if (!filter("functions")) {
+    return;
+  }
+
   typedef Function<int_t(int_t)> intf_t;
   auto context_function = make_fn([](intf_t function)
   {
@@ -161,6 +173,10 @@ export in = int(int(int(int)) x)
 
 TEST_F(YangTest, HighOrderFunctions)
 {
+  if (!filter("functions")) {
+    return;
+  }
+
   auto& inst = instance(TestHighOrderFunctionsStr);
   typedef Function<int_t()> intf_t;
   typedef Function<intf_t()> intf2_t;
@@ -277,6 +293,10 @@ export double = int(int n)
 
 TEST_F(YangTest, FunctionClosures)
 {
+  if (!filter("functions")) {
+    return;
+  }
+
   auto& inst = instance(TestFunctionClosuresStr);
   EXPECT_EQ(inst.call<int_t>("internal", 3), 89);
 
@@ -297,4 +317,7 @@ TEST_F(YangTest, FunctionClosures)
   EXPECT_EQ(inst.get_global<intf_t>("stored")(), 157);
 
   EXPECT_EQ(inst.call<int_t>("double", 5), 120);
+}
+
+// End namespace yang.
 }

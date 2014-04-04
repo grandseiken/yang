@@ -2,6 +2,10 @@
 // This file is part of the Yang software project. It is distributed under the
 // MIT License. See LICENSE file for details.
 //============================================================================//
+#include "tests.h"
+
+namespace yang {
+
 const std::string TestUserTypesStrA = R"(
 global {
   var oo = null_other_type();
@@ -54,6 +58,10 @@ export steal_function = void(UserType u)
 
 TEST_F(YangTest, UserTypes)
 {
+  if (!filter("user_types")) {
+    return;
+  }
+
   struct other_t {
     int_t value;
   };
@@ -127,4 +135,7 @@ TEST_F(YangTest, UserTypes)
   EXPECT_EQ(qrog.get_global<intf_t>("f")(), -1);
   qrog.call<void>("steal_function", u);
   EXPECT_EQ(qrog.get_global<intf_t>("f")(), 99);
+}
+
+// End namespace yang.
 }

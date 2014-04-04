@@ -2,6 +2,10 @@
 // This file is part of the Yang software project. It is distributed under the
 // MIT License. See LICENSE file for details.
 //============================================================================//
+#include "tests.h"
+
+namespace yang {
+
 const std::string TestStructuredErrorStr = R"(
 export x = int()
 {
@@ -15,6 +19,10 @@ export x = int()
 
 TEST_F(YangTest, FailureTest)
 {
+  if (!filter("errors")) {
+    return;
+  }
+
   auto& success_prog = program_suppress_errors("works = void() {}");
   EXPECT_TRUE(success_prog.success());
   EXPECT_NO_THROW(instance(success_prog));
@@ -78,6 +86,10 @@ x = void()
 
 TEST_F(YangTest, ErrorTest)
 {
+  if (!filter("errors")) {
+    return;
+  }
+
   auto& ctxt = context();
   auto erc = [&](const std::string& str,
                  const std::string& text, std::size_t count)
@@ -273,6 +285,10 @@ TEST_F(YangTest, ErrorTest)
 
 TEST_F(YangTest, WarningTest)
 {
+  if (!filter("errors")) {
+    return;
+  }
+
   auto& ctxt = context();
   auto warc = [&](const std::string& str,
                   const std::string& text, std::size_t count)
@@ -352,4 +368,7 @@ TEST_F(YangTest, WarningTest)
       "export x = void() {if (1) return; else {return; return;} return;}",
       "return;", 2);
   no_warn("export x = void() {if (1) return; return;}");
+}
+
+// End namespace yang.
 }

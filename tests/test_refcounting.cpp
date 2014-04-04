@@ -2,6 +2,10 @@
 // This file is part of the Yang software project. It is distributed under the
 // MIT License. See LICENSE file for details.
 //============================================================================//
+#include "tests.h"
+
+namespace yang {
+
 const std::string TestFunctionRefCountingStr = R"(
 export global {
   const noop = int()
@@ -170,6 +174,10 @@ export loops = int()
 
 TEST_F(YangTest, FunctionRefCounting)
 {
+  if (!filter("refcounting")) {
+    return;
+  }
+
   auto& ctxt = context();
   int_t n = 0;
   ctxt.register_function("get_fn", make_fn([&]()
@@ -292,6 +300,10 @@ export global {
 
 TEST_F(YangTest, StructureRefCounting)
 {
+  if (!filter("refcounting")) {
+    return;
+  }
+
   auto& ctxt = context();
   auto member = make_fn([](user_type* t, int_t a)
   {
@@ -307,4 +319,7 @@ TEST_F(YangTest, StructureRefCounting)
   typedef Function<int_t(int_t)> intf2_t;
   EXPECT_EQ(inst.get_global<intf2_t>("f")(4), 0);
   EXPECT_EQ(inst.get_global<intf2_t>("g")(4), 8);
+}
+
+// End namespace yang.
 }

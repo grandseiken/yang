@@ -2,68 +2,25 @@
 // This file is part of the Yang software project. It is distributed under the
 // MIT License. See LICENSE file for details.
 //============================================================================//
-#include <memory>
-#include <string>
-#include <gtest/gtest.h>
-#include <yang/yang.h>
+#include "tests.h"
 
 namespace yang {
-
-// Standard test fixture.
-class YangTest : public testing::Test {
-public:
-
-  YangTest();
-  ~YangTest() override {}
-
-protected:
-
-  struct user_type {
-    std::size_t id;
-  };
-
-  // Deallocate all the objects constructed for this test so far.
-  void clear();
-
-  Context& context();
-  Program& program_suppress_errors(const std::string& contents);
-  Program& program_suppress_errors(const Context& context,
-                                   const std::string& contents);
-  Program& program(const std::string& contents, bool allow_errors = false);
-  Program& program(const Context& context, const std::string& contents,
-                   bool allow_errors = false);
-
-  Instance& instance(const std::string& contents);
-  Instance& instance(const Context& context, const std::string& contents);
-  Instance& instance(const Program& program);
-
-private:
-
-  std::vector<std::unique_ptr<Context>> _contexts;
-  std::vector<std::unique_ptr<Program>> _programs;
-  std::vector<std::unique_ptr<Instance>> _instances;
-  std::vector<std::unique_ptr<user_type>> _user_values;
-
-  std::size_t _program_id;
-  std::size_t _user_value_id;
-
-};
-
-// Test headers.
-#include "test_apis.h"
-#include "test_errors.h"
-#include "test_exhaustive.h"
-#include "test_functions.h"
-#include "test_refcounting.h"
-#include "test_semantics.h"
-#include "test_trampolines.h"
-#include "test_user_types.h"
 
 // Fixture implementation.
 YangTest::YangTest()
   : _program_id(0)
   , _user_value_id(0)
 {
+}
+
+void YangTest::add_filter(const std::string& filter)
+{
+  _filters.insert(filter);
+}
+
+bool YangTest::filter(const std::string& filter)
+{
+  return _filters.empty() || _filters.count(filter);
 }
 
 void YangTest::clear()
@@ -146,12 +103,27 @@ Instance& YangTest::instance(const Program& program)
   return *_instances.back();
 }
 
+std::unordered_set<std::string> YangTest::_filters;
+
 // End namespace yang.
 }
 
 // Run all tests.
 int main(int argc, char** argv)
 {
+  auto is = [](const std::string& cmdline, const std::string& arg)
+  {
+    return cmdline == "-" + arg || cmdline == "--" + arg;
+  };
+  auto filter = [&](const std::string& cmdline, const std::string& arg)
+  {
+    if (is(cmdline, arg)) {
+      yang::YangTest::add_filter(arg);
+      return true;
+    }
+    return false;
+  };
+
   testing::InitGoogleTest(&argc, argv);
   // Run with commandline argument --forever to run tests over and over, and use
   // "top" or similar to check for memory leaks.
@@ -159,13 +131,21 @@ int main(int argc, char** argv)
   // doesn't seem to be down to the test framework itself. A few kilobytes per
   // second. Fix that.
   bool forever = false;
+  // Run with --<test_set> to run only those tests (e.g. --apis).
   for (std::size_t i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    if (arg != "--forever" && arg != "-forever") {
-      std::cerr << "unrecognised argument " << arg << std::endl;
-      return 1;
+    if (is(argv[i], "forever")) {
+      forever = true;
+      continue;
     }
-    forever = true;
+    if (filter(argv[i], "apis") || filter(argv[i], "errors") ||
+        filter(argv[i], "exhaustive") || filter(argv[i], "functions") ||
+        filter(argv[i], "refcounting") || filter(argv[i], "semantics") ||
+        filter(argv[i], "trampolines") || filter(argv[i], "user_types")) {
+      continue;
+    }
+
+    std::cerr << "unrecognised argument " << argv[i] << std::endl;
+    return 1;
   }
 
   do {

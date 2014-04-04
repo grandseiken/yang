@@ -2,6 +2,10 @@
 // This file is part of the Yang software project. It is distributed under the
 // MIT License. See LICENSE file for details.
 //============================================================================//
+#include "tests.h"
+
+namespace yang {
+
 const std::string TestTrampolinesStr = R"(
 export test_int = int(int x)
 {
@@ -31,6 +35,10 @@ export test_user_type = UserType(UserType x)
 
 TEST_F(YangTest, Trampolines)
 {
+  if (!filter("trampolines")) {
+    return;
+  }
+
   auto& inst = instance(TestTrampolinesStr);
   EXPECT_EQ(inst.call<int_t>("test_int", 5), 10);
   EXPECT_EQ(inst.call<float_t>("test_float", 1.0 / 8), 1.0 / 4);
@@ -79,6 +87,10 @@ export test_user_type = UserType()
 
 TEST_F(YangTest, ReverseTrampolines)
 {
+  if (!filter("trampolines")) {
+    return;
+  }
+
   typedef Function<int_t(int_t)> intf_t;
   auto context_int = [](int_t x)
   {
@@ -132,6 +144,10 @@ export test = int(int a, int4 b, float c, int(int) d, float2 e, UserType f)
 
 TEST_F(YangTest, MultiArgTrampolines)
 {
+  if (!filter("trampolines")) {
+    return;
+  }
+
   auto& ctxt = context();
   typedef Function<int_t(int_t)> intf_t;
   auto context_test = [](
@@ -151,4 +167,7 @@ TEST_F(YangTest, MultiArgTrampolines)
       "test",
       2, ivec_t<4>{1, 2, 3, 4}, 3.5, make_fn(d), fvec_t<2>{7.1, 6.9}, &u);
   EXPECT_EQ(result, 42);
+}
+
+// End namespace yang.
 }

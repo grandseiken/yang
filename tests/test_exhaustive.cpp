@@ -2,6 +2,10 @@
 // This file is part of the Yang software project. It is distributed under the
 // MIT License. See LICENSE file for details.
 //============================================================================//
+#include "tests.h"
+
+namespace yang {
+
 const std::string TestExhaustiveStr = R"(
 global {
   const t = true;
@@ -328,6 +332,10 @@ export to_float1 = int() {return [uu.[0]];}
 
 TEST_F(YangTest, Exhaustive)
 {
+  if (!filter("exhaustive")) {
+    return;
+  }
+
   auto& prog = program(TestExhaustiveStr);
   auto& inst = instance(TestExhaustiveStr);
   for (const auto& pair : prog.get_functions()) {
@@ -551,5 +559,12 @@ export exhaustive_refcount = int()
 
 TEST_F(YangTest, ExhaustiveRefcount)
 {
+  if (!filter("exhaustive")) {
+    return;
+  }
+
   instance(TestExhaustiveRefCountStr).call<int_t>("exhaustive_refcount");
+}
+
+// End namespace yang.
 }

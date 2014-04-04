@@ -82,6 +82,8 @@ OBJECT_FILES=$(addprefix $(OUTDIR)/,$(addsuffix .o,$(SOURCE_FILES)))
 
 TOOL_CPP_FILES=$(wildcard $(SOURCE)/tools/*.cpp)
 TEST_CPP_FILES=$(wildcard $(TESTS)/*.cpp)
+TEST_OBJECT_FILES=$(addprefix $(OUTDIR)/,$(TEST_CPP_FILES:.cpp=.cpp.o))
+
 DEP_FILES=\
 	$(addprefix $(OUTDIR)/,$(addsuffix .deps,\
 	$(SOURCE_FILES) $(TOOL_CPP_FILES) $(TEST_CPP_FILES)))
@@ -214,9 +216,9 @@ $(GEN)/%.y.cc: \
 
 # Test binary.	
 $(TEST_BINARY): \
-	$(TEST_BINARY).cpp.o $(LIB) $(DEPEND_DIR)/gtest.build
+	$(TEST_OBJECT_FILES) $(LIB) $(DEPEND_DIR)/gtest.build
 	@echo Linking./$@
-	$(CXX) -o ./$@ $< $(LFLAGS) \
+	$(CXX) -o ./$@ $(TEST_OBJECT_FILES) $(LFLAGS) \
 	    -L$(GTEST_DIR)/lib -Wl,-Bstatic -lgtest -Wl,-Bdynamic -lpthread
 .tests_passed: \
 	$(TEST_BINARY)

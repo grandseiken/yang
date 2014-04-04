@@ -194,7 +194,7 @@ void Program::generate_ir(bool optimise)
 }
 
 Instance::Instance(const Program& program)
-  : _internals(new internal::InstanceInternals{program._internals})
+  : _internals(nullptr)
   , _global_data(nullptr)
 {
   if (!program.success()) {
@@ -202,6 +202,8 @@ Instance::Instance(const Program& program)
         _internals->ptr->name +
         ": instantiating program which did not compile successfully");
   }
+  _internals = new internal::InstanceInternals{program._internals};
+
   void* global_alloc = get_native_fp("!global_alloc");
   typedef void* (*alloc_fp)();
   _global_data = ((alloc_fp)(std::intptr_t)global_alloc)();

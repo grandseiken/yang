@@ -2,6 +2,10 @@
 // This file is part of the Yang software project. It is distributed under the
 // MIT License. See LICENSE file for details.
 //============================================================================//
+#include "tests.h"
+
+namespace yang {
+
 const std::string TestSemanticsStr = R"(
 export daft_fib = int(int n)
 {
@@ -153,6 +157,10 @@ export edit = int()()
 
 TEST_F(YangTest, SemanticsTest)
 {
+  if (!filter("semantics")) {
+    return;
+  }
+
   auto& inst = instance(TestSemanticsStr);
   EXPECT_EQ(inst.call<int_t>("daft_fib", 10), 89);
 
@@ -206,6 +214,10 @@ export tco_fac = int(int n)
 
 TEST_F(YangTest, TestTco)
 {
+  if (!filter("semantics")) {
+    return;
+  }
+
   auto& inst = instance(TestTcoStr);
   // This is a little tricky: some versions of GNU make contain a bug which sets
   // the stack size to unlimited, and forgets to ever set it back. This means
@@ -226,4 +238,7 @@ TEST_F(YangTest, TestTco)
   EXPECT_EQ(inst.call<int_t>("rec_fac", 6), 720);
   EXPECT_EQ(inst.call<int_t>("tco_fac", 6), 720);
   // TODO: EXPECT_NO_THROW(inst.call<int_t>("tco_fac", 1000000)).
+}
+
+// End namespace yang.
 }
