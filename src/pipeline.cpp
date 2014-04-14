@@ -199,7 +199,7 @@ Instance::Instance(const Program& program)
 {
   if (!program.success()) {
     throw runtime_error(
-        _internals->ptr->name +
+        program._internals->name +
         ": instantiating program which did not compile successfully");
   }
   _internals = new internal::InstanceInternals{program._internals};

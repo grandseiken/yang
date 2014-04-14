@@ -61,10 +61,21 @@ void StaticChecker::preorder(const Node& node)
 
   switch (node.type) {
     case Node::GLOBAL:
-      _scopes.emplace_back(node, "<global>");
+      if (node.int_value & Node::MODIFIER_NEGATION) {
+        _scopes.emplace_back(node, "<~global>");
+        _scopes.back().metadata.add(GLOBAL_DESTRUCTOR, Type::VOID);
+      }
+      else {
+        _scopes.emplace_back(node, "<global>");
+      }
       push_symbol_tables();
-      if (node.int_value) {
-        _scopes.back().metadata.add(EXPORT_GLOBAL, Type::VOID);
+      if (node.int_value & Node::MODIFIER_EXPORT) {
+        if (node.int_value & Node::MODIFIER_NEGATION) {
+          error(node, "~global marked export");
+        }
+        else {
+          _scopes.back().metadata.add(EXPORT_GLOBAL, Type::VOID);
+        }
       }
       break;
     case Node::GLOBAL_ASSIGN:
@@ -323,7 +334,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
       // Only export functions get added to the function table. They also are
       // automatically assumed to be referenced.
-      if (!t.is_error() && node.int_value) {
+      if (!t.is_error() && node.int_value & Node::MODIFIER_EXPORT) {
         _functions_output.emplace(s, t.external(true));
         _scopes[0].symbol_table[s].warn_reads = false;
       }
@@ -772,7 +783,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         }
       };
       bool global =
-          !inside_function() && _scopes.back().symbol_table.size() <= 3;
+          !inside_function() && _scopes.back().symbol_table.size() <= 3 &&
+          !_scopes.back().metadata.has(GLOBAL_DESTRUCTOR);
       if (!global) {
         node.static_info.scope_number = _scopes.back().scope_numbering.back();
       }
@@ -796,7 +808,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
       auto& sym = (global ? _scopes[0] : _scopes.back()).symbol_table[s];
       sym.warn_reads &= warn_reads;
-      sym.closed = sym.warn_closed = node.int_value;
+      sym.closed = sym.warn_closed = node.int_value & Node::MODIFIER_CLOSED;
       if (global && sym.closed) {
         sym.warn_closed = false;
         error(node, "`closed` modifier has no effect on global " +

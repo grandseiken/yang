@@ -32,6 +32,7 @@ struct Structure {
   llvm::Type* type;
   table_t table;
 
+  llvm::Function* custom_destructor;
   llvm::Function* destructor;
   llvm::Function* refout_query;
   std::size_t refout_count;
@@ -128,10 +129,11 @@ public:
   void pop_scope(bool loop_scope = false);
 
   // Structure functions.
-  void init_structure_type(const symbol_frame& symbols,
-                           bool global_data, bool has_parent = true);
+  void init_structure_type(
+      const symbol_frame& symbols, bool global_data, bool has_parent = true);
   llvm::Type* structure_type() const;
   const Structure::table_t structure_table() const;
+  llvm::Function* structure_custom_destructor() const;
   llvm::Value* allocate_structure_value();
   llvm::Value* allocate_closure_struct(llvm::Value* parent_ptr);
   llvm::Value* structure_ptr(llvm::Value* ptr, std::size_t index);

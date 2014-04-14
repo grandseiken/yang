@@ -129,6 +129,7 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
 %type <node> elem_list
 %type <node> elem
 %type <node> opt_export
+%type <node> opt_negation
 %type <node> opt_closed
 %type <node> stmt_list
 %type <node> stmt
@@ -165,17 +166,18 @@ elem_list
   ;
 
 elem
-  : opt_export T_GLOBAL stmt
-{if ($3->type != Node::BLOCK) {
+  : opt_export opt_negation T_GLOBAL stmt
+{if ($4->type != Node::BLOCK) {
    // Ensure a consistent scope depth for all global declarations.
-   $3 = new Node(scan, $2, Node::BLOCK, $3);
+   $4 = new Node(scan, $3, Node::BLOCK, $4);
  }
- $$ = new Node(scan, $2, Node::GLOBAL, $3);
- $$->int_value = $1->int_value;
- $$->extend_bounds($1);}
+ $$ = new Node(scan, $3, Node::GLOBAL, $4);
+ $$->int_value |= $1->int_value | $2->int_value;
+ $$->extend_bounds($1);
+ $$->extend_inner_bounds($2);}
   | opt_export expr T_ASSIGN expr
 {$$ = new Node(scan, $3, Node::GLOBAL_ASSIGN, $2, $4);
- $$->int_value = $1->int_value;
+ $$->int_value |= $1->int_value;
  $$->extend_bounds($1);}
   | ';'
 {$$ = new Node(scan, $1, Node::EMPTY_STMT);}
@@ -183,16 +185,23 @@ elem
 
 opt_export
   : T_EXPORT
-{$$ = new Node(scan, Node::INT_LITERAL, 1);}
+{$$ = new Node(scan, Node::INT_LITERAL, Node::MODIFIER_EXPORT);}
   |
-{$$ = new Node(scan, Node::INT_LITERAL, 0);}
+{$$ = new Node(scan, Node::INT_LITERAL);}
+  ;
+
+opt_negation
+  : T_BITWISE_NEGATION
+{$$ = new Node(scan, Node::INT_LITERAL, Node::MODIFIER_NEGATION);}
+  |
+{$$ = new Node(scan, Node::INT_LITERAL);}
   ;
 
 opt_closed
   : T_CLOSED
-{$$ = new Node(scan, Node::INT_LITERAL, 1);}
+{$$ = new Node(scan, Node::INT_LITERAL, Node::MODIFIER_CLOSED);}
   |
-{$$ = new Node(scan, Node::INT_LITERAL, 0);}
+{$$ = new Node(scan, Node::INT_LITERAL);}
   ;
 
 stmt_list
@@ -200,6 +209,7 @@ stmt_list
 {$$ = new Node(scan, Node::ERROR);}
   | stmt_list stmt
 {$$ = $1; $$->add($2);}
+  ;
 
 stmt
   : ';'
@@ -420,11 +430,11 @@ expr
 
   | opt_closed T_VAR expr T_ASSIGN expr
 {$$ = new Node(scan, $4, Node::ASSIGN_VAR, $3, $5);
- $$->int_value = $1->int_value;
+ $$->int_value |= $1->int_value;
  $$->extend_bounds($1);}
   | opt_closed T_CONST expr T_ASSIGN expr
 {$$ = new Node(scan, $4, Node::ASSIGN_CONST, $3, $5);
- $$->int_value = $1->int_value;
+ $$->int_value |= $1->int_value;
  $$->extend_bounds($1);}
   | expr T_ASSIGN expr
 {$$ = new Node(scan, $2, Node::ASSIGN, $1, $3);}

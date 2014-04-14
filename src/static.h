@@ -60,6 +60,7 @@ private:
 
   enum metadata_t {
     EXPORT_GLOBAL,
+    GLOBAL_DESTRUCTOR,
     LOOP_BODY,
     RETURN_TYPE,
     TYPE_EXPR_CONTEXT,

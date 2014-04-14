@@ -72,7 +72,7 @@ void update_function_refcount(NativeFunction<void>* target, int_t change);
 void cleanup_cyclic_structures();
 // Clean up structures that are no longer referenced.
 void cleanup_structures();
-// Clean up program internals.
+// Destroy program internals at some point.
 void destroy_internals(InstanceInternals* global_parent);
 
 // End namespace yang::internal.

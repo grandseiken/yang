@@ -153,6 +153,19 @@ export edit = int()()
   };
   return f;
 }
+
+global {
+  var i = 0;
+}
+~global {
+  var a = 0; ++a; a;
+  --i;
+  destruction(i);
+}
+~global {
+  ++i;
+  destruction(i);
+}
 )";
 
 TEST_F(YangTest, SemanticsTest)
@@ -161,7 +174,14 @@ TEST_F(YangTest, SemanticsTest)
     return;
   }
 
-  auto& inst = instance(TestSemanticsStr);
+  auto& ctxt = context();
+  int_t temp_int = 0;
+  ctxt.register_function("destruction", make_fn([&](int_t t)
+  {
+    t ? temp_int += 5 : temp_int *= 5;
+  }));
+
+  auto& inst = instance(ctxt, TestSemanticsStr);
   EXPECT_EQ(inst.call<int_t>("daft_fib", 10), 89);
 
   EXPECT_EQ(inst.get_global<int_t>("global_inner"), 42);
@@ -186,14 +206,28 @@ TEST_F(YangTest, SemanticsTest)
   EXPECT_EQ(inst.call<int_t>("odd_ops"), 48);
 
   typedef Function<int_t()> intf_t;
-  auto edit = inst.call<intf_t>("edit");
-  EXPECT_EQ(edit(), 0);
-  EXPECT_EQ(edit(), 1);
-  EXPECT_EQ(edit(), 2);
-  EXPECT_EQ(edit(), 0);
-  EXPECT_EQ(edit(), 1);
-  EXPECT_EQ(edit(), 2);
+  {
+    auto edit = inst.call<intf_t>("edit");
+    EXPECT_EQ(edit(), 0);
+    EXPECT_EQ(edit(), 1);
+    EXPECT_EQ(edit(), 2);
+    EXPECT_EQ(edit(), 0);
+    EXPECT_EQ(edit(), 1);
+    EXPECT_EQ(edit(), 2);
+  }
   // TODO: just getting started. Need way more semantic tests.
+
+  // Check destructors work. Not entirely obvious why we need to create two
+  // new instances to make sure the old one gets cleaned up. Also, not sure
+  // if this is really great semantics for destructors (it will probably get
+  // called soonish if you do some more stuff), but possibly it can't be helped.
+  // TODO: perhaps making cleanup idempotent and calling from Instance, Function
+  // etc destructors will alleviate the worst of this?
+  EXPECT_EQ(temp_int, 0);
+  clear(false);
+  instance("");
+  instance("");
+  EXPECT_EQ(temp_int, 25);
 }
 
 const std::string TestTcoStr = R"(

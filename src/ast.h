@@ -20,6 +20,13 @@ namespace yang {
 namespace internal {
 
 struct Node {
+  enum modifier {
+    MODIFIER_NONE = 0,
+    MODIFIER_EXPORT = 1,
+    MODIFIER_NEGATION = 2,
+    MODIFIER_CLOSED = 4,
+  };
+
   enum node_type {
     ERROR,
 

@@ -72,14 +72,25 @@ void IrGenerator::emit_global_functions()
       _b.b.getContext(), "entry", alloc);
   _b.b.SetInsertPoint(alloc_block);
 
-  // TODO: here we call the global initialisation functions. It should also be
-  // possible to define custom destructor functions that are called when the
-  // global structure is freed.
+  // Call global initialisation functions.
   llvm::Value* v = scope.allocate_structure_value();
   for (llvm::Function* f : _global_inits) {
     _b.b.CreateCall(f, v);
   }
   _b.b.CreateRet(v);
+
+  // Add global destruction functions to custom destructor (in reverse order).
+  llvm::Function* custom = scope.structure_custom_destructor();
+  auto free_block =
+      llvm::BasicBlock::Create(_b.b.getContext(), "entry", custom);
+  _b.b.SetInsertPoint(free_block);
+  auto it = custom->arg_begin();
+  it->setName("struct");
+  for (auto jt = _global_destructors.rbegin();
+       jt != _global_destructors.rend(); ++jt) {
+    _b.b.CreateCall(*jt, it);
+  }
+  _b.b.CreateRetVoid();
 
   // Create accessor functions for each field of the global structure.
   for (const auto pair : scope.structure_table()) {
@@ -130,12 +141,13 @@ void IrGenerator::preorder(const Node& node)
     {
       // GLOBAL init functions don't need external linkage, since they are
       // called automatically by the externally-visible global structure
-      // allocation function.
+      // allocation/deallocation functions.
       auto function = llvm::Function::Create(
           llvm::FunctionType::get(_b.void_type(),
                                   _scopes[0].structure_type(), false),
           llvm::Function::InternalLinkage, "!global_init", &_b.module);
-      _global_inits.push_back(function);
+      (node.int_value & Node::MODIFIER_NEGATION ?
+       _global_destructors : _global_inits).push_back(function);
       auto block =
           llvm::BasicBlock::Create(_b.b.getContext(), "entry", function);
 
@@ -159,7 +171,9 @@ void IrGenerator::preorder(const Node& node)
             _b.constant_ptr(nullptr), v));
       }
 
-      fback.metadata.add(LexScope::GLOBAL_INIT_FUNCTION, function);
+      if (!(node.int_value & Node::MODIFIER_NEGATION)) {
+        fback.metadata.add(LexScope::GLOBAL_INIT_FUNCTION, function);
+      }
       break;
     }
 
@@ -394,9 +408,8 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     {
       auto function = (llvm::Function*)parent;
       get_trampoline_function(results[1].type, false);
-      // Top-level functions Nodes have their int_value set to 1 when defined
-      // using the `export` keyword.
-      if (node.int_value) {
+      // Modifiers such as `export` are stored in int_value for now.
+      if (node.int_value & Node::MODIFIER_EXPORT) {
         function->setLinkage(llvm::Function::ExternalLinkage);
       }
       function->setName(node.children[0]->string_value);

@@ -23,12 +23,14 @@ bool YangTest::filter(const std::string& filter)
   return _filters.empty() || _filters.count(filter);
 }
 
-void YangTest::clear()
+void YangTest::clear(bool contexts)
 {
   _instances.clear();
   _user_values.clear();
   _programs.clear();
-  _contexts.clear();
+  if (contexts) {
+    _contexts.clear();
+  }
 }
 
 Context& YangTest::context()
@@ -132,7 +134,7 @@ int main(int argc, char** argv)
   // second. Fix that.
   bool forever = false;
   // Run with --<test_set> to run only those tests (e.g. --apis).
-  for (std::size_t i = 1; i < argc; ++i) {
+  for (std::size_t i = 1; i < (std::size_t)argc; ++i) {
     if (is(argv[i], "forever")) {
       forever = true;
       continue;

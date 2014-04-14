@@ -76,8 +76,9 @@ private:
       bool to_bool = false, bool with_ands = false, bool right_assoc = false);
 
   const Context& _context;
-  // List of static initialisation functions.
+  // List of static initialisation/destruction functions.
   std::vector<llvm::Function*> _global_inits;
+  std::vector<llvm::Function*> _global_destructors;
   // Current function stack.
   std::vector<LexScope> _scopes;
   // Scope for member-function closure indirection.

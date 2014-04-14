@@ -106,10 +106,11 @@ private:
 //   yang::Functions: they too must be copied to the heap, since the function
 //   might for example be passed to Yang code, stored, and invoked long after
 //   the original std::function has gone out of scope.
-// - reference-counting is a perfectly reasonable garbage-collection strategy
-//   for Yang. Its stable performance characteristics are ideal for the uses
-//   Yang was designed for, and it isn't possible to create cyclic structures
-//   in Yang code.
+// - reference-counting is probably a reasonable garbage-collection strategy
+//   for Yang. Lack of GC pausing is ideal for the realtime applications Yang
+//   was designed for, and cyclic structures are rare (they occur only when a
+//   closed environment contains a function value whose environment pointer is
+//   that same environment, or child thereof).
 // - there is also a large amount of template machinery to ensure we can
 //   transparently call Yang functions from C++ and vice-versa, even though
 //   they use different calling conventions.

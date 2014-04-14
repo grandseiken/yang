@@ -168,6 +168,8 @@ TEST_F(YangTest, ErrorTest)
   // Function signature errors.
   err("int = void() {}", "int");
   err("global {return 0;}", "return 0;");
+  err("~global {return;}", "return;");
+  err("export ~global {}", "export ~global {}");
   err("x = void {}", "{");
   err("x = void(int a, int a) {}", "int a");
   err("x = void(void a) {}", "void a");
@@ -277,6 +279,7 @@ TEST_F(YangTest, ErrorTest)
   err("global if (var a = 0); x = void() {a;}", "a");
   err("global if (1) {var a = 0;} x = void() {a;}", "a");
   err("global void() {var a = 0;}; x = void() {a;}", "a");
+  err("~global {const a = 0;} x = void() {a;}", "a");
 
   // Some multi-line errors, just for fun.
   err(TestMultilineErrorStrA, "int\n/**/()");

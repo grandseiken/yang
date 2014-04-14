@@ -84,7 +84,7 @@ identifier {alpha}({alpha}|{digit})*
 num_literal {digit}+
 int_literal {num_literal}|0x[A-Fa-f0-9]+
   /* Float literals carefully avoid matching "{num_literal}.", since that's an
-     operator anyway (and leads to nicer parsing. */
+     operator anyway (and leads to nicer parsing). */
 exponent [eE][+-]?{num_literal}
 decimal_literal ({num_literal}?\.{num_literal})
 float_literal {decimal_literal}{exponent}?|{num_literal}(\.)?{exponent}

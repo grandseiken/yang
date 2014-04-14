@@ -28,6 +28,7 @@ Structure::entry::entry(const yang::Type& type, std::size_t index)
 
 Structure::Structure()
   : type(nullptr)
+  , custom_destructor(nullptr)
   , destructor(nullptr)
   , refout_query(nullptr)
   , refout_count(0)
@@ -387,6 +388,12 @@ void LexScope::init_structure_type(
   _b.b.SetInsertPoint(free_block);
   auto it = _structure.destructor->arg_begin();
   it->setName("struct");
+  if (global_data) {
+    _structure.custom_destructor = llvm::Function::Create(
+        free_type, llvm::Function::InternalLinkage,
+        "!destructor_" + name, &_b.module);
+    _b.b.CreateCall(_structure.custom_destructor, it);
+  }
   // Make sure to decrement the reference count on each global variable on
   // destruction.
   for (const auto& pair : _structure.table) {
@@ -447,6 +454,11 @@ llvm::Type* LexScope::structure_type() const
 const Structure::table_t LexScope::structure_table() const
 {
   return _structure.table;
+}
+
+llvm::Function* LexScope::structure_custom_destructor() const
+{
+  return _structure.custom_destructor;
 }
 
 llvm::Value* LexScope::allocate_structure_value()

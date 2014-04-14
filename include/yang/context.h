@@ -33,7 +33,8 @@
 // Misc stuff:
 // TODO: context combination and scopes.
 // TODO: contexts should be immutable and store their data in a shared_ptr which
-// is shared by client programs.
+// is shared by client programs. This will make destructor functions a lot
+// easier to test and use...
 // TODO: as alternative to textual include, allow code-sharing by way of
 // treating a Program as a Context (using LLVM modules to avoid the need for
 // complicated trampolining back and forth).
@@ -47,7 +48,8 @@
 // Things that aren't thread-safe (and need locking):
 // - YangTrampolineGlobals
 // - possibly cpp_trampoline_lookup_map
-// - static refcount deletion lists
+// - static refcount deletion lists; these need to be per-something somehow
+//   so that objects added temporarily don't get deallocated!
 // - global data / closure data structure access. Both for concurrent invocation
 //   of functions from the same Instance, and concurrent invocation of functions
 //   from different Instances where one happens to hold a reference to a

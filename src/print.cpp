@@ -63,10 +63,11 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
       return s;
     }
     case Node::GLOBAL:
-      return (node.int_value ? "export " : "") +
-          std::string("global\n") + results[0];
+      return (node.int_value & Node::MODIFIER_EXPORT ? "export " : "") +
+          std::string(node.int_value & Node::MODIFIER_NEGATION ? "~" : "") +
+          "global\n" + results[0];
     case Node::GLOBAL_ASSIGN:
-      return (node.int_value ? "export " : "") +
+      return (node.int_value & Node::MODIFIER_EXPORT ? "export " : "") +
           results[0] + " = " + results[1];
     case Node::FUNCTION:
       return results[0] + "\n" + results[1];
@@ -190,9 +191,11 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
     case Node::ASSIGN:
       return "(" + results[0] + " = " + results[1] + ")";
     case Node::ASSIGN_VAR:
-      return "(var " + results[0] + " = " + results[1] + ")";
+      return (node.int_value & Node::MODIFIER_CLOSED ? "closed " : "") +
+          std::string("(var ") + results[0] + " = " + results[1] + ")";
     case Node::ASSIGN_CONST:
-      return "(const " + results[0] + " = " + results[1] + ")";
+      return (node.int_value & Node::MODIFIER_CLOSED ? "closed " : "") +
+          std::string("(const ") + results[0] + " = " + results[1] + ")";
 
     case Node::INT_CAST:
       return "[" + results[0] + "]";
