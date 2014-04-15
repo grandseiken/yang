@@ -10,6 +10,7 @@
 
 #include "error.h"
 #include "native.h"
+#include "refcounting.h"
 #include "type.h"
 #include "type_info.h"
 
@@ -32,9 +33,6 @@
 //
 // Misc stuff:
 // TODO: context combination and scopes.
-// TODO: contexts should be immutable and store their data in a shared_ptr which
-// is shared by client programs. This will make destructor functions a lot
-// easier to test and use...
 // TODO: as alternative to textual include, allow code-sharing by way of
 // treating a Program as a Context (using LLVM modules to avoid the need for
 // complicated trampolining back and forth).
@@ -69,18 +67,29 @@
 // return strings or output to streams; etc.
 namespace yang {
 namespace internal {
-  class StaticChecker;
-  class IrGenerator;
+
+// Data preserved while it's needed (by Context objects or Programs that depend
+// on them). It might make more sense for Contexts to be completely immutable
+// with a builder mechanism, but since they can only be *added* to currently,
+// everything should work even if they're modified after they've been used to
+// instantiate a program.
+struct ContextInternals {
+  typedef std::unordered_map<std::string, internal::GenericNativeType> type_map;
+  typedef std::unordered_map<
+      std::string, internal::GenericFunction> function_map;
+
+  type_map types;
+  function_map functions;
+};
+
+// End namespace internal.
 }
 
 class Context {
 public:
 
-  Context() {}
-
-  // Noncopyable.
-  Context(const Context&) = delete;
-  Context& operator=(const Context&) = delete;
+  Context()
+    : _internals(new internal::ContextInternals) {};
 
   // Add a user type. Types must be registered before registering functions that
   // make use of them.
@@ -105,52 +114,70 @@ public:
 
 private:
 
-  typedef std::unordered_map<std::string, internal::GenericNativeType> type_map;
-  typedef std::unordered_map<
-      std::string, internal::GenericFunction> function_map;
-
-  friend class internal::StaticChecker;
-  friend class internal::IrGenerator;
-  const type_map& get_types() const;
-  const function_map& get_functions() const;
-
-  type_map _types;
-  function_map _functions;
+  friend class Program;
+  friend const internal::ContextInternals&
+      internal::context_internals(const Context&);
+  std::shared_ptr<internal::ContextInternals> _internals;
 
 };
 
 // Implementation of TypeInfo for user types, which has to see the definition of
 // Context.
 namespace internal {
-  template<typename T>
-  struct TypeInfo<T*> {
-    yang::Type operator()(const Context& context) const
-    {
-      if (!context.has_type<T>()) {
-        throw runtime_error("use of unregistered user type");
-      }
-      return yang::Type::user_t(context.get_type_name<T>());
-    }
 
-    // Without passing a context, we just construct erased user-types.
-    yang::Type operator()() const
-    {
-      return yang::Type::user_t();
+template<typename T>
+bool context_has_type_impl(const ContextInternals& internals)
+{
+  for (const auto& pair : internals.types) {
+    if (pair.second.obj->is<T*>()) {
+      return true;
     }
-  };
+  }
+  return false;
+}
+
+template<typename T>
+std::string context_get_type_name_impl(const ContextInternals& internals)
+{
+  for (const auto& pair : internals.types) {
+    if (pair.second.obj->is<T*>()) {
+      return pair.first;
+    }
+  }
+  throw runtime_error("use of unregistered user type");
+} 
+
+template<typename T>
+struct TypeInfo<T*> {
+  yang::Type operator()(const ContextInternals& context) const
+  {
+    if (!context_has_type_impl<T>(context)) {
+      throw runtime_error("use of unregistered user type");
+    }
+    return yang::Type::user_t(context_get_type_name_impl<T>(context));
+  }
+
+  // Without passing a context, we just construct erased user-types.
+  yang::Type operator()() const
+  {
+    return yang::Type::user_t();
+  }
+};
+
+// End namespace internal.
 }
 
 template<typename T>
 void Context::register_type(const std::string& name)
 {
-  auto it = _types.find(name);
-  if (it != _types.end()) {
+  auto it = _internals->types.find(name);
+  if (it != _internals->types.end()) {
     throw runtime_error("duplicate type `" + name + "` registered in context");
     return;
   }
   // Could also store a reverse-map from internal pointer type-id; probably
   // not a big deal.
-  for (const auto& pair : _types) {
+  for (const auto& pair : _internals->types) {
     if (pair.second.obj->is<T*>()) {
       throw runtime_error("duplicate types `" + name + "` and `" + pair.first +
                           "` registered in context");
@@ -158,7 +185,7 @@ void Context::register_type(const std::string& name)
     }
   }
 
-  internal::GenericNativeType& symbol = _types[name];
+  internal::GenericNativeType& symbol = _internals->types[name];
   symbol.obj = std::unique_ptr<internal::NativeType<T*>>(
       new internal::NativeType<T*>());
 }
@@ -180,16 +207,16 @@ template<typename R, typename... Args>
 void Context::register_function(
     const std::string& name, const Function<R(Args...)>& f)
 {
-  auto it = _functions.find(name);
-  if (it != _functions.end()) {
+  auto it = _internals->functions.find(name);
+  if (it != _internals->functions.end()) {
     throw runtime_error(
         "duplicate function `" + name + "` registered in context");
     return;
   }
 
   internal::TypeInfo<Function<R(Args...)>> info;
-  internal::GenericFunction& symbol = _functions[name];
-  symbol.type = info(*this);
+  internal::GenericFunction& symbol = _internals->functions[name];
+  symbol.type = info(*_internals);
   symbol.ptr =
       std::unique_ptr<internal::FunctionBase>(new Function<R(Args...)>(f));
   internal::GenerateReverseTrampolineLookupTable<Function<R(Args...)>>()();
@@ -198,23 +225,13 @@ void Context::register_function(
 template<typename T>
 bool Context::has_type() const
 {
-  for (const auto& pair : _types) {
-    if (pair.second.obj->is<T*>()) {
-      return true;
-    }
-  }
-  return false;
+  return internal::context_has_type_impl<T>(*_internals);
 }
 
 template<typename T>
 std::string Context::get_type_name() const
 {
-  for (const auto& pair : _types) {
-    if (pair.second.obj->is<T*>()) {
-      return pair.first;
-    }
-  }
-  throw runtime_error("use of unregistered user type");
+  return internal::context_get_type_name_impl<T>(*_internals);
 }
 
 // End namepsace yang.

@@ -23,14 +23,27 @@ bool YangTest::filter(const std::string& filter)
   return _filters.empty() || _filters.count(filter);
 }
 
-void YangTest::clear(bool contexts)
+void YangTest::clear()
 {
   _instances.clear();
   _user_values.clear();
   _programs.clear();
-  if (contexts) {
-    _contexts.clear();
-  }
+  _contexts.clear();
+}
+
+void YangTest::clear_contexts()
+{
+  _contexts.clear();
+}
+
+void YangTest::clear_programs()
+{
+  _programs.clear();
+}
+
+void YangTest::clear_instances()
+{
+  _instances.clear();
 }
 
 Context& YangTest::context()

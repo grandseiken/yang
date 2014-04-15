@@ -24,15 +24,14 @@ namespace llvm {
 }
 
 namespace yang {
-class Context;
-
 namespace internal {
+struct ContextInternals;
 
 class IrGenerator : public IrCommon, public ConstAstWalker<Value> {
 public:
 
   IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
-              symbol_frame& globals, const Context& context);
+              symbol_frame& globals, const ContextInternals& context);
 
   // Emit functions for allocating, freeing, reading and writing to instances
   // of the global structure. This should be called after the tree has been
@@ -75,7 +74,7 @@ private:
       const Node& node, const Value& value,
       bool to_bool = false, bool with_ands = false, bool right_assoc = false);
 
-  const Context& _context;
+  const ContextInternals& _context;
   // List of static initialisation/destruction functions.
   std::vector<llvm::Function*> _global_inits;
   std::vector<llvm::Function*> _global_destructors;

@@ -11,6 +11,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/TargetSelect.h>
 
+#include <yang/context.h>
 #include "ast.h"
 #include "irgen.h"
 #include "log.h"
@@ -28,7 +29,7 @@ Program::Program(const Context& context, const std::string& name,
                  std::string* diagnostic_output)
   : _ast(nullptr)
   , _internals(new internal::ProgramInternals{
-      name, context, {}, {},
+      context._internals, name, {}, {},
       std::unique_ptr<llvm::LLVMContext>(new llvm::LLVMContext),
       nullptr, nullptr})
 {
@@ -79,7 +80,7 @@ Program::Program(const Context& context, const std::string& name,
   // malformed input.
 
   internal::StaticChecker checker(
-      _internals->context, data, _internals->functions, _internals->globals);
+      *_internals->context, data, _internals->functions, _internals->globals);
   checker.walk(*output);
   if (log_errors()) {
     _internals->functions.clear();
@@ -103,11 +104,6 @@ const Program::error_list& Program::get_errors() const
 const Program::error_list& Program::get_warnings() const
 {
   return _warnings;
-}
-
-const Context& Program::get_context() const
-{
-  return _internals->context;
 }
 
 const std::string& Program::get_name() const
@@ -177,7 +173,7 @@ void Program::generate_ir(bool optimise)
 
   internal::IrGenerator irgen(
       *_internals->module, *_internals->engine,
-      _internals->globals, _internals->context);
+      _internals->globals, *_internals->context);
   irgen.walk(*_ast);
   irgen.emit_global_functions();
 
@@ -219,7 +215,7 @@ Instance::~Instance()
 
 void* Instance::get_native_fp(const std::string& name) const
 {
-  return get_native_fp(_internals->ptr->module->getFunction(name));
+  return get_native_fp(_internals->program->module->getFunction(name));
 }
 
 void* Instance::get_native_fp(llvm::Function* ir_fp) const
@@ -232,28 +228,28 @@ void* Instance::get_native_fp(llvm::Function* ir_fp) const
   // way around this (technically) defined behaviour. I guess it should work
   // in practice since the whole native codegen thing is inherently machine-
   // -dependent anyway.
-  return _internals->ptr->engine->getPointerToFunction(ir_fp);
+  return _internals->program->engine->getPointerToFunction(ir_fp);
 }
 
 void Instance::check_global(const std::string& name, const Type& type,
                             bool for_modification) const
 {
-  auto it = _internals->ptr->globals.find(name);
-  if (it == _internals->ptr->globals.end()) {
+  auto it = _internals->program->globals.find(name);
+  if (it == _internals->program->globals.end()) {
     throw runtime_error(
-        _internals->ptr->name +
+        _internals->program->name +
         ": requested global `" + name + "` does not exist");
   }
   if (type != it->second) {
     throw runtime_error(
-        _internals->ptr->name +
+        _internals->program->name +
         ": global `" + it->second.string() + " " + name +
         "` accessed via incompatible type `" + type.string() + "`");
   }
   if (for_modification &&
       (it->second.is_const() || !it->second.is_exported())) {
     throw runtime_error(
-        _internals->ptr->name +
+        _internals->program->name +
         ": global `" + it->second.string() + " " + name +
         "` cannot be modified externally");
   }
@@ -261,15 +257,15 @@ void Instance::check_global(const std::string& name, const Type& type,
 
 void Instance::check_function(const std::string& name, const Type& type) const
 {
-  auto it = _internals->ptr->functions.find(name);
-  if (it == _internals->ptr->functions.end()) {
+  auto it = _internals->program->functions.find(name);
+  if (it == _internals->program->functions.end()) {
     throw runtime_error(
-        _internals->ptr->name +
+        _internals->program->name +
         ": requested function `" + name + "` does not exist");
   }
   if (type != it->second) {
     throw runtime_error(
-        _internals->ptr->name + ": function `" + it->second.string() +
+        _internals->program->name + ": function `" + it->second.string() +
         " " + name + "` accessed via incompatible type `" +
         type.string() + "`");
   }

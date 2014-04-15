@@ -27,7 +27,10 @@ protected:
   };
 
   // Deallocate all the objects constructed for this test so far.
-  void clear(bool contexts = true);
+  void clear();
+  void clear_contexts();
+  void clear_programs();
+  void clear_instances();
 
   Context& context();
   Program& program_suppress_errors(const std::string& contents);

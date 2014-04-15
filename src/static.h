@@ -15,16 +15,15 @@
 #include "walker.h"
 
 namespace yang {
-class Context;
-
 namespace internal {
+struct ContextInternals;
 struct ParseData;
 
 class StaticChecker : public ConstAstWalker<Type> {
 public:
 
   typedef std::unordered_map<std::string, yang::Type> symbol_frame;
-  StaticChecker(const yang::Context& context, ParseData& data,
+  StaticChecker(const ContextInternals& context, ParseData& data,
                 symbol_frame& functions_output, symbol_frame& globals_output);
   ~StaticChecker();
 
@@ -101,7 +100,7 @@ private:
 
   std::vector<lex_scope_t> _scopes;
 
-  const yang::Context& _context;
+  const ContextInternals& _context;
   ParseData& _data;
   symbol_frame& _functions_output;
   symbol_frame& _globals_output;

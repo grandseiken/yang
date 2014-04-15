@@ -30,7 +30,7 @@ namespace yang {
 namespace internal {
 
 IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
-                         symbol_frame& globals, const Context& context)
+                         symbol_frame& globals, const ContextInternals& context)
   : IrCommon(module, engine)
   , _context(context)
   , _member_function_closure(_b)
@@ -56,7 +56,7 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // We need to generate a reverse trampoline function for each function in the
   // Context. User type member functions are present in the context function map
   // as well as free functions.
-  for (const auto& pair : context.get_functions()) {
+  for (const auto& pair : context.functions) {
     get_reverse_trampoline_function(pair.second.type, false);
   }
 }
@@ -525,7 +525,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       // Scope resolution always refers to a context function.
       std::string s =
           node.static_info.user_type_name + "::" + node.string_value;
-      auto it = _context.get_functions().find(s);
+      auto it = _context.functions.find(s);
       return _b.function_value(it->second);
     }
     case Node::MEMBER_SELECTION:
@@ -560,8 +560,8 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
 
       // It's possible that nothing matches, when this is the identifier on the
       // left of a variable declaration.
-      auto it = _context.get_functions().find(node.string_value);
-      if (it == _context.get_functions().end()) {
+      auto it = _context.functions.find(node.string_value);
+      if (it == _context.functions.end()) {
         return Value();
       }
       // It must be a context function.
@@ -1001,7 +1001,7 @@ Value IrGenerator::get_member_function(const std::string& name)
     return it->second;
   }
 
-  auto jt = _context.get_functions().find(name);
+  auto jt = _context.functions.find(name);
   const yang::Type& full_type = jt->second.type;
   std::vector<yang::Type> args;
   for (std::size_t i = 1; i < full_type.get_function_num_args(); ++i) {

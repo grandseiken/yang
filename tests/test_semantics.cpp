@@ -224,7 +224,7 @@ TEST_F(YangTest, SemanticsTest)
   // TODO: perhaps making cleanup idempotent and calling from Instance, Function
   // etc destructors will alleviate the worst of this?
   EXPECT_EQ(temp_int, 0);
-  clear(false);
+  clear();
   instance("");
   instance("");
   EXPECT_EQ(temp_int, 25);

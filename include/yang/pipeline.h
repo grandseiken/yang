@@ -24,9 +24,33 @@ namespace yang {
 class Context;
 
 namespace internal {
-  struct Node;
+struct Node;
+
+// Data for a Program that is preserved as long as an Instance or some closure
+// structure needs it.
+struct ProgramInternals {
+  // As well as looking up things in the Context, programs need to ensure that
+  // RefCountedNativeFunctions they depend on are kept alive.
+  std::shared_ptr<const internal::ContextInternals> context;
+  std::string name;
+  symbol_table functions;
+  symbol_table globals;
+
+  std::unique_ptr<llvm::LLVMContext> llvm_context;
+  llvm::Module* module;
+  std::unique_ptr<llvm::ExecutionEngine> engine;
+};
+
+// Similarly for an Instance.
+struct InstanceInternals {
+  std::shared_ptr<const internal::ProgramInternals> program;
+};
+
+// End namespace internal.
 }
 
+// TODO: make this copyable by moving things into the internals. Also make
+// Instance copyable somehow if possible.
 class Program {
 public:
 
@@ -51,8 +75,6 @@ public:
   typedef std::vector<ErrorInfo> error_list;
   const error_list& get_errors() const;
   const error_list& get_warnings() const;
-
-  const Context& get_context() const;
   const std::string& get_name() const;
 
   // Returns true if the contents parsed and checked successfully (i.e., if
@@ -126,7 +148,7 @@ T Instance::get_global(const std::string& name) const
   // TypeInfo will fail at compile-time for completely unsupported types; will
   // at runtime for pointers to unregistered user types.
   internal::TypeInfo<T> info;
-  check_global(name, info(_internals->ptr->context), false);
+  check_global(name, info(*_internals->program->context), false);
 
   auto fp = (yang::void_fp)
       (std::intptr_t)get_native_fp("!global_get_" + name);
@@ -137,7 +159,7 @@ template<typename T>
 void Instance::set_global(const std::string& name, const T& value)
 {
   internal::TypeInfo<T> info;
-  check_global(name, info(_internals->ptr->context), true);
+  check_global(name, info(*_internals->program->context), true);
 
   auto fp = (yang::void_fp)
       (std::intptr_t)get_native_fp("!global_set_" + name);
@@ -148,7 +170,7 @@ template<typename T>
 T Instance::get_function(const std::string& name)
 {
   internal::TypeInfo<T> info;
-  check_function(name, info(_internals->ptr->context));
+  check_function(name, info(*_internals->program->context));
   internal::FunctionConstruct<T> construct;
   return construct(get_native_fp(name), _global_data);
 }

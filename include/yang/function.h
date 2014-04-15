@@ -361,13 +361,6 @@ struct FunctionInitialise<Function<R(Args...)>> {
 #include "trampoline.h"
 
 namespace yang {
-
-template<typename R, typename... Args>
-Type Function<R(Args...)>::get_type(const Context& context)
-{
-  return internal::TypeInfo<Function<R(Args...)>>()(context);
-}
-
 namespace internal {
 
 // Call a Yang function via global trampolines.
@@ -384,8 +377,20 @@ R call_via_trampoline(yang::void_fp target, void* env, const Args&... args)
   return call_type()(trampoline_expanded, args..., env, target);
 }
 
-// End namespace yang::internal.
+struct ContextInternals;
+const ContextInternals& context_internals(const Context& context);
+
+// End namespace internal.
 }
+
+template<typename R, typename... Args>
+Type Function<R(Args...)>::get_type(const Context& context)
+{
+  return internal::TypeInfo<Function<R(Args...)>>()(
+      internal::context_internals(context));
+}
+
+// End namespace yang.
 }
 
 #endif

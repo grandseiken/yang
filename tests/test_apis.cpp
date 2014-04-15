@@ -6,7 +6,7 @@
 
 namespace yang {
 
-TEST_F(YangTest, FunctionTest)
+TEST_F(YangTest, FunctionApiTest)
 {
   if (!filter("apis")) {
     return;
@@ -35,7 +35,7 @@ TEST_F(YangTest, FunctionTest)
   EXPECT_THROW(undeff_t::get_type(ctxt), runtime_error);
 }
 
-TEST_F(YangTest, ContextTest)
+TEST_F(YangTest, ContextApiTest)
 {
   if (!filter("apis")) {
     return;
@@ -110,7 +110,7 @@ global {
 }
 )";
 
-TEST_F(YangTest, ProgramTest)
+TEST_F(YangTest, ProgramApiTest)
 {
   if (!filter("apis")) {
     return;
@@ -119,7 +119,6 @@ TEST_F(YangTest, ProgramTest)
   // General program API.
   auto& ctxt = context();
   auto& prog = program(ctxt, TestApisStr);
-  EXPECT_EQ(&prog.get_context(), &ctxt);
   EXPECT_EQ(prog.get_name(), "test0");
   ASSERT_TRUE(prog.success());
   EXPECT_NO_THROW(prog.print_ast());
@@ -178,7 +177,7 @@ TEST_F(YangTest, ProgramTest)
   EXPECT_FALSE(dt->second.is_exported());
 }
 
-TEST_F(YangTest, InstanceTest)
+TEST_F(YangTest, InstanceApiTest)
 {
   if (!filter("apis")) {
     return;

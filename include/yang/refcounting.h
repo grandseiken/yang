@@ -25,6 +25,7 @@ typedef std::unordered_map<std::string, Type> symbol_table;
 namespace internal {
 template<typename T>
 class NativeFunction;
+struct InstanceInternals;
 
 // Prefix structure of all global data and closure structures.
 struct Prefix {
@@ -39,23 +40,6 @@ struct Prefix {
   int_t refouts;
   // Pointer to outbound reference query function.
   void (*query)(Prefix*, Prefix**);
-};
-
-// Data for a Program that is preserved as long as an Instance or some closure
-// structure needs it.
-struct ProgramInternals {
-  std::string name;
-  const Context& context;
-  symbol_table functions;
-  symbol_table globals;
-
-  std::unique_ptr<llvm::LLVMContext> llvm_context;
-  llvm::Module* module;
-  std::unique_ptr<llvm::ExecutionEngine> engine;
-};
-// Similarly for an Instance.
-struct InstanceInternals {
-  std::shared_ptr<const internal::ProgramInternals> ptr;
 };
 
 // Get list of instance internals which are to be cleaned up.

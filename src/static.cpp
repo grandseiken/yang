@@ -22,7 +22,7 @@ namespace yang {
 namespace internal {
 
 StaticChecker::StaticChecker(
-    const yang::Context& context, ParseData& data,
+    const ContextInternals& context, ParseData& data,
     symbol_frame& functions_output, symbol_frame& globals_output)
   : _context(context)
   , _data(data)
@@ -440,8 +440,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       node.static_info.user_type_name = results[0].user_type_name();
       std::string s =
           node.static_info.user_type_name + "::" + node.string_value;
-      auto context_it = _context.get_functions().find(s);
-      if (context_it == _context.get_functions().end()) {
+      auto context_it = _context.functions.find(s);
+      if (context_it == _context.functions.end()) {
         error(node, "undeclared member function `" + s + "`");
         return Type::ERROR;
       }
@@ -461,8 +461,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       node.static_info.user_type_name = results[0].user_type_name();
       std::string s =
           node.static_info.user_type_name + "::" + node.string_value;
-      auto it = _context.get_functions().find(s);
-      if (it == _context.get_functions().end()) {
+      auto it = _context.functions.find(s);
+      if (it == _context.functions.end()) {
         error(node, "undeclared member function `" + s + "`");
         return Type::ERROR;
       }
@@ -480,8 +480,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     {
       // Look up user types in a type-context.
       if (inside_type_context()) {
-        auto context_it = _context.get_types().find(node.string_value);
-        if (context_it == _context.get_types().end()) {
+        auto context_it = _context.types.find(node.string_value);
+        if (context_it == _context.types.end()) {
           error(node, "undeclared type `" + node.string_value + "`");
           return Type::ERROR;
         }
@@ -496,8 +496,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         }
         if (it == --_scopes.rend()) {
           // Check Context if symbol isn't present in the Program table.
-          auto context_it = _context.get_functions().find(node.string_value);
-          if (context_it != _context.get_functions().end()) {
+          auto context_it = _context.functions.find(node.string_value);
+          if (context_it != _context.functions.end()) {
             return context_it->second.type;
           }
           error(node, "undeclared identifier `" + node.string_value + "`");
@@ -745,10 +745,10 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         return results[1];
       }
 
-      if (_context.get_functions().count(s)) {
+      if (_context.functions.count(s)) {
         error(node, "cannot assign to context function `" + s + "`");
       }
-      else if (_context.get_types().count(s)) {
+      else if (_context.types.count(s)) {
         error(node, "cannot assign to context type `" + s + "`");
       }
       else {

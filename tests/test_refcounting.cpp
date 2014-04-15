@@ -321,5 +321,33 @@ TEST_F(YangTest, StructureRefCounting)
   EXPECT_EQ(inst.get_global<intf2_t>("g")(4), 8);
 }
 
+TEST_F(YangTest, ApiRefCounting)
+{
+  if (!filter("refcounting")) {
+    return;
+  }
+
+  Program* tprog = nullptr;
+  Instance* tinst = nullptr;
+
+  {
+    auto& ctxt = context();
+    ctxt.register_function("f", make_fn([]()
+    {
+      return int_t(17);
+    }));
+    tprog = &program(ctxt, "export g = int() {return f();}");
+  }
+  clear_contexts();
+
+  {
+    tinst = &instance(*tprog);
+  }
+  clear_programs();
+
+  auto& inst = *tinst;
+  EXPECT_EQ(inst.call<int_t>("g"), 17);
+}
+
 // End namespace yang.
 }
