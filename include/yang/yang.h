@@ -9,7 +9,8 @@
 #include "context.h"
 #include "error.h"
 #include "function.h"
-#include "pipeline.h"
+#include "instance.h"
+#include "program.h"
 #include "type.h"
 #include "typedefs.h"
 

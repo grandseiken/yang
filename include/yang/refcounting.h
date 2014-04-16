@@ -12,15 +12,8 @@
 #include "typedefs.h"
 #include "type.h"
 
-namespace llvm {
-  class ExecutionEngine;
-  class LLVMContext;
-  class Module;
-}
-
 namespace yang {
 class Context;
-typedef std::unordered_map<std::string, Type> symbol_table;
 
 namespace internal {
 template<typename T>

@@ -2,16 +2,12 @@
 // This file is part of the Yang software project. It is distributed under the
 // MIT License. See LICENSE file for details.
 //============================================================================//
-#ifndef YANG_INCLUDE_YANG_PIPELINE_H
-#define YANG_INCLUDE_YANG_PIPELINE_H
+#ifndef YANG_INCLUDE_YANG_INSTANCE_H
+#define YANG_INCLUDE_YANG_INSTANCE_H
 
-#include <memory>
 #include <string>
-#include <unordered_map>
-#include <vector>
 
-#include "error.h"
-#include "refcounting.h"
+#include "internals.h"
 #include "type.h"
 #include "type_info.h"
 #include "typedefs.h"
@@ -21,84 +17,7 @@ namespace llvm {
 }
 
 namespace yang {
-class Context;
-
-namespace internal {
-struct Node;
-
-// Data for a Program that is preserved as long as an Instance or some closure
-// structure needs it.
-struct ProgramInternals {
-  // As well as looking up things in the Context, programs need to ensure that
-  // RefCountedNativeFunctions they depend on are kept alive.
-  std::shared_ptr<const internal::ContextInternals> context;
-  std::string name;
-  symbol_table functions;
-  symbol_table globals;
-
-  std::unique_ptr<llvm::LLVMContext> llvm_context;
-  llvm::Module* module;
-  std::unique_ptr<llvm::ExecutionEngine> engine;
-};
-
-// Similarly for an Instance.
-struct InstanceInternals {
-  std::shared_ptr<const internal::ProgramInternals> program;
-};
-
-// End namespace internal.
-}
-
-// TODO: make this copyable by moving things into the internals. Also make
-// Instance copyable somehow if possible.
-class Program {
-public:
-
-  // Errors and warnings will be appended to the diagnostic_output string if
-  // the pointer is non-null; otherwise, they will go to stderr.
-  Program(const Context& context, const std::string& name,
-          const std::string& contents, bool optimise = true,
-          std::string* diagnostic_output = nullptr);
-  ~Program();
-
-  // Noncopyable.
-  Program(Program&) = delete;
-  Program& operator=(Program&) = delete;
-
-  // By default, errors and warnings will be printed to standard error. By
-  // passing diagnostic_output to the Program constructor, this behaviour can be
-  // overridden, and something else can be done with the diagnostic information.
-  //
-  // For even finer-grained control, these data structures can be accessed for
-  // raw error message strings and detailed information about the position of
-  // errors in the source text. See error.h for more information.
-  typedef std::vector<ErrorInfo> error_list;
-  const error_list& get_errors() const;
-  const error_list& get_warnings() const;
-  const std::string& get_name() const;
-
-  // Returns true if the contents parsed and checked successfully (i.e., if
-  // get_errors().size() is zero). Otherwise, none of the following functions
-  // will do anything useful.
-  bool success() const;
-  std::string print_ast() const;
-  std::string print_ir() const;
-
-  const symbol_table& get_functions() const;
-  const symbol_table& get_globals() const;
-
-private:
-
-  void generate_ir(bool optimise);
-
-  std::unique_ptr<internal::Node> _ast;
-  error_list _errors;
-  error_list _warnings;
-
-  friend class Instance;
-  std::shared_ptr<internal::ProgramInternals> _internals;
-
-};
+class Program;
 
 class Instance {
 public:

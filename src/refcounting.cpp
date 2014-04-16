@@ -2,9 +2,10 @@
 // This file is part of the Yang software project. It is distributed under the
 // MIT License. See LICENSE file for details.
 //============================================================================//
-#include <yang/native.h>
-#include <yang/pipeline.h>
 #include <yang/refcounting.h>
+
+#include <yang/internals.h>
+#include <yang/native.h>
 
 // All of this is a first draft and probably very naive.
 namespace yang {
