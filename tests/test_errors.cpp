@@ -23,14 +23,14 @@ TEST_F(YangTest, FailureTest)
     return;
   }
 
-  auto& success_prog = program_suppress_errors("works = void() {}");
+  auto success_prog = program_suppress_errors("works = void() {}");
   EXPECT_TRUE(success_prog.success());
   EXPECT_NO_THROW(instance(success_prog));
-  auto& failure_prog = program_suppress_errors("broken");
+  auto failure_prog = program_suppress_errors("broken");
   EXPECT_FALSE(failure_prog.success());
   EXPECT_THROW(instance(failure_prog), runtime_error);
 
-  auto& prog = program_suppress_errors(TestStructuredErrorStr);
+  auto prog = program_suppress_errors(TestStructuredErrorStr);
   const auto& errors = prog.get_errors();
   const auto& warnings = prog.get_warnings();
 
@@ -90,14 +90,14 @@ TEST_F(YangTest, ErrorTest)
     return;
   }
 
-  auto& ctxt = context();
+  auto ctxt = context();
   auto erc = [&](const std::string& str,
                  const std::string& text, std::size_t count)
   {
 #ifdef DEBUG
-    auto& prog = program(ctxt, str, true);
+    auto prog = program(ctxt, str, true);
 #else
-    auto& prog = program_suppress_errors(ctxt, str);
+    auto prog = program_suppress_errors(ctxt, str);
 #endif
     EXPECT_FALSE(prog.success()) <<
         "Should fail to compile:\n" << str << std::endl;
@@ -292,14 +292,14 @@ TEST_F(YangTest, WarningTest)
     return;
   }
 
-  auto& ctxt = context();
+  auto ctxt = context();
   auto warc = [&](const std::string& str,
                   const std::string& text, std::size_t count)
   {
 #ifdef DEBUG
-    auto& prog = program(ctxt, str, true);
+    auto prog = program(ctxt, str, true);
 #else
-    auto& prog = program_suppress_errors(ctxt, str);
+    auto prog = program_suppress_errors(ctxt, str);
 #endif
     EXPECT_TRUE(prog.success()) <<
         "Should compile successfully:\n" << str << std::endl;

@@ -15,12 +15,6 @@
 namespace yang {
 class Context;
 
-namespace internal {
-  struct Node;
-}
-
-// TODO: make this copyable by moving things into the internals. Also make
-// Instance copyable somehow if possible.
 class Program {
 public:
 
@@ -30,10 +24,6 @@ public:
           const std::string& contents, bool optimise = true,
           std::string* diagnostic_output = nullptr);
   ~Program();
-
-  // Noncopyable.
-  Program(Program&) = delete;
-  Program& operator=(Program&) = delete;
 
   // By default, errors and warnings will be printed to standard error. By
   // passing diagnostic_output to the Program constructor, this behaviour can be
@@ -61,10 +51,6 @@ public:
 private:
 
   void generate_ir(bool optimise);
-
-  std::unique_ptr<internal::Node> _ast;
-  error_list _errors;
-  error_list _warnings;
 
   friend class Instance;
   std::shared_ptr<internal::ProgramInternals> _internals;

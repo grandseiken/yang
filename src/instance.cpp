@@ -34,6 +34,25 @@ Instance::~Instance()
   internal::update_structure_refcount((internal::Prefix*)_global_data, -1);
 }
 
+Instance::Instance(const Instance& instance)
+  : _internals(instance._internals)
+  , _global_data(instance._global_data)
+{
+  internal::update_structure_refcount((internal::Prefix*)_global_data, 1);
+}
+
+Instance& Instance::operator=(const Instance& instance) 
+{
+  if (this == &instance) {
+    return *this;
+  }
+  internal::update_structure_refcount((internal::Prefix*)_global_data, -1);
+  _internals = instance._internals;
+  _global_data = instance._global_data;
+  internal::update_structure_refcount((internal::Prefix*)_global_data, 1);
+  return *this;
+}
+
 void* Instance::get_native_fp(const std::string& name) const
 {
   return get_native_fp(_internals->program->module->getFunction(name));

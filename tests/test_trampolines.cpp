@@ -39,7 +39,7 @@ TEST_F(YangTest, Trampolines)
     return;
   }
 
-  auto& inst = instance(TestTrampolinesStr);
+  auto inst = instance(TestTrampolinesStr);
   EXPECT_EQ(inst.call<int_t>("test_int", 5), 10);
   EXPECT_EQ(inst.call<float_t>("test_float", 1.0 / 8), 1.0 / 4);
 
@@ -117,7 +117,7 @@ TEST_F(YangTest, ReverseTrampolines)
     return x;
   };
 
-  auto& ctxt = context();
+  auto ctxt = context();
   ctxt.register_function("context_int", make_fn(context_int));
   ctxt.register_function("context_float", make_fn(context_float));
   ctxt.register_function("context_int4", make_fn(context_int4));
@@ -125,7 +125,7 @@ TEST_F(YangTest, ReverseTrampolines)
   ctxt.register_function("context_function", make_fn(context_function));
   ctxt.register_function("context_user_type", make_fn(context_user_type));
 
-  auto& inst = instance(ctxt, TestReverseTrampolinesStr);
+  auto inst = instance(ctxt, TestReverseTrampolinesStr);
   EXPECT_EQ(inst.call<int_t>("test_int"), 5);
   EXPECT_EQ(inst.call<float_t>("test_float"), 5.);
   EXPECT_EQ(inst.call<ivec_t<4>>("test_int4"), ivec_t<4>(0, -1, -2, -3));
@@ -148,7 +148,7 @@ TEST_F(YangTest, MultiArgTrampolines)
     return;
   }
 
-  auto& ctxt = context();
+  auto ctxt = context();
   typedef Function<int_t(int_t)> intf_t;
   auto context_test = [](
       int_t a, ivec_t<4> b, float_t c, intf_t d, fvec_t<2> e, user_type* f)

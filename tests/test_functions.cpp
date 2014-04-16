@@ -53,12 +53,12 @@ TEST_F(YangTest, CppFunctions)
     return cpp;
   });
 
-  auto& ctxt = context();
+  auto ctxt = context();
   ctxt.register_function("cpp", cpp);
   ctxt.register_function("UserType::ucpp", ucpp);
   ctxt.register_function("get_cpp", get_cpp);
   ctxt.register_member_function<user_type>("cpp", ucpp);
-  auto& inst = instance(ctxt, TestCppFunctionsStr);
+  auto inst = instance(ctxt, TestCppFunctionsStr);
 
   // C++ function called from C++.
   EXPECT_EQ(cpp(3), 33);
@@ -113,11 +113,11 @@ TEST_F(YangTest, YangFunctions)
   {
     return function(-2);
   });
-  auto& ctxt = context();
+  auto ctxt = context();
   ctxt.register_function("context_function", context_function);
 
-  auto& inst = instance(ctxt, TestYangFunctionsStr);
-  auto& jnst = instance(ctxt, TestYangFunctionsStr);
+  auto inst = instance(ctxt, TestYangFunctionsStr);
+  auto jnst = instance(ctxt, TestYangFunctionsStr);
 
   auto inst_add = inst.get_function<intf_t>("add");
   auto jnst_add = jnst.get_function<intf_t>("add");
@@ -177,7 +177,7 @@ TEST_F(YangTest, HighOrderFunctions)
     return;
   }
 
-  auto& inst = instance(TestHighOrderFunctionsStr);
+  auto inst = instance(TestHighOrderFunctionsStr);
   typedef Function<int_t()> intf_t;
   typedef Function<intf_t()> intf2_t;
   typedef Function<intf2_t()> intf3_t;
@@ -297,7 +297,7 @@ TEST_F(YangTest, FunctionClosures)
     return;
   }
 
-  auto& inst = instance(TestFunctionClosuresStr);
+  auto inst = instance(TestFunctionClosuresStr);
   EXPECT_EQ(inst.call<int_t>("internal", 3), 89);
 
   typedef Function<int_t()> intf_t;

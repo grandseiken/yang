@@ -20,7 +20,7 @@ TEST_F(YangTest, FunctionApiTest)
   EXPECT_EQ(uf_t(unused)(1, 2, 3), 1);
 
   // Get type.
-  auto& ctxt = context();
+  auto ctxt = context();
   EXPECT_TRUE(uf_t::get_type(ctxt).is_function());
 
   typedef Function<user_type*()> userf_t;
@@ -40,7 +40,7 @@ TEST_F(YangTest, ContextApiTest)
   if (!filter("apis")) {
     return;
   }
-  auto& ctxt = context();
+  auto ctxt = context();
 
   struct type_a {};
   struct type_b {};
@@ -117,8 +117,8 @@ TEST_F(YangTest, ProgramApiTest)
   }
 
   // General program API.
-  auto& ctxt = context();
-  auto& prog = program(ctxt, TestApisStr);
+  auto ctxt = context();
+  auto prog = program(ctxt, TestApisStr);
   EXPECT_EQ(prog.get_name(), "test0");
   ASSERT_TRUE(prog.success());
   EXPECT_NO_THROW(prog.print_ast());
@@ -185,8 +185,8 @@ TEST_F(YangTest, InstanceApiTest)
 
   typedef Function<int_t(int_t)> intf_t;
   typedef Function<void()> voidf_t;
-  auto& prog = program(TestApisStr);
-  auto& inst = instance(prog);
+  auto prog = program(TestApisStr);
+  auto inst = instance(prog);
 
   // Non-existent name.
   EXPECT_THROW(inst.get_function<intf_t>("nonexistent"), runtime_error);

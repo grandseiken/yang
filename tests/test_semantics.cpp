@@ -174,57 +174,59 @@ TEST_F(YangTest, SemanticsTest)
     return;
   }
 
-  auto& ctxt = context();
   int_t temp_int = 0;
-  ctxt.register_function("destruction", make_fn([&](int_t t)
   {
-    t ? temp_int += 5 : temp_int *= 5;
-  }));
+    auto ctxt = context();
+    ctxt.register_function("destruction", make_fn([&](int_t t)
+    {
+      t ? temp_int += 5 : temp_int *= 5;
+    }));
 
-  auto& inst = instance(ctxt, TestSemanticsStr);
-  EXPECT_EQ(inst.call<int_t>("daft_fib", 10), 89);
+    auto inst = instance(ctxt, TestSemanticsStr);
+    EXPECT_EQ(inst.call<int_t>("daft_fib", 10), 89);
 
-  EXPECT_EQ(inst.get_global<int_t>("global_inner"), 42);
-  EXPECT_EQ(inst.call<int_t>("count_to_ten"), 10);
-  EXPECT_EQ(inst.call<int_t>("ternary_fun"), 17);
-  EXPECT_EQ(inst.call<int_t>("crazy_combine"), 67);
-  EXPECT_EQ(inst.call<int_t>("shadowing", 2), 15);
+    EXPECT_EQ(inst.get_global<int_t>("global_inner"), 42);
+    EXPECT_EQ(inst.call<int_t>("count_to_ten"), 10);
+    EXPECT_EQ(inst.call<int_t>("ternary_fun"), 17);
+    EXPECT_EQ(inst.call<int_t>("crazy_combine"), 67);
+    EXPECT_EQ(inst.call<int_t>("shadowing", 2), 15);
 
-  EXPECT_EQ(inst.get_global<int_t>("ten"), 10);
-  EXPECT_EQ(inst.get_global<int_t>("again"), 10);
-  inst.call<void>("again_mod", 0);
-  EXPECT_EQ(inst.get_global<int_t>("again"), 12);
-  inst.call<void>("again_mod", 1);
-  EXPECT_EQ(inst.get_global<int_t>("again"), 13);
+    EXPECT_EQ(inst.get_global<int_t>("ten"), 10);
+    EXPECT_EQ(inst.get_global<int_t>("again"), 10);
+    inst.call<void>("again_mod", 0);
+    EXPECT_EQ(inst.get_global<int_t>("again"), 12);
+    inst.call<void>("again_mod", 1);
+    EXPECT_EQ(inst.get_global<int_t>("again"), 13);
 
-  EXPECT_EQ(inst.call<float_t>("float_literals"), 25.41);
-  EXPECT_EQ(inst.call<int_t>("int_literals"), 654);
-  EXPECT_EQ(inst.call<int_t>("big_int_literals"), 0xffffffff);
-  EXPECT_EQ(inst.call<int_t>("big_int_literals"), -1);
+    EXPECT_EQ(inst.call<float_t>("float_literals"), 25.41);
+    EXPECT_EQ(inst.call<int_t>("int_literals"), 654);
+    EXPECT_EQ(inst.call<int_t>("big_int_literals"), 0xffffffff);
+    EXPECT_EQ(inst.call<int_t>("big_int_literals"), -1);
 
-  EXPECT_EQ(inst.call<int_t>("knuth_man_or_boy_test", 10), -67);
-  EXPECT_EQ(inst.call<int_t>("odd_ops"), 48);
+    EXPECT_EQ(inst.call<int_t>("knuth_man_or_boy_test", 10), -67);
+    EXPECT_EQ(inst.call<int_t>("odd_ops"), 48);
 
-  typedef Function<int_t()> intf_t;
-  {
-    auto edit = inst.call<intf_t>("edit");
-    EXPECT_EQ(edit(), 0);
-    EXPECT_EQ(edit(), 1);
-    EXPECT_EQ(edit(), 2);
-    EXPECT_EQ(edit(), 0);
-    EXPECT_EQ(edit(), 1);
-    EXPECT_EQ(edit(), 2);
+    typedef Function<int_t()> intf_t;
+    {
+      auto edit = inst.call<intf_t>("edit");
+      EXPECT_EQ(edit(), 0);
+      EXPECT_EQ(edit(), 1);
+      EXPECT_EQ(edit(), 2);
+      EXPECT_EQ(edit(), 0);
+      EXPECT_EQ(edit(), 1);
+      EXPECT_EQ(edit(), 2);
+    }
+    // TODO: just getting started. Need way more semantic tests.
+
+    // Check destructors work. Not entirely obvious why we need to create two
+    // new instances to make sure the old one gets cleaned up. Also, not sure
+    // if this is really great semantics for destructors (it will probably get
+    // called soonish if you do some more stuff), but possibly it can't be
+    // helped.
+    // TODO: perhaps making cleanup idempotent and calling from Instance,
+    // Function, etc destructors will alleviate the worst of this.
+    EXPECT_EQ(temp_int, 0);
   }
-  // TODO: just getting started. Need way more semantic tests.
-
-  // Check destructors work. Not entirely obvious why we need to create two
-  // new instances to make sure the old one gets cleaned up. Also, not sure
-  // if this is really great semantics for destructors (it will probably get
-  // called soonish if you do some more stuff), but possibly it can't be helped.
-  // TODO: perhaps making cleanup idempotent and calling from Instance, Function
-  // etc destructors will alleviate the worst of this?
-  EXPECT_EQ(temp_int, 0);
-  clear();
   instance("");
   instance("");
   EXPECT_EQ(temp_int, 25);
@@ -252,7 +254,7 @@ TEST_F(YangTest, TestTco)
     return;
   }
 
-  auto& inst = instance(TestTcoStr);
+  auto inst = instance(TestTcoStr);
   // This is a little tricky: some versions of GNU make contain a bug which sets
   // the stack size to unlimited, and forgets to ever set it back. This means
   // the TCO test will pass when run from the makefile even if TCO is broken.

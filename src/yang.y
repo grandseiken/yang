@@ -17,7 +17,7 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
   std::size_t left = data->character - yang_get_leng(scan);
   std::size_t right = data->character;
   (error ? data->errors : data->warnings).push_back(
-      data->format_error(left, right, left, right, message));
+      data->format_error(left, right, left, right, message, error));
   return 0;
 }
 

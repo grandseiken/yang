@@ -23,34 +23,9 @@ bool YangTest::filter(const std::string& filter)
   return _filters.empty() || _filters.count(filter);
 }
 
-void YangTest::clear()
+Context YangTest::context()
 {
-  _instances.clear();
-  _user_values.clear();
-  _programs.clear();
-  _contexts.clear();
-}
-
-void YangTest::clear_contexts()
-{
-  _contexts.clear();
-}
-
-void YangTest::clear_programs()
-{
-  _programs.clear();
-}
-
-void YangTest::clear_instances()
-{
-  _instances.clear();
-}
-
-Context& YangTest::context()
-{
-  _contexts.emplace(_contexts.end(), new Context());
-  auto& context = *_contexts.back();
-
+  Context context;
   // Standard context has a user type registed and a function to produce them.
   // Each one gets a different ID.
   context.register_type<user_type>("UserType");
@@ -66,56 +41,51 @@ Context& YangTest::context()
   return context;
 }
 
-Program& YangTest::program_suppress_errors(const std::string& contents)
+Program YangTest::program_suppress_errors(const std::string& contents)
 {
   return program_suppress_errors(context(), contents);
 }
 
-Program& YangTest::program_suppress_errors(const Context& context,
-                                           const std::string& contents)
+Program YangTest::program_suppress_errors(const Context& context,
+                                          const std::string& contents)
 {
   std::string suppress_errors;
-  _programs.emplace_back(
-      new Program(context, "test" + std::to_string(_program_id++),
-                  contents, true, &suppress_errors));
-  return *_programs.back();
+  return Program(context, "test" + std::to_string(_program_id++),
+                 contents, true, &suppress_errors);
 }
 
-Program& YangTest::program(const std::string& contents, bool allow_errors)
+Program YangTest::program(const std::string& contents, bool allow_errors)
 {
   return program(context(), contents, allow_errors);
 }
 
-Program& YangTest::program(const Context& context, const std::string& contents,
-                           bool allow_errors)
+Program YangTest::program(const Context& context, const std::string& contents,
+                          bool allow_errors)
 {
-  Program* prog =
-      new Program(context, "test" + std::to_string(_program_id++), contents);
-  _programs.emplace_back(prog);
+  Program program(context, "test" + std::to_string(_program_id++), contents);
   if (!allow_errors) {
-    EXPECT_EQ(prog->get_errors().size(), 0) <<
+    EXPECT_EQ(program.get_errors().size(), 0) <<
         "Should compile successfully:\n" << contents << std::endl;
-    EXPECT_EQ(prog->get_warnings().size(), 0) <<
+    EXPECT_EQ(program.get_warnings().size(), 0) <<
         "Should compile without warnings:\n" << contents << std::endl;
   }
-  return *prog;
+  return program;
 }
 
-Instance& YangTest::instance(const std::string& contents)
+Instance YangTest::instance(const std::string& contents)
 {
   return instance(context(), contents);
 }
 
-Instance& YangTest::instance(
+Instance YangTest::instance(
     const Context& context, const std::string& contents)
 {
   return instance(program(context, contents));
 }
 
-Instance& YangTest::instance(const Program& program)
+Instance YangTest::instance(const Program& program)
 {
-  _instances.emplace_back(new Instance(program));
-  return *_instances.back();
+  return Instance(program);
 }
 
 std::unordered_set<std::string> YangTest::_filters;

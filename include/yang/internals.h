@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <unordered_map>
+#include "error.h"
 #include "type.h"
 
 namespace llvm {
@@ -17,6 +18,7 @@ namespace llvm {
 
 namespace yang {
 namespace internal {
+struct Node;
 
 struct ContextInternals;
 typedef std::unordered_map<std::string, yang::Type> symbol_table;
@@ -31,9 +33,14 @@ struct ProgramInternals {
   symbol_table functions;
   symbol_table globals;
 
+  typedef std::vector<ErrorInfo> error_list;
+  error_list errors;
+  error_list warnings;
+
+  std::unique_ptr<internal::Node> ast;
   std::unique_ptr<llvm::LLVMContext> llvm_context;
-  llvm::Module* module;
   std::unique_ptr<llvm::ExecutionEngine> engine;
+  llvm::Module* module;
 };
 
 // Same for instance.

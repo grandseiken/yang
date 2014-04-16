@@ -25,9 +25,8 @@ public:
   Instance(const Program& program);
   ~Instance();
 
-  // Noncopyable.
-  Instance(const Instance&) = delete;
-  Instance& operator=(const Instance&) = delete;
+  Instance(const Instance&);
+  Instance& operator=(const Instance&);
 
   template<typename T>
   T get_global(const std::string& name) const;

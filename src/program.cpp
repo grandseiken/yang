@@ -27,9 +27,8 @@ namespace yang {
 Program::Program(const Context& context, const std::string& name,
                  const std::string& contents, bool optimise,
                  std::string* diagnostic_output)
-  : _ast(nullptr)
-  , _internals(new internal::ProgramInternals{
-      context._internals, name, {}, {},
+  : _internals(new internal::ProgramInternals{
+      context._internals, name, {}, {}, {}, {}, nullptr,
       std::unique_ptr<llvm::LLVMContext>(new llvm::LLVMContext),
       nullptr, nullptr})
 {
@@ -50,12 +49,12 @@ Program::Program(const Context& context, const std::string& name,
 
     for (const auto& error : data.errors) {
       print(error);
-      _errors.push_back(error);
+      _internals->errors.push_back(error);
     }
     // Warnings are still printed, but they don't cause anything to fail.
     for (const auto& warning : data.warnings) {
       print(warning);
-      _warnings.push_back(warning);
+      _internals->warnings.push_back(warning);
     }
     data.warnings.clear();
     return bool(data.errors.size());
@@ -87,7 +86,7 @@ Program::Program(const Context& context, const std::string& name,
     _internals->globals.clear();
     return;
   }
-  _ast = std::move(output);
+  _internals->ast = std::move(output);
 
   generate_ir(optimise);
 }
@@ -98,12 +97,12 @@ Program::~Program()
 
 const Program::error_list& Program::get_errors() const
 {
-  return _errors;
+  return _internals->errors;
 }
 
 const Program::error_list& Program::get_warnings() const
 {
-  return _warnings;
+  return _internals->warnings;
 }
 
 const std::string& Program::get_name() const
@@ -113,7 +112,7 @@ const std::string& Program::get_name() const
 
 bool Program::success() const
 {
-  return bool(_ast) && bool(_internals->module);
+  return bool(_internals->ast) && bool(_internals->module);
 }
 
 std::string Program::print_ast() const
@@ -123,7 +122,7 @@ std::string Program::print_ast() const
                         ": program did not compile successfully");
   }
   internal::AstPrinter printer;
-  return printer.walk(*_ast) + '\n';
+  return printer.walk(*_internals->ast) + '\n';
 }
 
 std::string Program::print_ir() const
@@ -174,7 +173,7 @@ void Program::generate_ir(bool optimise)
   internal::IrGenerator irgen(
       *_internals->module, *_internals->engine,
       _internals->globals, *_internals->context);
-  irgen.walk(*_ast);
+  irgen.walk(*_internals->ast);
   irgen.emit_global_functions();
 
   if (llvm::verifyModule(*_internals->module,

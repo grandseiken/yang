@@ -336,8 +336,8 @@ TEST_F(YangTest, Exhaustive)
     return;
   }
 
-  auto& prog = program(TestExhaustiveStr);
-  auto& inst = instance(TestExhaustiveStr);
+  auto prog = program(TestExhaustiveStr);
+  auto inst = instance(TestExhaustiveStr);
   for (const auto& pair : prog.get_functions()) {
     EXPECT_EQ(inst.call<int_t>(pair.first), 1) <<
         pair.first << " should return 1!";

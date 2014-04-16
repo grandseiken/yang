@@ -178,14 +178,14 @@ TEST_F(YangTest, FunctionRefCounting)
     return;
   }
 
-  auto& ctxt = context();
+  auto ctxt = context();
   int_t n = 0;
   ctxt.register_function("get_fn", make_fn([&]()
   {
     return make_fn([&](){return ++n;});
   }));
 
-  auto& inst = instance(ctxt, TestFunctionRefCountingStr);
+  auto inst = instance(ctxt, TestFunctionRefCountingStr);
   typedef Function<int_t()> intf_t;
   EXPECT_EQ(inst.get_global<intf_t>("stored")(), 0);
 
@@ -304,14 +304,14 @@ TEST_F(YangTest, StructureRefCounting)
     return;
   }
 
-  auto& ctxt = context();
+  auto ctxt = context();
   auto member = make_fn([](user_type* t, int_t a)
   {
     return int_t(t->id * 2 * a);
   });
   ctxt.register_member_function<user_type>("f", member);
 
-  auto& inst = instance(ctxt, TestStructureRefCountingStr);
+  auto inst = instance(ctxt, TestStructureRefCountingStr);
   typedef Function<int_t()> intf_t;
   auto cycles = inst.call<intf_t>("cycles");
   EXPECT_EQ(cycles(), 3);
@@ -327,26 +327,28 @@ TEST_F(YangTest, ApiRefCounting)
     return;
   }
 
-  Program* tprog = nullptr;
-  Instance* tinst = nullptr;
-
+  Instance inst = instance("");
   {
-    auto& ctxt = context();
-    ctxt.register_function("f", make_fn([]()
+    Program prog = program("");
     {
-      return int_t(17);
-    }));
-    tprog = &program(ctxt, "export g = int() {return f();}");
+      auto ctxt = context();
+      ctxt.register_function("f", make_fn([]()
+      {
+        return int_t(17);
+      }));
+      prog = program(Context(ctxt), "export g = int() {return f();}");
+    }
+    {
+      inst = instance(Program(prog));
+    }
   }
-  clear_contexts();
-
+  auto jnst = instance("");
+  jnst = inst;
   {
-    tinst = &instance(*tprog);
+    auto knst = jnst;
+    knst = instance("");
   }
-  clear_programs();
-
-  auto& inst = *tinst;
-  EXPECT_EQ(inst.call<int_t>("g"), 17);
+  EXPECT_EQ(Instance(jnst).call<int_t>("g"), 17);
 }
 
 // End namespace yang.

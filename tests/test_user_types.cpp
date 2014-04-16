@@ -84,8 +84,8 @@ TEST_F(YangTest, UserTypes)
     extract_value = o->value;
   });
 
-  auto& ctxt = context();
-  auto& dtxt = context();
+  auto ctxt = context();
+  auto dtxt = context();
   ctxt.register_type<other_t>("Other");
   ctxt.register_function("null_other_type", null_other_type);
   ctxt.register_member_function<other_t>("extract", extract);
@@ -94,8 +94,8 @@ TEST_F(YangTest, UserTypes)
   dtxt.register_member_function<user_type>("get_id", get_id);
   dtxt.register_member_function<user_type>("set_id", set_id);
 
-  auto& prog = instance(ctxt, TestUserTypesStrA);
-  auto& qrog = instance(dtxt, TestUserTypesStrB);
+  auto prog = instance(ctxt, TestUserTypesStrA);
+  auto qrog = instance(dtxt, TestUserTypesStrB);
 
   // Do some things with user_type.
   qrog.call<user_type*>("returns_user_type");

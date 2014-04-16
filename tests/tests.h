@@ -26,34 +26,23 @@ protected:
     std::size_t id;
   };
 
-  // Deallocate all the objects constructed for this test so far.
-  void clear();
-  void clear_contexts();
-  void clear_programs();
-  void clear_instances();
+  Context context();
+  Program program_suppress_errors(const std::string& contents);
+  Program program_suppress_errors(const Context& context,
+                                  const std::string& contents);
+  Program program(const std::string& contents, bool allow_errors = false);
+  Program program(const Context& context, const std::string& contents,
+                  bool allow_errors = false);
 
-  Context& context();
-  Program& program_suppress_errors(const std::string& contents);
-  Program& program_suppress_errors(const Context& context,
-                                   const std::string& contents);
-  Program& program(const std::string& contents, bool allow_errors = false);
-  Program& program(const Context& context, const std::string& contents,
-                   bool allow_errors = false);
-
-  Instance& instance(const std::string& contents);
-  Instance& instance(const Context& context, const std::string& contents);
-  Instance& instance(const Program& program);
+  Instance instance(const std::string& contents);
+  Instance instance(const Context& context, const std::string& contents);
+  Instance instance(const Program& program);
 
 private:
 
-  std::vector<std::unique_ptr<Context>> _contexts;
-  std::vector<std::unique_ptr<Program>> _programs;
-  std::vector<std::unique_ptr<Instance>> _instances;
   std::vector<std::unique_ptr<user_type>> _user_values;
-
   std::size_t _program_id;
   std::size_t _user_value_id;
-
   static std::unordered_set<std::string> _filters; 
 
 };
