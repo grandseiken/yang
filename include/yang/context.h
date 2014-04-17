@@ -35,7 +35,8 @@
 // TODO: context combination and scopes.
 // TODO: as alternative to textual include, allow code-sharing by way of
 // treating a Program as a Context (using LLVM modules to avoid the need for
-// complicated trampolining back and forth).
+// complicated trampolining back and forth). Also, treat an Instance as a
+// Context for sharing global state between programs?
 // TODO: better assignment with "references". E.g. a[i] and ++i should both be
 // assignable-to. Vectorised assignment? Pattern-matching assignment?
 // TODO: code hot-swapping. Careful with pointer values (e.g. functions) in
@@ -72,7 +73,9 @@ namespace internal {
 // on them). It might make more sense for Contexts to be completely immutable
 // with a builder mechanism, but since they can only be *added* to currently,
 // everything should work even if they're modified after they've been used to
-// instantiate a program.
+// instantiate a program.... I think.
+// TODO: lazily copy the internal data structure if it's modified after the
+// Context has been used?
 struct ContextInternals {
   typedef std::unordered_map<std::string, internal::GenericNativeType> type_map;
   typedef std::unordered_map<

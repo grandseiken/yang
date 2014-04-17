@@ -7,7 +7,27 @@
 #include <yang/internals.h>
 #include <yang/native.h>
 
-// All of this is a first draft and probably very naive.
+// All of this is first draft and very naive.
+// TODO: use "modern" reference counting instead. That is:
+// - Each object has a reference count and a "dirty" bit
+// - When a reference in an object is changed, if not dirty, write the old
+//   values of all its references to global log array and set dirty bit. If
+//   dirty, do nothing
+// - Never update reference counts while program is running. Instead, when
+//   we do GC, simply go through the log array and subtract one from each old
+//   value, and add one to the current new value
+// - Some details with object creation, don't both to log nulls, etc. Dirty bit
+//   could be per-reference rather than per-object
+// - Cycle detection by current algorithm, or by mark and sweep starting at
+//   objects whose references have, since the last run, been decremented to a
+//   nonzero value
+// - Many more variations: see e.g.
+//     http://www.cs.technion.ac.il/
+//         users/wwwb/cgi-bin/tr-get.cgi/2006/PHD/PHD-2006-10.pdf
+//     http://users.cecs.anu.edu.au/~steveb/downloads/pdf/rc-ismm-2012.pdf
+//
+// As well as being more efficient this will make TCO much easier by eliminating
+// calls to refcount function when objects are going out of scope!
 namespace yang {
 namespace internal {
 

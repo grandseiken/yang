@@ -25,6 +25,9 @@ public:
   Instance(const Program& program);
   ~Instance();
 
+  // Since Instance is just a handle, copying the object doesn't copy the
+  // global variables and so on, it's still the same Instance. Hopefully that
+  // isn't too confusing.
   Instance(const Instance&);
   Instance& operator=(const Instance&);
 

@@ -112,9 +112,12 @@ int main(int argc, char** argv)
   testing::InitGoogleTest(&argc, argv);
   // Run with commandline argument --forever to run tests over and over, and use
   // "top" or similar to check for memory leaks.
-  // TODO: in fact, this *is* leaking (a very small amount of) memory that
+  // TODO: in fact, this is leaking a very small amount of memory that
   // doesn't seem to be down to the test framework itself. A few kilobytes per
-  // second. Fix that.
+  // second. It's kind of weird though: seems to occur when on program
+  // instantiation where the program has a few globals, but not if the program
+  // is empty. That doesn't make too much sense. Does "top" report actual
+  // memory usage or is it maybe just fragmentation overhead or something?
   bool forever = false;
   // Run with --<test_set> to run only those tests (e.g. --apis).
   for (std::size_t i = 1; i < (std::size_t)argc; ++i) {
