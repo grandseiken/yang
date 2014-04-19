@@ -174,6 +174,7 @@ TEST_F(YangTest, SemanticsTest)
     return;
   }
 
+  // TODO: just getting started. Need way more semantic tests.
   int_t temp_int = 0;
   {
     auto ctxt = context();
@@ -216,18 +217,13 @@ TEST_F(YangTest, SemanticsTest)
       EXPECT_EQ(edit(), 1);
       EXPECT_EQ(edit(), 2);
     }
-    // TODO: just getting started. Need way more semantic tests.
 
-    // Check destructors work. Not entirely obvious why we need to create two
-    // new instances to make sure the old one gets cleaned up. Also, not sure
-    // if this is really great semantics for destructors (it will probably get
-    // called soonish if you do some more stuff), but possibly it can't be
-    // helped.
-    // TODO: perhaps making cleanup idempotent and calling from Instance,
-    // Function, etc destructors will alleviate the worst of this.
+    // Check destructors work. Current guarantee is that destructor will be
+    // called before any new structure (instance, closure, etc) is allocated.
+    // Is that good enough?
     EXPECT_EQ(temp_int, 0);
   }
-  instance("");
+  // Force a collection so that destructor is called.
   instance("");
   EXPECT_EQ(temp_int, 25);
 }
