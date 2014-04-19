@@ -33,7 +33,7 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
                          symbol_frame& globals, const ContextInternals& context)
   : IrCommon(module, engine)
   , _context(context)
-  , _member_function_closure(_b)
+  , _chunk(_b)
 {
   _scopes.emplace_back(_b);
   // Set up the global data type. Since each program is designed to support
@@ -51,7 +51,7 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // to (mem[T::f], env_mem(t)).
   symbol_frame user_type;
   user_type.emplace("object", yang::Type::user_t());
-  _member_function_closure.init_structure_type(user_type, false, false);
+  _chunk.init_structure_type(user_type, false, false);
 
   // We need to generate a reverse trampoline function for each function in the
   // Context. User type member functions are present in the context function map
@@ -532,9 +532,9 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     {
       std::string s =
           node.static_info.user_type_name + "::" + node.string_value;
-      llvm::Value* env = _member_function_closure.allocate_closure_struct(
-          _b.constant_ptr(nullptr));
-      _member_function_closure.memory_store(results[0], env, "object");
+      llvm::Value* env =
+          _chunk.allocate_closure_struct(_b.constant_ptr(nullptr));
+      _chunk.memory_store(results[0], env, "object");
       Value v = get_member_function(s);
       v = _b.function_value(v.type, v, env);
       fback.update_reference_count(v, 1);
@@ -1021,9 +1021,8 @@ Value IrGenerator::get_member_function(const std::string& name)
   _b.b.SetInsertPoint(block);
 
   Value genf = _b.function_value(jt->second);
-  closure = _b.b.CreateBitCast(
-      closure, _member_function_closure.structure_type());
-  auto object = _member_function_closure.memory_load(closure, "object");
+  closure = _b.b.CreateBitCast(closure, _chunk.structure_type());
+  auto object = _chunk.memory_load(closure, "object");
 
   std::vector<Value> fargs;
   fargs.emplace_back(full_type.get_function_arg_type(0), object);

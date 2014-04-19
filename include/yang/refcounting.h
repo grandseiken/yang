@@ -33,6 +33,9 @@ struct Prefix {
   int_t refouts;
   // Pointer to outbound reference query function.
   void (*query)(Prefix*, Prefix**);
+
+  // Start of the actual fields.
+  void* data;
 };
 
 // Get list of instance internals which are to be cleaned up.
@@ -50,8 +53,82 @@ void cleanup_structures();
 // Destroy program internals at some point.
 void destroy_internals(InstanceInternals* global_parent);
 
-// End namespace yang::internal.
+// End namespace yang.
 }
+
+// Refcount a managed user type on the C++ side.
+template<typename T>
+class Ref {
+public:
+
+  Ref(const Ref& ref);
+  ~Ref();
+  Ref& operator=(const Ref& ref);
+  T* operator->();
+
+private:
+
+  // Null Ref must never be returned to client code!
+  Ref();
+  Ref(internal::Prefix* wrap);
+  internal::Prefix* _wrap;
+
+};
+
+template<typename T>
+Ref<T>::Ref(const Ref& ref)
+  : _wrap(ref._wrap)
+{
+  if (_wrap) {
+    internal::update_structure_refcount(_wrap, 1);
+  }
+}
+
+template<typename T>
+Ref<T>::~Ref()
+{
+  if (_wrap) {
+    internal::update_structure_refcount(_wrap, -1);
+  }
+}
+
+template<typename T>
+Ref<T>& Ref<T>::operator=(const Ref& ref)
+{
+  if (_wrap == ref._wrap) {
+    return;
+  }
+  if (_wrap) {
+    internal::update_structure_refcount(_wrap, -1);
+  }
+  _wrap = ref._wrap;
+  if (_wrap) {
+    internal::update_structure_refcount(_wrap, 1);
+  }
+}
+
+template<typename T>
+T* Ref<T>::operator->()
+{
+  return (T*)_wrap->data;
+}
+
+template<typename T>
+Ref<T>::Ref()
+  : _wrap(nullptr)
+{
+}
+
+template<typename T>
+Ref<T>::Ref(internal::Prefix* wrap)
+  : _wrap(wrap)
+{
+  if (_wrap) {
+    internal::update_structure_refcount(_wrap, 1);
+  }
+}
+
+// End namespace internal.
 }
 
 #endif

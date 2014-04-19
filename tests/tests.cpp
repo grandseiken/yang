@@ -36,7 +36,7 @@ Context YangTest::context()
     _user_values.emplace_back(u);
     return u;
   };
-  context.register_member_function<user_type>("foo", make_fn([](user_type*){}));
+  context.register_member_function("foo", make_fn([](user_type*){}));
   context.register_function("get_user_type", make_fn(get_user_type));
   return context;
 }

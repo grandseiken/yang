@@ -236,6 +236,8 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {[0];}", "[");
   err("x = void() {1..;}", ".");
   err("x = void() {++x;}", "++");
+  err("x = void() {var x = 0.; x += 1;}", "+=");
+  err("x = void() {y += 1;}", "y");
 
   // Variable declaration and assignment errors.
   err("x = void() {var a;}", ";");

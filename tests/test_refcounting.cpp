@@ -309,7 +309,7 @@ TEST_F(YangTest, StructureRefCounting)
   {
     return int_t(t->id * 2 * a);
   });
-  ctxt.register_member_function<user_type>("f", member);
+  ctxt.register_member_function("f", member);
 
   auto inst = instance(ctxt, TestStructureRefCountingStr);
   typedef Function<int_t()> intf_t;

@@ -107,7 +107,7 @@ private:
 //   might for example be passed to Yang code, stored, and invoked long after
 //   the original std::function has gone out of scope.
 // - reference-counting is probably a reasonable garbage-collection strategy
-//   for Yang. Lack of GC pausing is ideal for the realtime applications Yang
+//   for Yang. Minimised GC pausing is ideal for the realtime applications Yang
 //   was designed for, and cyclic structures are rare (they occur only when a
 //   closed environment contains a function value whose environment pointer is
 //   that same environment, or child thereof).

@@ -80,8 +80,9 @@ private:
   std::vector<llvm::Function*> _global_destructors;
   // Current function stack.
   std::vector<LexScope> _scopes;
-  // Scope for member-function closure indirection.
-  LexScope _member_function_closure;
+  // Structure used for member function closure indirection and managed user
+  // types.
+  LexScope _chunk;
   std::unordered_map<std::string, Value> _member_functions;
 
   // Daft hack.

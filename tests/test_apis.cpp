@@ -58,29 +58,34 @@ TEST_F(YangTest, ContextApiTest)
   EXPECT_NO_THROW(ctxt.register_function("bar", voidf));
 
   auto voidaf = make_fn([](type_a*){});
-  ASSERT_NO_THROW(ctxt.register_member_function<type_a>("foo", voidaf));
-  EXPECT_THROW(
-      ctxt.register_member_function<type_a>("foo", voidaf), runtime_error);
-  EXPECT_NO_THROW(ctxt.register_member_function<type_a>("bar", voidaf));
+  ASSERT_NO_THROW(ctxt.register_member_function("foo", voidaf));
+  EXPECT_THROW(ctxt.register_member_function("foo", voidaf), runtime_error);
+  EXPECT_NO_THROW(ctxt.register_member_function("bar", voidaf));
 
   // Conflicts between member and nonmember functions.
   EXPECT_THROW(ctxt.register_function("TypeA::foo", voidf), runtime_error);
-  EXPECT_NO_THROW(ctxt.register_function("TypeA::baz", voidf));
-  EXPECT_THROW(
-      ctxt.register_member_function<type_a>("baz", voidaf), runtime_error);
+  EXPECT_NO_THROW(ctxt.register_member_function("baz", voidaf));
+  EXPECT_THROW(ctxt.register_member_function("baz", voidaf), runtime_error);
 
   EXPECT_TRUE(ctxt.has_type<type_a>());
   EXPECT_FALSE(ctxt.has_type<type_c>());
   EXPECT_EQ(ctxt.get_type_name<type_a>(), "TypeA");
   EXPECT_THROW(ctxt.get_type_name<type_c>(), runtime_error);
 
-  // Unregistered types.
+  // Bad names.
+  auto ccon = make_fn([](){return (type_c*)nullptr;});
   auto voidcf = make_fn([](type_c*){});
+  EXPECT_THROW(ctxt.register_function("!", voidf), runtime_error);
+  EXPECT_THROW(ctxt.register_member_function("~", voidaf), runtime_error);
+  EXPECT_THROW(ctxt.register_type<type_c>("$c"), runtime_error);
+  EXPECT_THROW(
+      ctxt.register_managed_type<type_c>("a-b", ccon, voidcf), runtime_error);
+
+  // Unregistered types.
   auto cf = make_fn([](){
     return (type_c*)nullptr;
   });
-  EXPECT_THROW(
-      ctxt.register_member_function<type_c>("foo", voidcf), runtime_error);
+  EXPECT_THROW(ctxt.register_member_function("foo", voidcf), runtime_error);
   EXPECT_THROW(ctxt.register_function("voidcf", voidcf), runtime_error);
   EXPECT_THROW(ctxt.register_function("cf", cf), runtime_error);
 }

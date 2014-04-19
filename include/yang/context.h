@@ -54,8 +54,6 @@
 //   from different Instances where one happens to hold a reference to a
 //   function from the other.
 // The last is the trickiest bit and should probably be optional.
-// TODO: add a layer of abstraction so the LLVM backend can be swapped out
-// easily (e.g. for a bytecode backend).
 //
 // Further off (helpful stuff that can be emulated without needing to be built-
 // -in right away):
@@ -66,6 +64,11 @@
 // TODO: make sure the exposed APIs have sensible and useful interfaces; e.g.,
 // should they have accessors to retrieve all possible useful data; do they
 // return strings or output to streams; etc.
+// TODO: in particular, it should probably be possible to to call Context
+// functions (free functions, member functions, constructors) directly from
+// the Context without instantiationg anything.
+// TODO: add a layer of abstraction so the LLVM backend can be swapped out
+// easily (e.g. for a bytecode backend).
 namespace yang {
 namespace internal {
 
@@ -77,7 +80,11 @@ namespace internal {
 // TODO: lazily copy the internal data structure if it's modified after the
 // Context has been used?
 struct ContextInternals {
-  typedef std::unordered_map<std::string, internal::GenericNativeType> type_map;
+  struct user_type_info {
+    internal::GenericNativeType native;
+    bool is_managed;
+  };
+  typedef std::unordered_map<std::string, user_type_info> type_map;
   typedef std::unordered_map<
       std::string, internal::GenericFunction> function_map;
 
@@ -91,13 +98,18 @@ struct ContextInternals {
 class Context {
 public:
 
-  Context()
-    : _internals(new internal::ContextInternals) {};
+  Context();
 
   // Add a user type. Types must be registered before registering functions that
   // make use of them.
   template<typename T>
   void register_type(const std::string& name);
+
+  // Add a managed user type.
+  template<typename T>
+  void register_managed_type(const std::string& name,
+                             const Function<T*()>& constructor,
+                             const Function<void(T*)>& destructor);
 
   // Add a member function to a user type.
   template<typename T, typename R, typename... Args>
@@ -117,6 +129,14 @@ public:
 
 private:
 
+  template<typename T>
+  void check_type_unique(const std::string& name) const;
+  void check_identifier(const std::string& ident) const;
+
+  template<typename R, typename... Args>
+  void register_function_internal(
+      const std::string& name, const Function<R(Args...)>& f);
+
   friend class Program;
   friend const internal::ContextInternals&
       internal::context_internals(const Context&);
@@ -132,7 +152,7 @@ template<typename T>
 bool context_has_type_impl(const ContextInternals& internals)
 {
   for (const auto& pair : internals.types) {
-    if (pair.second.obj->is<T*>()) {
+    if (pair.second.native.obj->is<T*>()) {
       return true;
     }
   }
@@ -143,7 +163,7 @@ template<typename T>
 std::string context_get_type_name_impl(const ContextInternals& internals)
 {
   for (const auto& pair : internals.types) {
-    if (pair.second.obj->is<T*>()) {
+    if (pair.second.native.obj->is<T*>()) {
       return pair.first;
     }
   }
@@ -173,24 +193,27 @@ struct TypeInfo<T*> {
 template<typename T>
 void Context::register_type(const std::string& name)
 {
-  auto it = _internals->types.find(name);
-  if (it != _internals->types.end()) {
-    throw runtime_error("duplicate type `" + name + "` registered in context");
-    return;
-  }
-  // Could also store a reverse-map from internal pointer type-id; probably
-  // not a big deal.
-  for (const auto& pair : _internals->types) {
-    if (pair.second.obj->is<T*>()) {
-      throw runtime_error("duplicate types `" + name + "` and `" + pair.first +
-                          "` registered in context");
-      return;
-    }
-  }
-
-  internal::GenericNativeType& symbol = _internals->types[name];
-  symbol.obj = std::unique_ptr<internal::NativeType<T*>>(
+  check_type_unique<T>(name);
+  check_identifier(name);
+  auto& symbol = _internals->types[name];
+  symbol.native.obj = std::unique_ptr<internal::NativeType<T*>>(
       new internal::NativeType<T*>());
+  symbol.is_managed = false;
+}
+
+template<typename T>
+void Context::register_managed_type(const std::string& name,
+                                    const Function<T*()>& constructor,
+                                    const Function<void(T*)>& destructor)
+{
+  check_type_unique<T>(name);
+  check_identifier(name);
+  auto& symbol = _internals->types[name];
+  symbol.native.obj = std::unique_ptr<internal::NativeType<T*>>(
+      new internal::NativeType<T*>());
+  symbol.is_managed = true;
+  register_function_internal(name + "::!" + name, constructor);
+  register_function_internal(name + "::~" + name, destructor);
 }
 
 template<typename T, typename R, typename... Args>
@@ -200,29 +223,18 @@ void Context::register_member_function(
   if (!has_type<T>()) {
     throw runtime_error(
         "member `" + name + "` registered on unregistered type");
-    return;
   }
+  check_identifier(name);
   std::string type_name = get_type_name<T>();
-  register_function(type_name + "::" + name, f);
+  register_function_internal(type_name + "::" + name, f);
 }
 
 template<typename R, typename... Args>
 void Context::register_function(
     const std::string& name, const Function<R(Args...)>& f)
 {
-  auto it = _internals->functions.find(name);
-  if (it != _internals->functions.end()) {
-    throw runtime_error(
-        "duplicate function `" + name + "` registered in context");
-    return;
-  }
-
-  internal::TypeInfo<Function<R(Args...)>> info;
-  internal::GenericFunction& symbol = _internals->functions[name];
-  symbol.type = info(*_internals);
-  symbol.ptr =
-      std::unique_ptr<internal::FunctionBase>(new Function<R(Args...)>(f));
-  internal::GenerateReverseTrampolineLookupTable<Function<R(Args...)>>()();
+  check_identifier(name);
+  register_function_internal(name, f);
 }
 
 template<typename T>
@@ -235,6 +247,41 @@ template<typename T>
 std::string Context::get_type_name() const
 {
   return internal::context_get_type_name_impl<T>(*_internals);
+}
+
+template<typename T>
+void Context::check_type_unique(const std::string& name) const
+{
+  auto it = _internals->types.find(name);
+  if (it != _internals->types.end()) {
+    throw runtime_error("duplicate type `" + name + "` registered in context");
+  }
+  // Could also store a reverse-map from internal pointer type-id; probably
+  // not a big deal.
+  for (const auto& pair : _internals->types) {
+    if (pair.second.native.obj->is<T*>()) {
+      throw runtime_error("duplicate types `" + name + "` and `" + pair.first +
+                          "` registered in context");
+    }
+  }
+}
+
+template<typename R, typename... Args>
+void Context::register_function_internal(
+    const std::string& name, const Function<R(Args...)>& f)
+{
+  auto it = _internals->functions.find(name);
+  if (it != _internals->functions.end()) {
+    throw runtime_error(
+        "duplicate function `" + name + "` registered in context");
+  }
+
+  internal::TypeInfo<Function<R(Args...)>> info;
+  internal::GenericFunction& symbol = _internals->functions[name];
+  symbol.type = info(*_internals);
+  symbol.ptr =
+      std::unique_ptr<internal::FunctionBase>(new Function<R(Args...)>(f));
+  internal::GenerateReverseTrampolineLookupTable<Function<R(Args...)>>()();
 }
 
 // End namepsace yang.

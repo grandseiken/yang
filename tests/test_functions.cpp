@@ -55,9 +55,9 @@ TEST_F(YangTest, CppFunctions)
 
   auto ctxt = context();
   ctxt.register_function("cpp", cpp);
-  ctxt.register_function("UserType::ucpp", ucpp);
+  ctxt.register_member_function("ucpp", ucpp);
   ctxt.register_function("get_cpp", get_cpp);
-  ctxt.register_member_function<user_type>("cpp", ucpp);
+  ctxt.register_member_function("cpp", ucpp);
   auto inst = instance(ctxt, TestCppFunctionsStr);
 
   // C++ function called from C++.

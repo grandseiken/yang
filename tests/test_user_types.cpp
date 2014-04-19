@@ -88,11 +88,11 @@ TEST_F(YangTest, UserTypes)
   auto dtxt = context();
   ctxt.register_type<other_t>("Other");
   ctxt.register_function("null_other_type", null_other_type);
-  ctxt.register_member_function<other_t>("extract", extract);
-  ctxt.register_member_function<user_type>("get_id", get_id);
-  ctxt.register_member_function<user_type>("set_id", set_id);
-  dtxt.register_member_function<user_type>("get_id", get_id);
-  dtxt.register_member_function<user_type>("set_id", set_id);
+  ctxt.register_member_function("extract", extract);
+  ctxt.register_member_function("get_id", get_id);
+  ctxt.register_member_function("set_id", set_id);
+  dtxt.register_member_function("get_id", get_id);
+  dtxt.register_member_function("set_id", set_id);
 
   auto prog = instance(ctxt, TestUserTypesStrA);
   auto qrog = instance(dtxt, TestUserTypesStrB);
@@ -135,6 +135,30 @@ TEST_F(YangTest, UserTypes)
   EXPECT_EQ(qrog.get_global<intf_t>("f")(), -1);
   qrog.call<void>("steal_function", u);
   EXPECT_EQ(qrog.get_global<intf_t>("f")(), 99);
+}
+
+const std::string TestManagedUserTypesStr = R"(
+)";
+
+TEST_F(YangTest, ManagedUserTypes)
+{
+  std::size_t count = 0;
+  struct Managed {
+    std::size_t count;
+  };
+  auto constructor = make_fn([&]()
+  {
+    return new Managed{count++};
+  });
+  auto destructor = make_fn([&](Managed* m)
+  {
+    --count;
+    delete m;
+  });
+
+  auto ctxt = context();
+  ctxt.register_managed_type("Managed", constructor, destructor);
+  auto inst = instance(ctxt, TestManagedUserTypesStr);
 }
 
 // End namespace yang.
