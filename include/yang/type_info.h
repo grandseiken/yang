@@ -24,7 +24,7 @@ struct TypeInfo {
   static_assert(sizeof(T) != sizeof(T), "use of unsupported type");
 
   // Avoid extra unnecessary error messages (beyond static assert above).
-  yang::Type operator()(const ContextInternals&) const
+  yang::Type operator()(const ContextInternals&, bool = false) const
   {
     return yang::Type::void_t();
   }
@@ -37,7 +37,7 @@ struct TypeInfo {
 
 template<>
 struct TypeInfo<void> {
-  yang::Type operator()(const ContextInternals&) const
+  yang::Type operator()(const ContextInternals&, bool = false) const
   {
     return yang::Type::void_t();
   }
@@ -49,8 +49,8 @@ struct TypeInfo<void> {
 };
 
 template<>
-struct TypeInfo<yang::int_t> {
-  yang::Type operator()(const ContextInternals&) const
+struct TypeInfo<int_t> {
+  yang::Type operator()(const ContextInternals&, bool = false) const
   {
     return yang::Type::int_t();
   }
@@ -62,8 +62,8 @@ struct TypeInfo<yang::int_t> {
 };
 
 template<>
-struct TypeInfo<yang::float_t> {
-  yang::Type operator()(const ContextInternals&) const
+struct TypeInfo<float_t> {
+  yang::Type operator()(const ContextInternals&, bool = false) const
   {
     return yang::Type::float_t();
   }
@@ -76,7 +76,7 @@ struct TypeInfo<yang::float_t> {
 
 template<std::size_t N>
 struct TypeInfo<ivec_t<N>> {
-  yang::Type operator()(const ContextInternals&) const
+  yang::Type operator()(const ContextInternals&, bool = false) const
   {
     return yang::Type::int_vector_t(N);
   }
@@ -89,7 +89,7 @@ struct TypeInfo<ivec_t<N>> {
 
 template<std::size_t N>
 struct TypeInfo<fvec_t<N>> {
-  yang::Type operator()(const ContextInternals&) const
+  yang::Type operator()(const ContextInternals&, bool = false) const
   {
     return yang::Type::float_vector_t(N);
   }
@@ -117,17 +117,18 @@ template<typename...>
 struct ArgsTypeInfo {};
 template<>
 struct ArgsTypeInfo<> {
-  void operator()(const ContextInternals&,
-                  const std::vector<yang::Type>&) const {}
+  void operator()(const std::vector<yang::Type>&,
+                  const ContextInternals&, bool = false) const {}
   void operator()(const std::vector<yang::Type>&) const {}
 };
 template<typename A, typename... Args>
 struct ArgsTypeInfo<A, Args...> {
-  void operator()(const ContextInternals& context,
-                  std::vector<yang::Type>& output) const
+  void operator()(std::vector<yang::Type>& output,
+                  const ContextInternals& context,
+                  bool ignore_managed_mismatch = false) const
   {
-    output.push_back(TypeInfo<A>()(context));
-    ArgsTypeInfo<Args...>()(context, output);
+    output.push_back(TypeInfo<A>()(context, ignore_managed_mismatch));
+    ArgsTypeInfo<Args...>()(output, context, ignore_managed_mismatch);
   }
 
   void operator()(std::vector<yang::Type>& output) const
@@ -139,11 +140,13 @@ struct ArgsTypeInfo<A, Args...> {
 
 template<typename R, typename... Args>
 struct TypeInfo<Function<R(Args...)>> {
-  yang::Type operator()(const ContextInternals& context) const
+  yang::Type operator()(const ContextInternals& context,
+                        bool ignore_managed_mismatch = false) const
   {
     std::vector<yang::Type> args;
-    ArgsTypeInfo<Args...>()(context, args);
-    return yang::Type::function_t(TypeInfo<R>()(context), args);
+    ArgsTypeInfo<Args...>()(args, context, ignore_managed_mismatch);
+    return yang::Type::function_t(
+        TypeInfo<R>()(context, ignore_managed_mismatch), args);
   }
 
   yang::Type operator()() const

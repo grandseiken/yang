@@ -88,6 +88,16 @@ TEST_F(YangTest, ContextApiTest)
   EXPECT_THROW(ctxt.register_member_function("foo", voidcf), runtime_error);
   EXPECT_THROW(ctxt.register_function("voidcf", voidcf), runtime_error);
   EXPECT_THROW(ctxt.register_function("cf", cf), runtime_error);
+
+  // Managed/unmanaged conflicts.
+  auto refaf = make_fn([](Ref<type_a>){});
+  auto refcf = make_fn([](Ref<type_c>){});
+  ctxt.register_managed_type<type_c>("TypeC", ccon, voidcf);
+  EXPECT_FALSE(ctxt.is_managed<type_a>());
+  EXPECT_TRUE(ctxt.is_managed<type_c>());
+  EXPECT_THROW(ctxt.register_member_function("man", voidcf), runtime_error);
+  EXPECT_THROW(ctxt.register_member_function("umn", refaf), runtime_error);
+  EXPECT_NO_THROW(ctxt.register_member_function("man", refcf));
 }
 
 const std::string TestApisStr = R"(

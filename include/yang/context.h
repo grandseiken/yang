@@ -41,8 +41,6 @@
 // assignable-to. Vectorised assignment? Pattern-matching assignment?
 // TODO: code hot-swapping. Careful with pointer values (e.g. functions) in
 // global data struct which probably need to be left as default values.
-// TODO: possibly allow ref-counted user types. Set up some template that
-// mirrors the mechanics of Function.
 // TODO: make sure everything is (possibly optionally?) thread-safe.
 // Things that aren't thread-safe (and need locking):
 // - YangTrampolineGlobals
@@ -115,6 +113,9 @@ public:
   template<typename T, typename R, typename... Args>
   void register_member_function(
       const std::string& name, const Function<R(T*, Args...)>& f);
+  template<typename T, typename R, typename... Args>
+  void register_member_function(
+      const std::string& name, const Function<R(Ref<T>, Args...)>& f);
 
   // Add a globally-available function to the context.
   template<typename R, typename... Args>
@@ -124,6 +125,8 @@ public:
   // Information about registered types.
   template<typename T>
   bool has_type() const;
+  template<typename T>
+  bool is_managed() const;
   template<typename T>
   std::string get_type_name() const;
 
@@ -135,7 +138,8 @@ private:
 
   template<typename R, typename... Args>
   void register_function_internal(
-      const std::string& name, const Function<R(Args...)>& f);
+      const std::string& name, const Function<R(Args...)>& f,
+      bool ignore_managed_mismatch = false);
 
   friend class Program;
   friend const internal::ContextInternals&
@@ -160,6 +164,17 @@ bool context_has_type_impl(const ContextInternals& internals)
 }
 
 template<typename T>
+bool context_is_managed_impl(const ContextInternals& internals)
+{
+  for (const auto& pair : internals.types) {
+    if (pair.second.native.obj->is<T*>()) {
+      return pair.second.is_managed;
+    }
+  }
+  return false;
+}
+
+template<typename T>
 std::string context_get_type_name_impl(const ContextInternals& internals)
 {
   for (const auto& pair : internals.types) {
@@ -168,14 +183,41 @@ std::string context_get_type_name_impl(const ContextInternals& internals)
     }
   }
   throw runtime_error("use of unregistered user type");
-} 
+}
 
 template<typename T>
 struct TypeInfo<T*> {
-  yang::Type operator()(const ContextInternals& context) const
+  yang::Type operator()(const ContextInternals& context,
+                        bool ignore_managed_mismatch = false) const
   {
     if (!context_has_type_impl<T>(context)) {
       throw runtime_error("use of unregistered user type");
+    }
+    if (!ignore_managed_mismatch && context_is_managed_impl<T>(context)) {
+      throw runtime_error("use of `" + context_get_type_name_impl<T>(context) +
+                          "` as an unmanaged user type");
+    }
+    return yang::Type::user_t(context_get_type_name_impl<T>(context));
+  }
+
+  // Without passing a context, we just construct erased user-types.
+  yang::Type operator()() const
+  {
+    return yang::Type::user_t();
+  }
+};
+
+template<typename T>
+struct TypeInfo<Ref<T>> {
+  yang::Type operator()(const ContextInternals& context,
+                        bool ignore_managed_mismatch = false) const
+  {
+    if (!context_has_type_impl<T>(context)) {
+      throw runtime_error("use of unregistered user type");
+    }
+    if (!ignore_managed_mismatch && !context_is_managed_impl<T>(context)) {
+      throw runtime_error("use of `" + context_get_type_name_impl<T>(context) +
+                          "` as a managed user type");
     }
     return yang::Type::user_t(context_get_type_name_impl<T>(context));
   }
@@ -212,13 +254,28 @@ void Context::register_managed_type(const std::string& name,
   symbol.native.obj = std::unique_ptr<internal::NativeType<T*>>(
       new internal::NativeType<T*>());
   symbol.is_managed = true;
-  register_function_internal(name + "::!" + name, constructor);
-  register_function_internal(name + "::~" + name, destructor);
+  // Constructor/destructor work with T* rather than Ref<T> so we need to ignore
+  // the usual verification.
+  register_function_internal(name + "::!" + name, constructor, true);
+  register_function_internal(name + "::~" + name, destructor, true);
 }
 
 template<typename T, typename R, typename... Args>
 void Context::register_member_function(
     const std::string& name, const Function<R(T*, Args...)>& f)
+{
+  if (!has_type<T>()) {
+    throw runtime_error(
+        "member `" + name + "` registered on unregistered type");
+  }
+  check_identifier(name);
+  std::string type_name = get_type_name<T>();
+  register_function_internal(type_name + "::" + name, f);
+}
+
+template<typename T, typename R, typename... Args>
+void Context::register_member_function(
+    const std::string& name, const Function<R(Ref<T>, Args...)>& f)
 {
   if (!has_type<T>()) {
     throw runtime_error(
@@ -241,6 +298,12 @@ template<typename T>
 bool Context::has_type() const
 {
   return internal::context_has_type_impl<T>(*_internals);
+}
+
+template<typename T>
+bool Context::is_managed() const
+{
+  return internal::context_is_managed_impl<T>(*_internals);
 }
 
 template<typename T>
@@ -268,7 +331,8 @@ void Context::check_type_unique(const std::string& name) const
 
 template<typename R, typename... Args>
 void Context::register_function_internal(
-    const std::string& name, const Function<R(Args...)>& f)
+    const std::string& name, const Function<R(Args...)>& f,
+    bool ignore_managed_mismatch)
 {
   auto it = _internals->functions.find(name);
   if (it != _internals->functions.end()) {
@@ -276,9 +340,12 @@ void Context::register_function_internal(
         "duplicate function `" + name + "` registered in context");
   }
 
-  internal::TypeInfo<Function<R(Args...)>> info;
+  // Info lookup might throw; make sure not to enter anything in the function
+  // table until after that.
+  yang::Type t = internal::TypeInfo<Function<R(Args...)>>()(
+      *_internals, ignore_managed_mismatch);
   internal::GenericFunction& symbol = _internals->functions[name];
-  symbol.type = info(*_internals);
+  symbol.type = t;
   symbol.ptr =
       std::unique_ptr<internal::FunctionBase>(new Function<R(Args...)>(f));
   internal::GenerateReverseTrampolineLookupTable<Function<R(Args...)>>()();
