@@ -250,6 +250,10 @@ void Context::register_managed_type(const std::string& name,
 {
   check_type_unique<T>(name);
   check_identifier(name);
+  if (_internals->functions.find(name) != _internals->functions.end()) {
+    throw runtime_error(
+        "managed type `" + name + "` conflicts with registered function");
+  }
   auto& symbol = _internals->types[name];
   symbol.native.obj = std::unique_ptr<internal::NativeType<T*>>(
       new internal::NativeType<T*>());
@@ -291,6 +295,11 @@ void Context::register_function(
     const std::string& name, const Function<R(Args...)>& f)
 {
   check_identifier(name);
+  std::string cname = name + "::!" + name;
+  if (_internals->functions.find(cname) != _internals->functions.end()) {
+    throw runtime_error(
+        "function `" + name + "` conflicts with registered managed type");
+  }
   register_function_internal(name, f);
 }
 

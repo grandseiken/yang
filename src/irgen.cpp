@@ -33,15 +33,15 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
                          symbol_frame& globals, const ContextInternals& context)
   : IrCommon(module, engine)
   , _context(context)
-  , _chunk(_b)
+  , _chunk(_b, context)
 {
-  _scopes.emplace_back(_b);
+  _scopes.emplace_back(_b, context);
   // Set up the global data type. Since each program is designed to support
   // multiple independent instances running simultaeneously, the idea is to
   // define a structure type with a field for each global variable. Each
   // function will take a pointer to the global data structure as an implicit
   // final parameter.
-  _scopes[0].init_structure_type(globals, true);
+  _scopes[0].init_structure_type("global_data", globals, true);
   // Suppose a user type T has a member R(A...) f. So that an expression t.f
   // can be used as a generic function value, it creates an implicit closure;
   // that is, "val = t.f;" is equivalent to:
@@ -51,7 +51,7 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // to (mem[T::f], env_mem(t)).
   symbol_frame user_type;
   user_type.emplace("object", yang::Type::user_t());
-  _chunk.init_structure_type(user_type, false, false);
+  _chunk.init_structure_type("chunk", user_type, false, false);
 
   // We need to generate a reverse trampoline function for each function in the
   // Context. User type member functions are present in the context function map
@@ -162,7 +162,8 @@ void IrGenerator::preorder(const Node& node)
       fback.metadata.add(LexScope::ENVIRONMENT_PTR, &*it);
       fback.metadata.add(LexScope::FUNCTION, function);
       if (!node.static_info.closed_environment.empty()) { 
-        fback.init_structure_type(node.static_info.closed_environment, false);
+        fback.init_structure_type(
+            "closure", node.static_info.closed_environment, false);
         llvm::Value* v = fback.allocate_closure_struct(&*it);
         fback.metadata[LexScope::CLOSURE_PTR] = v;
         fback.update_reference_count(nullptr, v, 1);
@@ -532,6 +533,8 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     {
       std::string s =
           node.static_info.user_type_name + "::" + node.string_value;
+      // TODO: don't need to allocate anything for managed user-types! We
+      // already have a chunk.
       llvm::Value* env =
           _chunk.allocate_closure_struct(_b.constant_ptr(nullptr));
       _chunk.memory_store(results[0], env, "object");
@@ -558,14 +561,21 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
             fback.memory_load(variable_ptr.type, variable_ptr) : variable_ptr;
       }
 
+      // It must be a context function.
+      std::string constructor = node.string_value + "::!" + node.string_value;
+      auto it = _context.functions.find(constructor);
+      if (it != _context.functions.end()) {
+        Value v = get_constructor(node.string_value);
+        return _b.function_value(
+            v.type, v, _scopes.back().metadata[LexScope::ENVIRONMENT_PTR]);
+      }
+      it = _context.functions.find(node.string_value);
+      if (it != _context.functions.end()) {
+        return _b.function_value(it->second);
+      }
       // It's possible that nothing matches, when this is the identifier on the
       // left of a variable declaration.
-      auto it = _context.functions.find(node.string_value);
-      if (it == _context.functions.end()) {
-        return Value();
-      }
-      // It must be a context function.
-      return _b.function_value(it->second);
+      return Value();
     }
 
     case Node::INT_LITERAL:
@@ -911,7 +921,8 @@ void IrGenerator::create_function(
   // the sets of enclosing variables they access are disjoint, we could allocate
   // separate structures for each (and potentially return unused memory sooner).i
   if (!node.static_info.closed_environment.empty()) {
-    fback.init_structure_type(node.static_info.closed_environment, false);
+    fback.init_structure_type(
+        "closure", node.static_info.closed_environment, false);
     llvm::Value* v = fback.allocate_closure_struct(&*eptr);
     fback.metadata[LexScope::CLOSURE_PTR] = v;
     // Refcounting on closure pointer.
@@ -1035,6 +1046,62 @@ Value IrGenerator::get_member_function(const std::string& name)
 
   Value v(closed_type, f);
   _member_functions.emplace(name, v);
+  return v;
+}
+
+Value IrGenerator::get_constructor(const std::string& type)
+{
+  auto it = _constructors.find(type);
+  if (it != _constructors.end()) {
+    return it->second;
+  }
+
+  // Create the destructor which calls the user-type destructor (and usual chunk
+  // destructor).
+  auto jt = _context.functions.find(type + "::~" + type);
+  auto destructor_type = (llvm::FunctionType*)
+      _chunk.structure_destructor()->getType()->getPointerElementType();
+  auto destructor = llvm::Function::Create(
+      destructor_type, llvm::Function::InternalLinkage, "~" + type, &_b.module);
+
+  llvm::BasicBlock* prev = _b.b.GetInsertBlock();
+  auto block = llvm::BasicBlock::Create(_b.b.getContext(), "entry", destructor);
+  _b.b.SetInsertPoint(block);
+
+  llvm::Value* closure = destructor->arg_begin();
+  closure->setName("boxed_object");
+  closure = _b.b.CreateBitCast(closure, _chunk.structure_type());
+  auto object = _chunk.memory_load(closure, "object");
+  Value gen_destructor = _b.function_value(jt->second);
+  create_call(gen_destructor, std::vector<Value>{object});
+  _b.b.CreateCall(_chunk.structure_destructor(), closure);
+  _b.b.CreateRetVoid();
+
+  // Create the constructor (which overwrites the usual chunk destructor).
+  jt = _context.functions.find(type + "::!" + type);
+  auto llvm_type = _b.raw_function_type(jt->second.type);
+  auto f = llvm::Function::Create(
+      llvm_type, llvm::Function::InternalLinkage, type, &_b.module);
+
+  block = llvm::BasicBlock::Create(_b.b.getContext(), "entry", f);
+  _b.b.SetInsertPoint(block);
+
+  Value genf = _b.function_value(jt->second);
+  std::vector<Value> fargs;
+  std::size_t i = 0;
+  for (auto it = f->arg_begin(); it != --f->arg_end(); ++it) {
+    fargs.emplace_back(jt->second.type.get_function_arg_type(++i), it);
+  }
+  Value r = create_call(genf, fargs);
+  llvm::Value* chunk = _chunk.allocate_closure_struct(_b.constant_ptr(nullptr));
+  _chunk.memory_store(r, chunk, "object");
+  _chunk.memory_store(Value(yang::Type::void_t(), destructor),
+                      _chunk.structure_ptr(chunk, 2));
+  _b.b.CreateRet(_b.b.CreateBitCast(chunk, _b.void_ptr_type()));
+  _b.b.SetInsertPoint(prev);
+
+  Value v(jt->second.type, f);
+  _constructors.emplace(type, v);
   return v;
 }
 

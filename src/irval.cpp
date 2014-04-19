@@ -6,6 +6,7 @@
 
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/Module.h>
+#include <yang/context.h>
 #include <yang/refcounting.h>
 #include <yang/type_info.h>
 
@@ -241,10 +242,12 @@ llvm::Function* Builder::get_native_function(
   return llvm_function;
 }
 
-LexScope::LexScope(Builder& builder, bool create_functions)
+LexScope::LexScope(Builder& builder, const ContextInternals& context,
+                   bool create_functions)
   : symbol_table(Value())
   , metadata(nullptr)
   , _b(builder)
+  , _context(context)
   , _cleanup_structures(nullptr)
   , _destroy_internals(nullptr)
   , _update_refcount(nullptr)
@@ -312,7 +315,7 @@ LexScope::LexScope(Builder& builder, bool create_functions)
 
 LexScope LexScope::next_lex_scope() const
 {
-  LexScope scope(_b, false);
+  LexScope scope(_b, _context, false);
   scope._cleanup_structures = _cleanup_structures;
   scope._destroy_internals = _destroy_internals;
   scope._update_refcount = _update_refcount;
@@ -341,10 +344,9 @@ void LexScope::pop_scope(bool loop_scope)
 }
 
 void LexScope::init_structure_type(
-    const symbol_frame& symbols, bool global_data, bool has_parent)
+    const std::string& name, const symbol_frame& symbols,
+    bool global_data, bool has_parent)
 {
-  std::string name = global_data ? "global_data" : "closure";
-
   // Since the structure may contain pointers to functions which take the type
   // itself as an argument, the variable must be set (to an opaque type).
   auto struct_type =
@@ -433,10 +435,15 @@ void LexScope::init_structure_type(
   };
 
   for (const auto& pair : _structure.table) {
-    if (!pair.second.type.is_function()) {
-      continue;
+    if (pair.second.type.is_function()) {
+      refout(_b.b.CreateExtractValue(memory_load(&*it, pair.first), 1));
     }
-    refout(_b.b.CreateExtractValue(memory_load(&*it, pair.first), 1));
+    else if (pair.second.type.is_user_type()) {
+      auto jt = _context.types.find(pair.second.type.get_user_type_name());
+      if (jt != _context.types.end() && jt->second.is_managed) {
+        refout(memory_load(&*it, pair.first));
+      }
+    }
   }
   if (has_parent && !global_data) {
     refout(memory_load(yang::Type::void_t(), structure_ptr(&*it, 0)));
@@ -454,6 +461,11 @@ llvm::Type* LexScope::structure_type() const
 const Structure::table_t LexScope::structure_table() const
 {
   return _structure.table;
+}
+
+llvm::Function* LexScope::structure_destructor() const
+{
+  return _structure.destructor;
 }
 
 llvm::Function* LexScope::structure_custom_destructor() const
@@ -498,6 +510,8 @@ llvm::Value* LexScope::allocate_structure_value()
 
 llvm::Value* LexScope::allocate_closure_struct(llvm::Value* parent_ptr)
 {
+  // TODO: I think even chunk structures need to keep a reference to their
+  // parent program, so that their destructor functions aren't cleaned up!
   llvm::Value* closure_value = allocate_structure_value();
   // Store parent pointer in the first slot.
   auto parent_void_ptr =
@@ -575,6 +589,9 @@ void LexScope::memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr)
     pos.CreateAlignedStore(
         _b.function_value_null(yang::Type::void_t()), ptr, 1);
   }
+  else if (elem->isPointerTy()) {
+    pos.CreateAlignedStore(_b.constant_ptr(nullptr), ptr, 1);
+  }
 }
 
 void LexScope::refcount_init(const Value& value)
@@ -597,13 +614,20 @@ void LexScope::memory_store(
 
 void LexScope::update_reference_count(const Value& value, int_t change)
 {
-  if (!value.type.is_function()) {
-    return;
+  if (value.type.is_function()) {
+    llvm::Value* fptr = _b.b.CreateExtractValue(value, 0);
+    llvm::Value* eptr = _b.b.CreateExtractValue(value, 1);
+    update_reference_count(fptr, eptr, change);
   }
-  // This reference counting will be inlined by the LLVM optimiser.
-  llvm::Value* fptr = _b.b.CreateExtractValue(value, 0);
-  llvm::Value* eptr = _b.b.CreateExtractValue(value, 1);
-  update_reference_count(fptr, eptr, change);
+  if (value.type.is_user_type()) {
+    // Some of the time we don't know what the type-name is because it's been
+    // erased.
+    // TODO: make sure that's always OK.
+    auto it = _context.types.find(value.type.get_user_type_name());
+    if (it != _context.types.end() && it->second.is_managed) {
+      update_reference_count(nullptr, value, change);
+    }
+  }
 }
 
 void LexScope::update_reference_count(
@@ -614,6 +638,7 @@ void LexScope::update_reference_count(
   eptr = eptr ?
       _b.b.CreateBitCast(eptr, _b.void_ptr_type()) : _b.constant_ptr(nullptr);
   std::vector<llvm::Value*> args{fptr, eptr, _b.constant_int(change)};
+  // This will be inlined by the LLVM optimiser.
   _b.b.CreateCall(_update_refcount, args);
 }
 
@@ -626,7 +651,8 @@ void LexScope::dereference_scoped_locals(std::size_t first_scope)
 {
   for (std::size_t i = first_scope; i < _rc_locals.size(); ++i) {
     for (const Value& v : _rc_locals[i]) {
-      if (!v.irval->getType()->isPointerTy()) {
+      if (!v.irval->getType()->isPointerTy() ||
+          v.irval->getType() == _b.void_ptr_type()) {
         update_reference_count(v, -1);
         continue;
       }

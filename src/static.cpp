@@ -497,6 +497,10 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         if (it == --_scopes.rend()) {
           // Check Context if symbol isn't present in the Program table.
           auto context_it = _context.functions.find(node.string_value);
+          if (context_it == _context.functions.end()) {
+            std::string cname = node.string_value + "::!" + node.string_value;
+            context_it = _context.functions.find(cname);
+          }
           if (context_it != _context.functions.end()) {
             return context_it->second.type;
           }

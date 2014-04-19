@@ -138,6 +138,10 @@ TEST_F(YangTest, UserTypes)
 }
 
 const std::string TestManagedUserTypesStr = R"(
+export make_user_type = Managed()
+{
+  return Managed();
+}
 )";
 
 TEST_F(YangTest, ManagedUserTypes)
@@ -159,6 +163,16 @@ TEST_F(YangTest, ManagedUserTypes)
   auto ctxt = context();
   ctxt.register_managed_type("Managed", constructor, destructor);
   auto inst = instance(ctxt, TestManagedUserTypesStr);
+
+  {
+    auto ref = inst.call<Ref<Managed>>("make_user_type");
+    auto sef = inst.call<Ref<Managed>>("make_user_type");
+    EXPECT_EQ(ref->count, 0);
+    EXPECT_EQ(sef->count, 1);
+    EXPECT_EQ(count, 2);
+  }
+  instance("");
+  EXPECT_EQ(count, 0);
 }
 
 // End namespace yang.

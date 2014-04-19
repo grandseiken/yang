@@ -12,6 +12,7 @@
 
 namespace yang {
 namespace internal {
+struct Prefix;
 
 // Boost's metaprogramming list implementation fakes variadic templates for
 // C++03 compatibility. This makes extracting the type-list directly as a
@@ -128,13 +129,13 @@ template<typename R>
 struct TrampolineReturn {
   typedef List<R*> type;
 };
+template<typename R>
+struct TrampolineReturn<Ref<R>> {
+  typedef List<Prefix**> type;
+};
 template<>
 struct TrampolineReturn<void> {
   typedef List<> type;
-};
-template<typename T>
-struct TrampolineReturn<vec<T, 2>> {
-  typedef List<T*, T*> type;
 };
 template <typename T, std::size_t N>
 struct TrampolineReturn<vec<T, N>> {
@@ -160,6 +161,11 @@ template<typename T, std::size_t N, typename... Args>
 struct TrampolineArgs<vec<T, N>, Args...> {
   typedef typename TrampolineArgs<Args...>::type rest;
   typedef typename Join<typename Mul<N, T>::type, rest>::type type;
+};
+template<typename T, typename... Args>
+struct TrampolineArgs<Ref<T>, Args...> {
+  typedef typename TrampolineArgs<Args...>::type rest;
+  typedef typename Join<List<Prefix*>, rest>::type type;
 };
 template<typename R, typename... Args, typename... Brgs>
 struct TrampolineArgs<Function<R(Args...)>, Brgs...> {
@@ -200,6 +206,17 @@ struct TrampolineCallArgs<A, Args...> {
   type operator()(const A& arg, const Args&... args) const
   {
     return join(list(arg), TrampolineCallArgs<Args...>()(args...));
+  }
+};
+
+// TrampolineCallArgs unpacking of a managed user type.
+template<typename T, typename... Args>
+struct TrampolineCallArgs<Ref<T>, Args...> {
+  typedef typename TrampolineArgs<Ref<T>, Args...>::type type;
+
+  type operator()(const Ref<T>& arg, const Args&... args) const
+  {
+    return join(list(arg._wrap), TrampolineCallArgs<Args...>()(args...));
   }
 };
 
@@ -245,6 +262,17 @@ struct TrampolineCallReturn {
   }
 };
 
+// TrampolineCallReturn for a managed user type return.
+template<typename T>
+struct TrampolineCallReturn<Ref<T>> {
+  typedef typename TrampolineReturn<Ref<T>>::type type;
+
+  type operator()(Ref<T>& result) const
+  {
+    return type(&result._wrap);
+  }
+};
+
 // TrampolineCallReturn for a vector return.
 template<typename T, std::size_t N>
 struct TrampolineCallReturn<vec<T, N>> {
@@ -284,7 +312,7 @@ struct TrampolineCall {
     R result;
     list_call(function, join(TrampolineCallReturn<R>()(result),
                              TrampolineCallArgs<Args...>()(args...)));
-    internal::FunctionInitialise<R>()(result);
+    internal::ValueInitialise<R>()(result);
     return result;
   }
 };
@@ -329,6 +357,16 @@ struct ReverseTrampolineCallArgs<List<A, Args...>, List<Brgs...>> {
                 rtcall_args<List<Args...>>(sublist<range>(brgs)));
   }
 };
+template<typename... Args, typename... Brgs, typename T>
+struct ReverseTrampolineCallArgs<List<Ref<T>, Args...>, List<Brgs...>> {
+  List<Ref<T>, Args...> operator()(const List<Brgs...>& brgs) const
+  {
+    Ref<T> ref_object(std::get<0>(brgs));
+    typedef typename IndexRange<1, sizeof...(Brgs) - 1>::type range;
+    return join(list(ref_object),
+                rtcall_args<List<Args...>>(sublist<range>(brgs)));
+  }
+};
 template<typename... Args, typename... Brgs, typename T, std::size_t N>
 struct ReverseTrampolineCallArgs<List<vec<T, N>, Args...>, List<Brgs...>> {
   template<std::size_t... I>
@@ -366,6 +404,13 @@ struct ReverseTrampolineCallReturn<R, R*> {
   void operator()(const R& result, R* ptr) const
   {
     *ptr = result;
+  }
+};
+template<typename T, typename... Args>
+struct ReverseTrampolineCallReturn<Ref<T>, Args...> {
+  void operator()(const Ref<T>& result, Prefix** wrap)
+  {
+    *wrap = result._wrap;
   }
 };
 template<typename T, std::size_t N, typename... Args>

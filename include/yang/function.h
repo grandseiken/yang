@@ -20,9 +20,7 @@ namespace internal {
 template<typename>
 struct FunctionConstruct;
 template<typename>
-struct FunctionInitialise;
-template<typename>
-struct TypeInfo;
+struct ValueInitialise;
 
 template<typename...>
 struct TrampolineCallArgs;
@@ -149,7 +147,7 @@ private:
   template<typename>
   friend struct internal::FunctionConstruct;
   template<typename>
-  friend struct internal::FunctionInitialise;
+  friend struct internal::ValueInitialise;
 
   // Invariant: Function objects returned to client code must never be null.
   // They must reference a genuine Yang function or C++ function, so that they
@@ -339,12 +337,8 @@ struct FunctionConstruct<Function<R(Args...)>> {
     return Function<R(Args...)>(function, env);
   }
 };
-template<typename T>
-struct FunctionInitialise {
-  void operator()(T&) const {}
-};
 template<typename R, typename... Args>
-struct FunctionInitialise<Function<R(Args...)>> {
+struct ValueInitialise<Function<R(Args...)>> {
   void operator()(Function<R(Args...)>& function) const
   {
     function.update_env_refcount(1);

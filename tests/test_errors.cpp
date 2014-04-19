@@ -194,6 +194,7 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {0.foo();}", ".");
   err("x = void() {get_user_type().bar();}", ".");
   err("x = void() {get_user_type().foo(1);}", "(");
+  err("x = void() {UserType();}", "UserType");
 
   // Ternary errors.
   err("x = void() {1. ? 0 : 0;}", "?");

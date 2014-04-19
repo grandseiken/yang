@@ -50,6 +50,7 @@ private:
   Value get_variable_ptr(const std::string& name);
   void create_function(const Node& node, const yang::Type& function_type);
   Value get_member_function(const std::string& name);
+  Value get_constructor(const std::string& type);
   Value create_call(const Value& f, const std::vector<Value>& args);
 
   Value i2b(const Value& v);
@@ -84,6 +85,7 @@ private:
   // types.
   LexScope _chunk;
   std::unordered_map<std::string, Value> _member_functions;
+  std::unordered_map<std::string, Value> _constructors;
 
   // Daft hack.
   std::string _immediate_left_assign;

@@ -16,9 +16,24 @@ namespace yang {
 class Context;
 
 namespace internal {
-template<typename T>
+
+template<typename>
+struct ValueInitialise;
+template<typename>
 class NativeFunction;
 struct InstanceInternals;
+
+template<typename...>
+struct TrampolineCallArgs;
+template<typename>
+struct TrampolineCallReturn;
+template<typename, typename...>
+struct TrampolineCall;
+
+template<typename, typename>
+struct ReverseTrampolineCallArgs;
+template<typename, typename...>
+struct ReverseTrampolineCallReturn;
 
 // Prefix structure of all global data and closure structures.
 struct Prefix {
@@ -53,7 +68,7 @@ void cleanup_structures();
 // Destroy program internals at some point.
 void destroy_internals(InstanceInternals* global_parent);
 
-// End namespace yang.
+// End namespace internal.
 }
 
 // Refcount a managed user type on the C++ side.
@@ -67,6 +82,20 @@ public:
   T* operator->();
 
 private:
+
+  friend struct internal::ValueInitialise<Ref<T>>;
+
+  template<typename...>
+  friend struct internal::TrampolineCallArgs;
+  template<typename>
+  friend struct internal::TrampolineCallReturn;
+  template<typename, typename...>
+  friend struct internal::TrampolineCall;
+
+  template<typename, typename>
+  friend struct internal::ReverseTrampolineCallArgs;
+  template<typename, typename...>
+  friend struct internal::ReverseTrampolineCallReturn;
 
   // Null Ref must never be returned to client code!
   Ref();
@@ -128,7 +157,24 @@ Ref<T>::Ref(internal::Prefix* wrap)
   }
 }
 
-// End namespace internal.
+namespace internal {
+
+template<typename T>
+struct ValueInitialise {
+  void operator()(T&) const {}
+};
+template<typename T>
+struct ValueInitialise<Ref<T>> {
+  void operator()(Ref<T>& ref) const
+  {
+    if (ref._wrap) {
+      internal::update_structure_refcount(ref._wrap, 1);
+    }
+  }
+};
+
+// End namespace yang::internal.
+}
 }
 
 #endif
