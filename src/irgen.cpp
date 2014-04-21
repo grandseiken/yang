@@ -51,7 +51,7 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // to (mem[T::f], env_mem(t)).
   symbol_frame user_type;
   user_type.emplace("object", yang::Type::user_t("", false));
-  _chunk.init_structure_type("chunk", user_type, false, false);
+  _chunk.init_structure_type("chunk", user_type, false);
 
   // We need to generate a reverse trampoline function for each function in the
   // Context. User type member functions are present in the context function map
@@ -545,7 +545,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
         v = get_member_function(s, true);
       }
       else {
-        env = _chunk.allocate_closure_struct(_b.constant_ptr(nullptr));
+        env = _chunk.allocate_closure_struct(get_global_struct());
         _chunk.memory_store(results[0], env, "object");
         v = get_member_function(s, false);
       }
@@ -577,8 +577,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       auto it = _context.functions.find(constructor);
       if (it != _context.functions.end()) {
         Value v = get_constructor(node.string_value);
-        return _b.function_value(
-            v.type, v, _scopes.back().metadata[LexScope::ENVIRONMENT_PTR]);
+        return _b.function_value(v.type, v, get_global_struct());
       }
       it = _context.functions.find(node.string_value);
       if (it != _context.functions.end()) {
@@ -856,6 +855,19 @@ llvm::Value* IrGenerator::get_parent_struct(
   return u;
 }
 
+llvm::Value* IrGenerator::get_global_struct()
+{
+  std::size_t steps = 0;
+  auto it = _scopes.rbegin();
+  for (++it; it != _scopes.rend(); ++it) {
+    if (it->structure_type()) {
+      ++steps;
+    }
+  }
+  return get_parent_struct(
+      steps - 1, _scopes.back().metadata[LexScope::ENVIRONMENT_PTR]);
+}
+
 Value IrGenerator::get_variable_ptr(const std::string& name)
 {
   std::size_t steps = 0;
@@ -1108,7 +1120,8 @@ Value IrGenerator::get_constructor(const std::string& type)
     fargs.emplace_back(jt->second.type.get_function_arg_type(++i), it);
   }
   Value r = create_call(genf, fargs);
-  llvm::Value* chunk = _chunk.allocate_closure_struct(_b.constant_ptr(nullptr));
+  llvm::Value* global = --f->arg_end();
+  llvm::Value* chunk = _chunk.allocate_closure_struct(global);
   _chunk.memory_store(r, chunk, "object");
   _chunk.memory_store(Value(yang::Type::void_t(), destructor),
                       _chunk.structure_ptr(chunk, 2));

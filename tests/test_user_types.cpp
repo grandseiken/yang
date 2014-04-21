@@ -141,6 +141,7 @@ const std::string TestManagedUserTypesStr = R"(
 export global {
   const con = Managed;
   var m = con(2);
+  var c = int() {return 0;};
 }
 export make_user_type = Managed()
 {
@@ -148,9 +149,18 @@ export make_user_type = Managed()
 }
 export get_some_count = int()
 {
-  const t = m.get_count();
+  const t = c();
+  c = m.get_count;
   m = con(4);
   return t;
+}
+export get_count_closure = int()()
+{
+  closed const t = Managed(0);
+  return int()
+  {
+    return t.get_count();
+  };
 }
 )";
 
@@ -199,7 +209,12 @@ TEST_F(YangTest, ManagedUserTypes)
     instance("");
     EXPECT_EQ(count, 1);
     EXPECT_EQ(inst.call<int_t>("get_some_count"), 0);
+    EXPECT_EQ(inst.call<int_t>("get_some_count"), 0);
     EXPECT_EQ(inst.call<int_t>("get_some_count"), 1);
+    EXPECT_EQ(inst.call<int_t>("get_some_count"), 2);
+
+    auto get_count_closure = inst.call<Function<int_t()>>("get_count_closure");
+    EXPECT_EQ(get_count_closure(), 2);
   }
   instance("");
   EXPECT_EQ(count, 0);

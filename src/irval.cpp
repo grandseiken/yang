@@ -342,8 +342,7 @@ void LexScope::pop_scope(bool loop_scope)
 }
 
 void LexScope::init_structure_type(
-    const std::string& name, const symbol_frame& symbols,
-    bool global_data, bool has_parent)
+    const std::string& name, const symbol_frame& symbols, bool global_data)
 {
   // Since the structure may contain pointers to functions which take the type
   // itself as an argument, the variable must be set (to an opaque type).
@@ -358,7 +357,7 @@ void LexScope::init_structure_type(
   std::vector<llvm::Type*> type_list;
 
   // The first element in closure structures is a pointer to the parent
-  // structure. When has_parent is false this will be null.
+  // structure.
   type_list.push_back(_b.void_ptr_type());
   // The second element is a pointer to the reference counter.
   type_list.push_back(_b.int_type());
@@ -399,15 +398,13 @@ void LexScope::init_structure_type(
   for (const auto& pair : _structure.table) {
     update_reference_count(memory_load(&*it, pair.first), -1);
   }
-  if (has_parent) {
-    llvm::Value* parent = memory_load(
-        yang::Type::void_t(), structure_ptr(&*it, 0));
-    if (global_data) {
-      _b.b.CreateCall(_destroy_internals, parent);
-    }
-    else {
-      update_reference_count(nullptr, parent, -1);
-    }
+  llvm::Value* parent = memory_load(
+      yang::Type::void_t(), structure_ptr(&*it, 0));
+  if (global_data) {
+    _b.b.CreateCall(_destroy_internals, parent);
+  }
+  else {
+    update_reference_count(nullptr, parent, -1);
   }
   _b.b.CreateRetVoid();
 
@@ -441,7 +438,7 @@ void LexScope::init_structure_type(
       refout(memory_load(&*it, pair.first));
     }
   }
-  if (has_parent && !global_data) {
+  if (!global_data) {
     refout(memory_load(yang::Type::void_t(), structure_ptr(&*it, 0)));
   }
   _b.b.CreateRetVoid();
@@ -506,8 +503,8 @@ llvm::Value* LexScope::allocate_structure_value()
 
 llvm::Value* LexScope::allocate_closure_struct(llvm::Value* parent_ptr)
 {
-  // TODO: I think even chunk structures need to keep a reference to their
-  // parent program, so that their destructor functions aren't cleaned up!
+  // Note that even chunk structures need to keep a reference to their
+  // parent program, so that their destructor functions aren't cleaned up.
   llvm::Value* closure_value = allocate_structure_value();
   // Store parent pointer in the first slot.
   auto parent_void_ptr =

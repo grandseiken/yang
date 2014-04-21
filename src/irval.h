@@ -130,8 +130,7 @@ public:
 
   // Structure functions.
   void init_structure_type(
-      const std::string& name, const symbol_frame& symbols,
-      bool global_data, bool has_parent = true);
+      const std::string& name, const symbol_frame& symbols, bool global_data);
   llvm::Type* structure_type() const;
   const Structure::table_t structure_table() const;
   llvm::Function* structure_destructor() const;

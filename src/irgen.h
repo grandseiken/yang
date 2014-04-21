@@ -47,6 +47,7 @@ protected:
 private:
 
   llvm::Value* get_parent_struct(std::size_t parent_steps, llvm::Value* v);
+  llvm::Value* get_global_struct();
   Value get_variable_ptr(const std::string& name);
   void create_function(const Node& node, const yang::Type& function_type);
   Value get_member_function(const std::string& name, bool managed);

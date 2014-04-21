@@ -171,7 +171,7 @@ void cleanup_structures()
   std::unordered_set<Prefix*> already_freed;
   // Iteratively free everything that is not referenced, then everything
   // that isn't referenced after that, and so on.
-  while (!get_structure_cleanup_list().empty()) {
+  do {
     auto copy = get_structure_cleanup_list();
     get_structure_cleanup_list().clear();
 
@@ -188,15 +188,19 @@ void cleanup_structures()
       v->free(v);
       free(v);
     }
+
+    // Clean up program internals.
+    for (InstanceInternals* internals : get_instance_cleanup_list()) {
+      delete internals;
+    }
+    get_instance_cleanup_list().clear();
+
     // This probably shouldn't be done so often? But, for destructor semantics,
     // it's nice for this function to be idempotent...
     cleanup_cyclic_structures();
   }
-  // Clean up program internals.
-  for (InstanceInternals* internals : get_instance_cleanup_list()) {
-    delete internals;
-  }
-  get_instance_cleanup_list().clear();
+  while (!get_structure_cleanup_list().empty() ||
+         !get_instance_cleanup_list().empty());
 }
 
 void destroy_internals(InstanceInternals* global_parent)
