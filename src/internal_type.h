@@ -46,7 +46,7 @@ public:
   Type(type_base base, const Type& return_type);
   // Construct USER_TYPE types. Passing anything other than USER_TYPE will
   // result in an error.
-  Type(type_base base, const std::string& user_type_name);
+  Type(type_base base, const std::string& user_type_name, bool managed);
   // Set const.
   void set_const(bool is_const);
 
@@ -54,6 +54,7 @@ public:
   type_base base() const;
   std::size_t count() const;
   const std::string& user_type_name() const;
+  bool managed() const;
   bool is_const() const;
   // Return a string representation of the type.
   std::string string() const;
@@ -116,6 +117,7 @@ private:
   bool _const;
   std::vector<Type> _elements;
   std::string _user_type_name;
+  bool _managed_user_type;
 
 };
 

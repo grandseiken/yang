@@ -17,8 +17,6 @@ namespace llvm {
 
 namespace yang {
 namespace internal {
-
-struct ContextInternals;
 typedef std::unordered_map<std::string, yang::Type> symbol_frame;
 
 struct Structure {
@@ -124,8 +122,7 @@ public:
     MERGE_BLOCK,
   };
 
-  LexScope(Builder& builder, const ContextInternals& context,
-           bool create_functions = true);
+  LexScope(Builder& builder, bool create_functions = true);
   LexScope next_lex_scope() const;
 
   void push_scope(bool loop_scope = false);
@@ -188,7 +185,6 @@ private:
   std::vector<std::size_t> _rc_loop_indices;
 
   Builder& _b;
-  const ContextInternals& _context;
 
   // Hooks out to the refcount runtime.
   llvm::Function* _cleanup_structures;

@@ -10,6 +10,7 @@ namespace yang {
 YangTest::YangTest()
   : _program_id(0)
   , _user_value_id(0)
+  , _muser_value_id(0)
 {
 }
 
@@ -31,13 +32,24 @@ Context YangTest::context()
   context.register_type<user_type>("UserType");
   auto get_user_type = [this]()
   {
-    user_type* u = new user_type;
-    u->id = _user_value_id++;
+    user_type* u = new user_type{_user_value_id++};
     _user_values.emplace_back(u);
     return u;
   };
+
+  auto constructor = make_fn([this]()
+  {
+    muser_type* m = new muser_type{_muser_value_id++};
+    return m;
+  });
+  auto destructor = make_fn([](muser_type* m)
+  {
+    delete m;
+  });
+
   context.register_member_function("foo", make_fn([](user_type*){}));
   context.register_function("get_user_type", make_fn(get_user_type));
+  context.register_managed_type("MuserType", constructor, destructor);
   return context;
 }
 

@@ -31,6 +31,14 @@ export test_user_type = UserType(UserType x)
 {
   return x;
 }
+export test_muser_type = MuserType(MuserType x)
+{
+  return x;
+}
+export get_muser_type = MuserType()
+{
+  return MuserType();
+}
 )";
 
 TEST_F(YangTest, Trampolines)
@@ -56,6 +64,9 @@ TEST_F(YangTest, Trampolines)
 
   user_type u;
   EXPECT_EQ(inst.call<user_type*>("test_user_type", &u), &u);
+
+  auto m = inst.call<Ref<muser_type>>("get_muser_type");
+  EXPECT_EQ(inst.call<Ref<muser_type>>("test_muser_type", m)->id, m->id);
 }
 
 const std::string TestReverseTrampolinesStr = R"(
@@ -82,6 +93,10 @@ export test_function = int(int)()
 export test_user_type = UserType()
 {
   return context_user_type(get_user_type());
+}
+export test_muser_type = MuserType()
+{
+  return context_muser_type(MuserType());
 }
 )";
 
@@ -116,6 +131,10 @@ TEST_F(YangTest, ReverseTrampolines)
   {
     return x;
   };
+  auto context_muser_type = [](Ref<muser_type> x)
+  {
+    return x;
+  };
 
   auto ctxt = context();
   ctxt.register_function("context_int", make_fn(context_int));
@@ -124,6 +143,7 @@ TEST_F(YangTest, ReverseTrampolines)
   ctxt.register_function("context_float4", make_fn(context_float4));
   ctxt.register_function("context_function", make_fn(context_function));
   ctxt.register_function("context_user_type", make_fn(context_user_type));
+  ctxt.register_function("context_muser_type", make_fn(context_muser_type));
 
   auto inst = instance(ctxt, TestReverseTrampolinesStr);
   EXPECT_EQ(inst.call<int_t>("test_int"), 5);
@@ -133,6 +153,7 @@ TEST_F(YangTest, ReverseTrampolines)
       inst.call<fvec_t<4>>("test_float4"), fvec_t<4>(-.5, -1., -1.5, -2.));
   EXPECT_EQ(inst.call<intf_t>("test_function")(16), 32);
   EXPECT_EQ(inst.call<user_type*>("test_user_type")->id, 0);
+  EXPECT_EQ(inst.call<Ref<muser_type>>("test_muser_type")->id, 0);
 }
 
 const std::string TestMultiArgTrampolinesStr = R"(

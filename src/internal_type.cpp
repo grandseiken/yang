@@ -19,6 +19,7 @@ Type::Type(const yang::Type& type)
   _const = type.is_const();
   _count = type.get_vector_size();
   _user_type_name = type.get_user_type_name();
+  _managed_user_type = type.is_managed_user_type();
   if (type.is_function()) {
     _elements.push_back(type.get_function_return_type());
     for (std::size_t i = 0; i < type.get_function_num_args(); ++i) {
@@ -31,6 +32,7 @@ Type::Type(type_base base, std::size_t count)
   : _base(base)
   , _count(count)
   , _const(false)
+  , _managed_user_type(false)
 {
   if (base == FUNCTION || count == 0 ||
       (count != 1 && base != INT && base != FLOAT && base != ERROR)) {
@@ -43,6 +45,7 @@ Type::Type(type_base base, const Type& return_type)
   : _base(FUNCTION)
   , _count(1)
   , _const(false)
+  , _managed_user_type(false)
 {
   if (base != FUNCTION) {
     _base = ERROR;
@@ -51,11 +54,12 @@ Type::Type(type_base base, const Type& return_type)
   _elements.push_back(return_type);
 }
 
-Type::Type(type_base base, const std::string& user_type_name)
+Type::Type(type_base base, const std::string& user_type_name, bool managed)
   : _base(USER_TYPE)
   , _count(1)
   , _const(false)
   , _user_type_name(user_type_name)
+  , _managed_user_type(managed)
 {
   if (base != USER_TYPE) {
     _base = ERROR;
@@ -80,6 +84,11 @@ std::size_t Type::count() const
 const std::string& Type::user_type_name() const
 {
   return _user_type_name;
+}
+
+bool Type::managed() const
+{
+  return _managed_user_type;
 }
 
 bool Type::is_const() const
@@ -191,6 +200,7 @@ bool Type::operator==(const Type& t) const
     }
   }
   return _base == t._base && _count == t._count &&
+      _managed_user_type == t._managed_user_type;
       _user_type_name == t._user_type_name;
 }
 
@@ -219,7 +229,7 @@ yang::Type Type::external(bool exported) const
     t = yang::Type::function_t(_elements[0].external(false), args);
   }
   if (_base == USER_TYPE) {
-    t = yang::Type::user_t(_user_type_name);
+    t = yang::Type::user_t(_user_type_name, _managed_user_type);
   }
   return t.make_exported(exported).make_const(_const);
 }
@@ -227,7 +237,8 @@ yang::Type Type::external(bool exported) const
 std::string Type::string_internal() const
 {
   if (_base == USER_TYPE) {
-    return _user_type_name + "*" + (_const ? " const" : "");
+    return _user_type_name +
+        (_managed_user_type ? "&" : "*") + (_const ? " const" : "");
   }
 
   if (_base == FUNCTION) {

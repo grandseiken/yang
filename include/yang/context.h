@@ -197,13 +197,13 @@ struct TypeInfo<T*> {
       throw runtime_error("use of `" + context_get_type_name_impl<T>(context) +
                           "` as an unmanaged user type");
     }
-    return yang::Type::user_t(context_get_type_name_impl<T>(context));
+    return yang::Type::user_t(context_get_type_name_impl<T>(context), false);
   }
 
   // Without passing a context, we just construct erased user-types.
   yang::Type operator()() const
   {
-    return yang::Type::user_t();
+    return yang::Type::user_t("", false);
   }
 };
 
@@ -219,13 +219,13 @@ struct TypeInfo<Ref<T>> {
       throw runtime_error("use of `" + context_get_type_name_impl<T>(context) +
                           "` as a managed user type");
     }
-    return yang::Type::user_t(context_get_type_name_impl<T>(context));
+    return yang::Type::user_t(context_get_type_name_impl<T>(context), true);
   }
 
   // Without passing a context, we just construct erased user-types.
   yang::Type operator()() const
   {
-    return yang::Type::user_t();
+    return yang::Type::user_t("", true);
   }
 };
 

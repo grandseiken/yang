@@ -47,6 +47,7 @@ public:
 
   // User types.
   bool is_user_type() const;
+  bool is_managed_user_type() const;
   const std::string& get_user_type_name() const;
 
   bool operator==(const Type& t) const;
@@ -61,7 +62,7 @@ public:
   static Type float_vector_t(std::size_t size);
   static Type function_t(
       const Type& return_t, const std::vector<Type>& args);
-  static Type user_t(const std::string& name = "");
+  static Type user_t(const std::string& name, bool managed);
 
   // Return a new type that's identical except exported.
   Type make_exported(bool exported = true) const;
@@ -90,6 +91,7 @@ private:
   std::size_t _count;
   std::vector<Type> _elements;
   std::string _user_type_name;
+  bool _managed_user_type;
   static Type void_type;
 
 };

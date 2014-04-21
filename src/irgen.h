@@ -49,7 +49,7 @@ private:
   llvm::Value* get_parent_struct(std::size_t parent_steps, llvm::Value* v);
   Value get_variable_ptr(const std::string& name);
   void create_function(const Node& node, const yang::Type& function_type);
-  Value get_member_function(const std::string& name);
+  Value get_member_function(const std::string& name, bool managed);
   Value get_constructor(const std::string& type);
   Value create_call(const Value& f, const std::vector<Value>& args);
 

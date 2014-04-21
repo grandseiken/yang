@@ -437,9 +437,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       if (results[0].is_error()) {
         return Type::ERROR;
       }
-      node.static_info.user_type_name = results[0].user_type_name();
-      std::string s =
-          node.static_info.user_type_name + "::" + node.string_value;
+      std::string s = results[0].user_type_name() + "::" + node.string_value;
       auto context_it = _context.functions.find(s);
       if (context_it == _context.functions.end()) {
         error(node, "undeclared member function `" + s + "`");
@@ -458,9 +456,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         return Type::ERROR;
       }
 
-      node.static_info.user_type_name = results[0].user_type_name();
-      std::string s =
-          node.static_info.user_type_name + "::" + node.string_value;
+      std::string s = results[0].user_type_name() + "::" + node.string_value;
       auto it = _context.functions.find(s);
       if (it == _context.functions.end()) {
         error(node, "undeclared member function `" + s + "`");
@@ -485,7 +481,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
           error(node, "undeclared type `" + node.string_value + "`");
           return Type::ERROR;
         }
-        return Type(Type::USER_TYPE, node.string_value);
+        return Type(Type::USER_TYPE,
+                    node.string_value, context_it->second.is_managed);
       }
 
       // Regular symbols.
@@ -496,11 +493,20 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         }
         if (it == --_scopes.rend()) {
           // Check Context if symbol isn't present in the Program table.
-          auto context_it = _context.functions.find(node.string_value);
-          if (context_it == _context.functions.end()) {
-            std::string cname = node.string_value + "::!" + node.string_value;
-            context_it = _context.functions.find(cname);
+          std::string cname = node.string_value + "::!" + node.string_value;
+          auto context_it = _context.functions.find(cname);
+          if (context_it != _context.functions.end()) {
+            // Replace return type of constructor with managed type.
+            const Type& ctype = context_it->second.type;
+            Type return_type(
+                Type::USER_TYPE, ctype.elements(0).user_type_name(), true);
+            Type t(Type::FUNCTION, return_type);
+            for (std::size_t i = 1; i < ctype.element_size(); ++i) {
+              t.add_element(ctype.elements(i));
+            }
+            return t;
           }
+          context_it = _context.functions.find(node.string_value);
           if (context_it != _context.functions.end()) {
             return context_it->second.type;
           }

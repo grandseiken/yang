@@ -138,14 +138,29 @@ TEST_F(YangTest, UserTypes)
 }
 
 const std::string TestManagedUserTypesStr = R"(
+export global {
+  const con = Managed;
+  var m = con();
+}
 export make_user_type = Managed()
 {
   return Managed();
+}
+export get_some_count = int()
+{
+  const t = m.get_count();
+  m = con();
+  return t;
 }
 )";
 
 TEST_F(YangTest, ManagedUserTypes)
 {
+  if (!filter("user_types")) {
+    return;
+  }
+  // TODO: arbitrary-arity constructors.
+
   std::size_t count = 0;
   struct Managed {
     std::size_t count;
@@ -159,17 +174,31 @@ TEST_F(YangTest, ManagedUserTypes)
     --count;
     delete m;
   });
+  auto get_count = make_fn([](Ref<Managed> m)
+  {
+    return (int_t)m->count;
+  });
 
   auto ctxt = context();
   ctxt.register_managed_type("Managed", constructor, destructor);
-  auto inst = instance(ctxt, TestManagedUserTypesStr);
-
+  ctxt.register_member_function("get_count", get_count);
   {
-    auto ref = inst.call<Ref<Managed>>("make_user_type");
-    auto sef = inst.call<Ref<Managed>>("make_user_type");
-    EXPECT_EQ(ref->count, 0);
-    EXPECT_EQ(sef->count, 1);
-    EXPECT_EQ(count, 2);
+    auto inst = instance(ctxt, TestManagedUserTypesStr);
+    {
+      auto ref = inst.call<Ref<Managed>>("make_user_type");
+      auto sef = inst.call<Ref<Managed>>("make_user_type");
+      EXPECT_EQ(ref->count, 1);
+      EXPECT_EQ(sef->count, 2);
+      EXPECT_EQ(count, 3);
+
+      auto con = inst.get_global<Function<Ref<Managed>()>>("con");
+      EXPECT_EQ(con()->count, 3);
+      EXPECT_EQ(count, 4);
+    }
+    instance("");
+    EXPECT_EQ(count, 1);
+    EXPECT_EQ(inst.call<int_t>("get_some_count"), 0);
+    EXPECT_EQ(inst.call<int_t>("get_some_count"), 1);
   }
   instance("");
   EXPECT_EQ(count, 0);

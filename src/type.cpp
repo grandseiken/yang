@@ -11,7 +11,7 @@ std::string Type::string() const
 {
   std::string s;
   if (_base == USER_TYPE) {
-    s = _user_type_name + "*";
+    s = _user_type_name + (_managed_user_type ? "&" : "*");
   }
   else if (_base == FUNCTION) {
     s += _elements[0].string() + "(";
@@ -105,6 +105,11 @@ bool Type::is_user_type() const
   return _base == USER_TYPE;
 }
 
+bool Type::is_managed_user_type() const
+{
+  return _managed_user_type;
+}
+
 const std::string& Type::get_user_type_name() const
 {
   return _user_type_name;
@@ -121,6 +126,7 @@ bool Type::operator==(const Type& t) const
     }
   }
   return _user_type_name == t._user_type_name &&
+      _managed_user_type == t._managed_user_type &&
       _base == t._base && _count == t._count;
 }
 
@@ -181,11 +187,12 @@ Type Type::function_t(const Type& return_t, const std::vector<Type>& args)
   return t;
 }
 
-Type Type::user_t(const std::string& name)
+Type Type::user_t(const std::string& name, bool managed)
 {
   Type t;
   t._base = USER_TYPE;
   t._user_type_name = name;
+  t._managed_user_type = managed;
   return t;
 }
 
@@ -218,6 +225,7 @@ Type::Type()
   , _const(false)
   , _base(VOID)
   , _count(1)
+  , _managed_user_type(false)
 {
 }
 
@@ -243,6 +251,7 @@ namespace std {
     for (const auto& t : type._elements) {
       hash_combine(seed, operator()(t));
     }
+    hash_combine(seed, type._managed_user_type);
     return seed;
   }
 }

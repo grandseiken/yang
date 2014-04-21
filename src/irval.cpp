@@ -242,12 +242,10 @@ llvm::Function* Builder::get_native_function(
   return llvm_function;
 }
 
-LexScope::LexScope(Builder& builder, const ContextInternals& context,
-                   bool create_functions)
+LexScope::LexScope(Builder& builder, bool create_functions)
   : symbol_table(Value())
   , metadata(nullptr)
   , _b(builder)
-  , _context(context)
   , _cleanup_structures(nullptr)
   , _destroy_internals(nullptr)
   , _update_refcount(nullptr)
@@ -315,7 +313,7 @@ LexScope::LexScope(Builder& builder, const ContextInternals& context,
 
 LexScope LexScope::next_lex_scope() const
 {
-  LexScope scope(_b, _context, false);
+  LexScope scope(_b, false);
   scope._cleanup_structures = _cleanup_structures;
   scope._destroy_internals = _destroy_internals;
   scope._update_refcount = _update_refcount;
@@ -438,11 +436,9 @@ void LexScope::init_structure_type(
     if (pair.second.type.is_function()) {
       refout(_b.b.CreateExtractValue(memory_load(&*it, pair.first), 1));
     }
-    else if (pair.second.type.is_user_type()) {
-      auto jt = _context.types.find(pair.second.type.get_user_type_name());
-      if (jt != _context.types.end() && jt->second.is_managed) {
-        refout(memory_load(&*it, pair.first));
-      }
+    else if (pair.second.type.is_user_type() &&
+             pair.second.type.is_managed_user_type()) {
+      refout(memory_load(&*it, pair.first));
     }
   }
   if (has_parent && !global_data) {
@@ -619,14 +615,8 @@ void LexScope::update_reference_count(const Value& value, int_t change)
     llvm::Value* eptr = _b.b.CreateExtractValue(value, 1);
     update_reference_count(fptr, eptr, change);
   }
-  if (value.type.is_user_type()) {
-    // Some of the time we don't know what the type-name is because it's been
-    // erased.
-    // TODO: make sure that's always OK.
-    auto it = _context.types.find(value.type.get_user_type_name());
-    if (it != _context.types.end() && it->second.is_managed) {
-      update_reference_count(nullptr, value, change);
-    }
+  if (value.type.is_user_type() && value.type.is_managed_user_type()) {
+    update_reference_count(nullptr, value, change);
   }
 }
 

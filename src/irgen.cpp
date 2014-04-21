@@ -33,9 +33,9 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
                          symbol_frame& globals, const ContextInternals& context)
   : IrCommon(module, engine)
   , _context(context)
-  , _chunk(_b, context)
+  , _chunk(_b)
 {
-  _scopes.emplace_back(_b, context);
+  _scopes.emplace_back(_b);
   // Set up the global data type. Since each program is designed to support
   // multiple independent instances running simultaeneously, the idea is to
   // define a structure type with a field for each global variable. Each
@@ -50,7 +50,7 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // single closure structure type with just a void pointer, and transform t.f
   // to (mem[T::f], env_mem(t)).
   symbol_frame user_type;
-  user_type.emplace("object", yang::Type::user_t());
+  user_type.emplace("object", yang::Type::user_t("", false));
   _chunk.init_structure_type("chunk", user_type, false, false);
 
   // We need to generate a reverse trampoline function for each function in the
@@ -178,6 +178,7 @@ void IrGenerator::preorder(const Node& node)
       break;
     }
 
+    case Node::SCOPE_RESOLUTION:
     case Node::FUNCTION:
       fback.metadata.push();
       fback.metadata.add(LexScope::TYPE_EXPR_CONTEXT, nullptr);
@@ -523,22 +524,31 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
 
     case Node::SCOPE_RESOLUTION:
     {
+      fback.metadata.pop();
       // Scope resolution always refers to a context function.
       std::string s =
-          node.static_info.user_type_name + "::" + node.string_value;
+          results[0].type.get_user_type_name() + "::" + node.string_value;
       auto it = _context.functions.find(s);
       return _b.function_value(it->second);
     }
     case Node::MEMBER_SELECTION:
     {
       std::string s =
-          node.static_info.user_type_name + "::" + node.string_value;
-      // TODO: don't need to allocate anything for managed user-types! We
-      // already have a chunk.
-      llvm::Value* env =
-          _chunk.allocate_closure_struct(_b.constant_ptr(nullptr));
-      _chunk.memory_store(results[0], env, "object");
-      Value v = get_member_function(s);
+          results[0].type.get_user_type_name() + "::" + node.string_value;
+      llvm::Value* env = nullptr;
+      Value v;
+
+      // Don't need to allocate anything for managed user-types: we already
+      // have a chunk.
+      if (results[0].type.is_managed_user_type()) {
+        env = results[0];
+        v = get_member_function(s, true);
+      }
+      else {
+        env = _chunk.allocate_closure_struct(_b.constant_ptr(nullptr));
+        _chunk.memory_store(results[0], env, "object");
+        v = get_member_function(s, false);
+      }
       v = _b.function_value(v.type, v, env);
       fback.update_reference_count(v, 1);
       fback.refcount_init(v);
@@ -549,7 +559,8 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     {
       // In type-context, we just want to return a user type.
       if (fback.metadata.has(LexScope::TYPE_EXPR_CONTEXT)) {
-        return yang::Type::user_t();
+        auto it = _context.types.find(node.string_value);
+        return yang::Type::user_t(node.string_value, it->second.is_managed);
       }
 
       // Load the variable, if it's there. We must be careful to only return
@@ -1005,7 +1016,7 @@ void IrGenerator::create_function(
   _b.b.SetInsertPoint(main_block);
 }
 
-Value IrGenerator::get_member_function(const std::string& name)
+Value IrGenerator::get_member_function(const std::string& name, bool managed)
 {
   auto it = _member_functions.find(name);
   if (it != _member_functions.end()) {
@@ -1032,11 +1043,15 @@ Value IrGenerator::get_member_function(const std::string& name)
   _b.b.SetInsertPoint(block);
 
   Value genf = _b.function_value(jt->second);
-  closure = _b.b.CreateBitCast(closure, _chunk.structure_type());
-  auto object = _chunk.memory_load(closure, "object");
-
   std::vector<Value> fargs;
-  fargs.emplace_back(full_type.get_function_arg_type(0), object);
+  if (managed) {
+    fargs.emplace_back(full_type.get_function_arg_type(0), closure);
+  }
+  else {
+    closure = _b.b.CreateBitCast(closure, _chunk.structure_type());
+    auto object = _chunk.memory_load(closure, "object");
+    fargs.emplace_back(full_type.get_function_arg_type(0), object);
+  }
   std::size_t i = 0;
   for (auto it = f->arg_begin(); it != --f->arg_end(); ++it) {
     fargs.emplace_back(full_type.get_function_arg_type(++i), it);
@@ -1100,7 +1115,12 @@ Value IrGenerator::get_constructor(const std::string& type)
   _b.b.CreateRet(_b.b.CreateBitCast(chunk, _b.void_ptr_type()));
   _b.b.SetInsertPoint(prev);
 
-  Value v(jt->second.type, f);
+  // Convert signature to return managed type.
+  std::vector<yang::Type> args;
+  for (std::size_t i = 0; i < jt->second.type.get_function_num_args(); ++i) {
+    args.push_back(jt->second.type.get_function_arg_type(i));
+  }
+  Value v(yang::Type::function_t(yang::Type::user_t(type, true), args), f);
   _constructors.emplace(type, v);
   return v;
 }

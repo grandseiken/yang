@@ -162,11 +162,9 @@ struct Node {
   std::string string_value;
 
   // We mostly don't need to pass any type information between the static
-  // checker and the IR generator, except when dealing with user types (whose
-  // names are erased in LLVM), and for closure scope information.
+  // checker and the IR generator, except for closure scope information.
   typedef std::unordered_map<std::string, yang::Type> symbol_frame;
   struct mutable_struct {
-    std::string user_type_name;
     std::size_t scope_number = 0;
     symbol_frame closed_environment;
   };
