@@ -140,16 +140,16 @@ TEST_F(YangTest, UserTypes)
 const std::string TestManagedUserTypesStr = R"(
 export global {
   const con = Managed;
-  var m = con();
+  var m = con(2);
 }
 export make_user_type = Managed()
 {
-  return Managed();
+  return Managed(17);
 }
 export get_some_count = int()
 {
   const t = m.get_count();
-  m = con();
+  m = con(4);
   return t;
 }
 )";
@@ -159,15 +159,15 @@ TEST_F(YangTest, ManagedUserTypes)
   if (!filter("user_types")) {
     return;
   }
-  // TODO: arbitrary-arity constructors.
 
   std::size_t count = 0;
   struct Managed {
     std::size_t count;
+    int_t data;
   };
-  auto constructor = make_fn([&]()
+  auto constructor = make_fn([&](int_t data)
   {
-    return new Managed{count++};
+    return new Managed{count++, data};
   });
   auto destructor = make_fn([&](Managed* m)
   {
@@ -189,10 +189,11 @@ TEST_F(YangTest, ManagedUserTypes)
       auto sef = inst.call<Ref<Managed>>("make_user_type");
       EXPECT_EQ(ref->count, 1);
       EXPECT_EQ(sef->count, 2);
+      EXPECT_EQ(ref->data, 17);
       EXPECT_EQ(count, 3);
 
-      auto con = inst.get_global<Function<Ref<Managed>()>>("con");
-      EXPECT_EQ(con()->count, 3);
+      auto con = inst.get_global<Function<Ref<Managed>(int_t)>>("con");
+      EXPECT_EQ(con(0)->count, 3);
       EXPECT_EQ(count, 4);
     }
     instance("");

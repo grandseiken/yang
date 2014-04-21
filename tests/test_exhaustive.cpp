@@ -348,8 +348,10 @@ const std::string TestExhaustiveRefCountStr = R"(
 fn = int()()
 {
   closed var v = 0;
+  closed const m = MuserType();
   return int()
   {
+    m;
     return ++v;
   };
 }

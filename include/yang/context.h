@@ -104,9 +104,9 @@ public:
   void register_type(const std::string& name);
 
   // Add a managed user type.
-  template<typename T>
+  template<typename T, typename... Args>
   void register_managed_type(const std::string& name,
-                             const Function<T*()>& constructor,
+                             const Function<T*(Args...)>& constructor,
                              const Function<void(T*)>& destructor);
 
   // Add a member function to a user type.
@@ -243,9 +243,9 @@ void Context::register_type(const std::string& name)
   symbol.is_managed = false;
 }
 
-template<typename T>
+template<typename T, typename... Args>
 void Context::register_managed_type(const std::string& name,
-                                    const Function<T*()>& constructor,
+                                    const Function<T*(Args...)>& constructor,
                                     const Function<void(T*)>& destructor)
 {
   check_type_unique<T>(name);
