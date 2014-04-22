@@ -12,6 +12,8 @@
 
 namespace yang {
 namespace internal {
+template<typename>
+struct TypeInfo;
 struct Prefix;
 
 // Boost's metaprogramming list implementation fakes variadic templates for

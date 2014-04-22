@@ -10,14 +10,6 @@
 
 namespace yang {
 
-namespace internal {
-  class IrCommon;
-  class Type;
-  template<typename>
-  struct TypeInfo;
-  struct GenericFunction;
-}
-
 class Type {
 public:
 

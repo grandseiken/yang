@@ -186,7 +186,7 @@ std::string context_get_type_name_impl(const ContextInternals& internals)
 }
 
 template<typename T>
-struct TypeInfo<T*> {
+struct TypeInfoImpl<T*> {
   yang::Type operator()(const ContextInternals& context,
                         bool ignore_managed_mismatch = false) const
   {
@@ -208,7 +208,7 @@ struct TypeInfo<T*> {
 };
 
 template<typename T>
-struct TypeInfo<Ref<T>> {
+struct TypeInfoImpl<Ref<T>> {
   yang::Type operator()(const ContextInternals& context,
                         bool ignore_managed_mismatch = false) const
   {

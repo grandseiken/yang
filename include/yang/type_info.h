@@ -13,14 +13,11 @@ namespace yang {
 namespace internal {
 struct ContextInternals;
 
-// Currently, it's not clear how it would be possible to also support user
-// functions taking arguments by const-ref, since the calling convention
-// can't be known when Yang code makes the call. We could require const-ref
-// arguments where it matters (vectors and functions); or maybe somehow wrap
-// one in the other.
-// TODO: can it be done with judicious std::remove_reference?
+// TODO: should support C++ functions taking arguments by const reference, but
+// it's a bit tricky. It has to be done in the reverse trampoline somehow,
+// possibly by looking up the calling convention in the NativeFunction object?
 template<typename T>
-struct TypeInfo {
+struct TypeInfoImpl {
   static_assert(sizeof(T) != sizeof(T), "use of unsupported type");
 
   // Avoid extra unnecessary error messages (beyond static assert above).
@@ -36,7 +33,7 @@ struct TypeInfo {
 };
 
 template<>
-struct TypeInfo<void> {
+struct TypeInfoImpl<void> {
   yang::Type operator()(const ContextInternals&, bool = false) const
   {
     return yang::Type::void_t();
@@ -49,7 +46,7 @@ struct TypeInfo<void> {
 };
 
 template<>
-struct TypeInfo<int_t> {
+struct TypeInfoImpl<int_t> {
   yang::Type operator()(const ContextInternals&, bool = false) const
   {
     return yang::Type::int_t();
@@ -62,7 +59,7 @@ struct TypeInfo<int_t> {
 };
 
 template<>
-struct TypeInfo<float_t> {
+struct TypeInfoImpl<float_t> {
   yang::Type operator()(const ContextInternals&, bool = false) const
   {
     return yang::Type::float_t();
@@ -75,7 +72,7 @@ struct TypeInfo<float_t> {
 };
 
 template<std::size_t N>
-struct TypeInfo<ivec_t<N>> {
+struct TypeInfoImpl<ivec_t<N>> {
   yang::Type operator()(const ContextInternals&, bool = false) const
   {
     return yang::Type::int_vector_t(N);
@@ -88,7 +85,7 @@ struct TypeInfo<ivec_t<N>> {
 };
 
 template<std::size_t N>
-struct TypeInfo<fvec_t<N>> {
+struct TypeInfoImpl<fvec_t<N>> {
   yang::Type operator()(const ContextInternals&, bool = false) const
   {
     return yang::Type::float_vector_t(N);
@@ -139,7 +136,7 @@ struct ArgsTypeInfo<A, Args...> {
 };
 
 template<typename R, typename... Args>
-struct TypeInfo<Function<R(Args...)>> {
+struct TypeInfoImpl<Function<R(Args...)>> {
   yang::Type operator()(const ContextInternals& context,
                         bool ignore_managed_mismatch = false) const
   {
@@ -156,6 +153,23 @@ struct TypeInfo<Function<R(Args...)>> {
     return yang::Type::function_t(TypeInfo<R>()(), args);
   }
 };
+
+// Wrapper in case we need to add other modifiers.
+template<typename T>
+struct TypeInfoBase {
+  yang::Type operator()(const ContextInternals& context,
+                        bool ignore_managed_mismatch = false) const
+  {
+    return TypeInfoImpl<T>()(context, ignore_managed_mismatch);
+  }
+
+  yang::Type operator()() const
+  {
+    return TypeInfoImpl<T>()();
+  }
+};
+template<typename T>
+struct TypeInfo : TypeInfoBase<T> {};
 
 // End namespace yang::internal.
 }

@@ -17,6 +17,8 @@ namespace llvm {
 
 namespace yang {
 namespace internal {
+
+struct GenericFunction;
 typedef std::unordered_map<std::string, yang::Type> symbol_frame;
 
 struct Structure {
