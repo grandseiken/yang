@@ -175,6 +175,7 @@ TEST_F(YangTest, ManagedUserTypes)
     std::size_t count;
     int_t data;
   };
+  struct BadManaged {};
   auto constructor = make_fn([&](int_t data)
   {
     return new Managed{count++, data};
@@ -218,6 +219,20 @@ TEST_F(YangTest, ManagedUserTypes)
   }
   instance("");
   EXPECT_EQ(count, 0);
+
+  auto bad_ctor = make_fn([](Managed* m)
+  {
+    return (BadManaged*)nullptr;
+  });
+  auto worse_ctor = make_fn([](BadManaged* m)
+  {
+    return m;
+  });
+  auto dtor = make_fn([](BadManaged*){});
+  EXPECT_THROW(
+      ctxt.register_managed_type("bad", bad_ctor, dtor), runtime_error);
+  EXPECT_THROW(
+      ctxt.register_managed_type("worse", worse_ctor, dtor), runtime_error);
 }
 
 // End namespace yang.

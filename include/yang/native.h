@@ -311,7 +311,7 @@ bool NativeType<void>::is() const
 
 bool NativeType<void>::is(const NativeType& other) const
 {
-  return id() == (&other)->id();
+  return id() == other.id();
 }
 
 template<typename T>

@@ -135,8 +135,7 @@ private:
 
   template<typename R, typename... Args>
   void register_function_internal(
-      const std::string& name, const Function<R(Args...)>& f,
-      bool ignore_managed_mismatch = false);
+      const std::string& name, const Function<R(Args...)>& f);
 
   friend class Program;
   friend const internal::ContextInternals&
@@ -184,13 +183,12 @@ std::string context_get_type_name_impl(const ContextInternals& internals)
 
 template<typename T>
 struct TypeInfoImpl<T*> {
-  yang::Type operator()(const ContextInternals& context,
-                        bool ignore_managed_mismatch = false) const
+  yang::Type operator()(const ContextInternals& context) const
   {
     if (!context_has_type_impl<T>(context)) {
       throw runtime_error("use of unregistered user type");
     }
-    if (!ignore_managed_mismatch && context_is_managed_impl<T>(context)) {
+    if (context_is_managed_impl<T>(context)) {
       throw runtime_error("use of `" + context_get_type_name_impl<T>(context) +
                           "` as an unmanaged user type");
     }
@@ -206,13 +204,12 @@ struct TypeInfoImpl<T*> {
 
 template<typename T>
 struct TypeInfoImpl<Ref<T>> {
-  yang::Type operator()(const ContextInternals& context,
-                        bool ignore_managed_mismatch = false) const
+  yang::Type operator()(const ContextInternals& context) const
   {
     if (!context_has_type_impl<T>(context)) {
       throw runtime_error("use of unregistered user type");
     }
-    if (!ignore_managed_mismatch && !context_is_managed_impl<T>(context)) {
+    if (!context_is_managed_impl<T>(context)) {
       throw runtime_error("use of `" + context_get_type_name_impl<T>(context) +
                           "` as a managed user type");
     }
@@ -245,6 +242,10 @@ void Context::register_managed_type(const std::string& name,
                                     const Function<T*(Args...)>& constructor,
                                     const Function<void(T*)>& destructor)
 {
+  // Ensure the constructor doesn't take the type itself as an argument,
+  // because it would be the wrong kind of user type and would be useless
+  // anyway.
+  internal::TypeInfo<Function<void(Args...)>>()(*_internals);
   check_type<T>(name);
   if (_internals->functions.find(name) != _internals->functions.end()) {
     throw runtime_error(
@@ -254,11 +255,17 @@ void Context::register_managed_type(const std::string& name,
   auto& symbol = _internals->types[name];
   symbol.native.obj = std::unique_ptr<internal::NativeType<T*>>(
       new internal::NativeType<T*>());
+  // Constructor/destructor work with T* rather than Ref<T> so we need to delay
+  // setting is_managed until after.
+  try {
+    register_function_internal(name + "::!", constructor);
+    register_function_internal(name + "::~", destructor);
+  }
+  catch (...) {
+    _internals->types.erase(name);
+    throw;
+  }
   symbol.is_managed = true;
-  // Constructor/destructor work with T* rather than Ref<T> so we need to ignore
-  // the usual verification.
-  register_function_internal(name + "::!", constructor, true);
-  register_function_internal(name + "::~", destructor, true);
 }
 
 template<typename T, typename R, typename... Args>
@@ -349,8 +356,7 @@ void Context::check_type(const std::string& name) const
 
 template<typename R, typename... Args>
 void Context::register_function_internal(
-    const std::string& name, const Function<R(Args...)>& f,
-    bool ignore_managed_mismatch)
+    const std::string& name, const Function<R(Args...)>& f)
 {
   auto it = _internals->functions.find(name);
   if (it != _internals->functions.end()) {
@@ -360,8 +366,7 @@ void Context::register_function_internal(
 
   // Info lookup might throw; make sure not to enter anything in the function
   // table until after that.
-  yang::Type t = internal::TypeInfo<Function<R(Args...)>>()(
-      *_internals, ignore_managed_mismatch);
+  yang::Type t = internal::TypeInfo<Function<R(Args...)>>()(*_internals);
   internal::GenericFunction& symbol = _internals->functions[name];
   symbol.type = t;
   symbol.ptr =
