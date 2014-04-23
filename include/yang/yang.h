@@ -13,5 +13,6 @@
 #include "program.h"
 #include "type.h"
 #include "typedefs.h"
+#include "value.h"
 
 #endif

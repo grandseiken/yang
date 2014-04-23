@@ -11,6 +11,9 @@
 
 namespace yang {
 namespace internal {
+
+template<typename>
+struct TypeInfo;
 struct ContextInternals;
 
 // TODO: should support C++ functions taking arguments by const reference, but

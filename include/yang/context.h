@@ -55,16 +55,8 @@
 //
 // Further off (helpful stuff that can be emulated without needing to be built-
 // -in right away):
-// TODO: a standard library (as a Context).
-// TODO: add a generic value class for easy generic behaviour on C++ side.
-// TODO: add some kind of built-in data structures, including at least a generic
-// map<K, V> type. Decide on semantics (e.g. garbage collection).
-// TODO: make sure the exposed APIs have sensible and useful interfaces; e.g.,
-// should they have accessors to retrieve all possible useful data; do they
-// return strings or output to streams; etc.
-// TODO: in particular, it should probably be possible to to call Context
-// functions (free functions, member functions, constructors) directly from
-// the Context without instantiationg anything.
+// TODO: a standard library (as a Context?), possibly including some built-in
+// data structures (like a generic map<K, V> type).
 // TODO: add a layer of abstraction so the LLVM backend can be swapped out
 // easily (e.g. for a bytecode backend).
 namespace yang {
@@ -74,9 +66,7 @@ namespace internal {
 // on them). It might make more sense for Contexts to be completely immutable
 // with a builder mechanism, but since they can only be *added* to currently,
 // everything should work even if they're modified after they've been used to
-// instantiate a program.... I think.
-// TODO: lazily copy the internal data structure if it's modified after the
-// Context has been used?
+// instantiate a program.
 struct ContextInternals {
   struct user_type_info {
     internal::GenericNativeType native;

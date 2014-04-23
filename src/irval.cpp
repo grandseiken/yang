@@ -356,6 +356,8 @@ void LexScope::init_structure_type(
   auto query_type = llvm::FunctionType::get(_b.void_type(), query_args, false);
   std::vector<llvm::Type*> type_list;
 
+  // TODO: most of these should really be in a vtable somewhere rather than
+  // explicitly stored in every object.
   // The first element in closure structures is a pointer to the parent
   // structure.
   type_list.push_back(_b.void_ptr_type());
