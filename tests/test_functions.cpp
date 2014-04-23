@@ -48,7 +48,7 @@ TEST_F(YangTest, CppFunctions)
   {
     return int_t(u->id * 11);
   });
-  auto get_cpp = make_fn([&]()
+  auto get_cpp = make_fn([&]
   {
     return cpp;
   });

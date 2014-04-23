@@ -180,9 +180,9 @@ TEST_F(YangTest, FunctionRefCounting)
 
   auto ctxt = context();
   int_t n = 0;
-  ctxt.register_function("get_fn", make_fn([&]()
+  ctxt.register_function("get_fn", make_fn([&]
   {
-    return make_fn([&](){return ++n;});
+    return make_fn([&]{return ++n;});
   }));
 
   auto inst = instance(ctxt, TestFunctionRefCountingStr);
@@ -190,7 +190,7 @@ TEST_F(YangTest, FunctionRefCounting)
   EXPECT_EQ(inst.get_global<intf_t>("stored")(), 0);
 
   // No refcounting necessary.
-  auto f = make_fn([]()
+  auto f = make_fn([]
   {
     return 13;
   });
@@ -200,7 +200,7 @@ TEST_F(YangTest, FunctionRefCounting)
 
   {
     // Goes out of scope before we use it.
-    auto g = make_fn([]()
+    auto g = make_fn([]
     {
       return 42;
     });
@@ -211,7 +211,7 @@ TEST_F(YangTest, FunctionRefCounting)
 
   {
     // The same thing but via set_global.
-    auto g = make_fn([]()
+    auto g = make_fn([]
     {
       return 43;
     });
@@ -222,10 +222,10 @@ TEST_F(YangTest, FunctionRefCounting)
 
   // Goes out of scope before we even return to Yang.
   int_t h_contents = 99;
-  auto h = make_fn([&]()
+  auto h = make_fn([&]
   {
     // Make it a bit complicated so it's not all optimised away.
-    std::function<int_t()> t = [&]()
+    std::function<int_t()> t = [&]
     {
       return ++h_contents;
     };
@@ -239,9 +239,9 @@ TEST_F(YangTest, FunctionRefCounting)
   EXPECT_EQ(inst.get_global<intf_t>("stored")(), 106);
 
   // Stored only in local while constructing new functions in C++.
-  auto callout = make_fn([]()
+  auto callout = make_fn([]
   {
-    return make_fn([](){});
+    return make_fn([]{});
   });
   inst.call<void>("store_in_local_callout", callout);
   EXPECT_EQ(inst.get_global<intf_t>("stored")(), 110);
@@ -332,7 +332,7 @@ TEST_F(YangTest, ApiRefCounting)
     Program prog = program("");
     {
       auto ctxt = context();
-      ctxt.register_function("f", make_fn([]()
+      ctxt.register_function("f", make_fn([]
       {
         return int_t(17);
       }));

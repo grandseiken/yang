@@ -16,9 +16,6 @@ template<typename>
 struct TypeInfo;
 struct ContextInternals;
 
-// TODO: should support C++ functions taking arguments by const reference, but
-// it's a bit tricky. It has to be done in the reverse trampoline somehow,
-// possibly by looking up the calling convention in the NativeFunction object?
 template<typename T>
 struct TypeInfoImpl {
   static_assert(sizeof(T) != sizeof(T), "use of unsupported type");
@@ -157,7 +154,7 @@ struct TypeInfoImpl<Function<R(Args...)>> {
   }
 };
 
-// Wrapper in case we need to add other modifiers.
+// Wrapper for other modifiers.
 template<typename T>
 struct TypeInfoBase {
   yang::Type operator()(const ContextInternals& context,
@@ -172,7 +169,24 @@ struct TypeInfoBase {
   }
 };
 template<typename T>
+struct TypeInfoError {
+  static_assert(
+      sizeof(T) != sizeof(T),
+      "yang::Functions taking arguments by reference are not yet supported");
+};
+// TODO: should support C++ functions taking arguments by const reference, but
+// it's a bit tricky. It has to be done in the reverse trampoline somehow,
+// possibly by looking up the calling convention in the NativeFunction object?
+template<typename T>
 struct TypeInfo : TypeInfoBase<T> {};
+template<typename T>
+struct TypeInfo<T&> : TypeInfoError<T> {};
+template<typename T>
+struct TypeInfo<T&&> : TypeInfoError<T> {};
+template<typename T>
+struct TypeInfo<const T&> : TypeInfoError<T> {};
+template<typename T>
+struct TypeInfo<const T&&> : TypeInfoError<T> {};
 
 // End namespace yang::internal.
 }

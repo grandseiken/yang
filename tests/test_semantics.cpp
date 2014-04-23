@@ -272,5 +272,79 @@ TEST_F(YangTest, TestTco)
   // TODO: EXPECT_NO_THROW(inst.call<int_t>("tco_fac", 1000000)).
 }
 
+const std::string TestNamespacesStr = R"(
+export fn = int()
+{
+  const m = outer::MType();
+  const t = make_type();
+
+  return outer::inner::f() +
+      outer::g() +
+      other::
+             h() +
+      t.mem() + other::Type::mem(t) +
+      m.mem() + outer::MType::mem(m);
+}
+)";
+
+TEST_F(YangTest, NamespacesTest)
+{
+  if (!filter("semantics")) {
+    return;
+  }
+
+  struct type {};
+  struct inner_type {};
+  auto make_inner = make_fn([]
+  {
+    return new inner_type;
+  });
+  auto delete_inner = make_fn([](inner_type* t)
+  {
+    delete t;
+  });
+
+  auto inner_inner_ctxt = context(false);
+  inner_inner_ctxt.register_function("f", make_fn([]
+  {
+    return int_t(17);
+  }));
+
+  auto inner_ctxt = context(false);
+  inner_ctxt.register_namespace("inner", inner_inner_ctxt);
+  inner_ctxt.register_function("g", make_fn([]
+  {
+    return int_t(12);
+  }));
+  inner_ctxt.register_managed_type("MType", make_inner, delete_inner);
+  inner_ctxt.register_member_function("mem", make_fn([](Ref<inner_type>)
+  {
+    return int_t(1);
+  }));
+
+  auto other_ctxt = context(false);
+  other_ctxt.register_function("h", make_fn([]
+  {
+    return int_t(10);
+  }));
+  other_ctxt.register_type<type>("Type");
+
+  auto ctxt = context();
+  ctxt.register_namespace("outer", inner_ctxt);
+  ctxt.register_namespace("other", other_ctxt);
+  ctxt.register_member_function("mem", make_fn([](type*)
+  {
+    return int_t(2);
+  }));
+  type closed_type;
+  ctxt.register_function("make_type", make_fn([&]
+  {
+    return &closed_type;
+  }));
+
+  auto inst = instance(ctxt, TestNamespacesStr);
+  EXPECT_EQ(inst.call<int_t>("fn"), 45);
+}
+
 // End namespace yang.
 }

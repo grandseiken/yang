@@ -32,7 +32,6 @@
 // can exist as well to get the current program instance as an interface value.
 //
 // Misc stuff:
-// TODO: context combination and scopes.
 // TODO: as alternative to textual include, allow code-sharing by way of
 // treating a Program as a Context (using LLVM modules to avoid the need for
 // complicated trampolining back and forth). Also, treat an Instance as a
@@ -55,6 +54,7 @@
 //
 // Further off (helpful stuff that can be emulated without needing to be built-
 // -in right away):
+// TODO: allow namespaces directly in Yang code?
 // TODO: a standard library (as a Context?), possibly including some built-in
 // data structures (like a generic map<K, V> type).
 // TODO: add a layer of abstraction so the LLVM backend can be swapped out
@@ -63,10 +63,7 @@ namespace yang {
 namespace internal {
 
 // Data preserved while it's needed (by Context objects or Programs that depend
-// on them). It might make more sense for Contexts to be completely immutable
-// with a builder mechanism, but since they can only be *added* to currently,
-// everything should work even if they're modified after they've been used to
-// instantiate a program.
+// on them).
 struct ContextInternals {
   struct user_type_info {
     internal::GenericNativeType native;
@@ -75,9 +72,12 @@ struct ContextInternals {
   typedef std::unordered_map<std::string, user_type_info> type_map;
   typedef std::unordered_map<
       std::string, internal::GenericFunction> function_map;
+  typedef std::unordered_set<std::string> namespace_set;
 
+  namespace_set namespaces;
   type_map types;
   function_map functions;
+  mutable bool immutable;
 };
 
 // End namespace internal.
@@ -87,6 +87,9 @@ class Context {
 public:
 
   Context();
+
+  // Add the contents of another context into a namespace.
+  void register_namespace(const std::string& name, const Context& context);
 
   // Add a user type. Types must be registered before registering functions that
   // make use of them.
@@ -108,6 +111,8 @@ public:
       const std::string& name, const Function<R(Ref<T>, Args...)>& f);
 
   // Add a globally-available function to the context.
+  // TODO: perhaps functions should conflict with typenames and namespaces in
+  // general, rather than just constructors?
   template<typename R, typename... Args>
   void register_function(
       const std::string& name, const Function<R(Args...)>& f);
@@ -123,8 +128,10 @@ public:
 private:
 
   template<typename T>
-  void check_type_unique(const std::string& name) const;
+  void check_type(const std::string& name) const;
+  void check_namespace(const std::string& name) const;
   void check_identifier(const std::string& ident) const;
+  void copy_internals();
 
   template<typename R, typename... Args>
   void register_function_internal(
@@ -225,8 +232,8 @@ struct TypeInfoImpl<Ref<T>> {
 template<typename T>
 void Context::register_type(const std::string& name)
 {
-  check_type_unique<T>(name);
-  check_identifier(name);
+  check_type<T>(name);
+  copy_internals();
   auto& symbol = _internals->types[name];
   symbol.native.obj = std::unique_ptr<internal::NativeType<T*>>(
       new internal::NativeType<T*>());
@@ -238,20 +245,20 @@ void Context::register_managed_type(const std::string& name,
                                     const Function<T*(Args...)>& constructor,
                                     const Function<void(T*)>& destructor)
 {
-  check_type_unique<T>(name);
-  check_identifier(name);
+  check_type<T>(name);
   if (_internals->functions.find(name) != _internals->functions.end()) {
     throw runtime_error(
         "managed type `" + name + "` conflicts with registered function");
   }
+  copy_internals();
   auto& symbol = _internals->types[name];
   symbol.native.obj = std::unique_ptr<internal::NativeType<T*>>(
       new internal::NativeType<T*>());
   symbol.is_managed = true;
   // Constructor/destructor work with T* rather than Ref<T> so we need to ignore
   // the usual verification.
-  register_function_internal(name + "::!" + name, constructor, true);
-  register_function_internal(name + "::~" + name, destructor, true);
+  register_function_internal(name + "::!", constructor, true);
+  register_function_internal(name + "::~", destructor, true);
 }
 
 template<typename T, typename R, typename... Args>
@@ -263,6 +270,8 @@ void Context::register_member_function(
         "member `" + name + "` registered on unregistered type");
   }
   check_identifier(name);
+
+  copy_internals();
   std::string type_name = get_type_name<T>();
   register_function_internal(type_name + "::" + name, f);
 }
@@ -276,6 +285,8 @@ void Context::register_member_function(
         "member `" + name + "` registered on unregistered type");
   }
   check_identifier(name);
+
+  copy_internals();
   std::string type_name = get_type_name<T>();
   register_function_internal(type_name + "::" + name, f);
 }
@@ -285,11 +296,13 @@ void Context::register_function(
     const std::string& name, const Function<R(Args...)>& f)
 {
   check_identifier(name);
-  std::string cname = name + "::!" + name;
+  std::string cname = name + "::!";
   if (_internals->functions.find(cname) != _internals->functions.end()) {
     throw runtime_error(
         "function `" + name + "` conflicts with registered managed type");
   }
+
+  copy_internals();
   register_function_internal(name, f);
 }
 
@@ -312,11 +325,17 @@ std::string Context::get_type_name() const
 }
 
 template<typename T>
-void Context::check_type_unique(const std::string& name) const
+void Context::check_type(const std::string& name) const
 {
+  check_identifier(name);
   auto it = _internals->types.find(name);
   if (it != _internals->types.end()) {
-    throw runtime_error("duplicate type `" + name + "` registered in context");
+    throw runtime_error(
+        "duplicate typename `" + name + "` registered in context");
+  }
+  auto jt = _internals->namespaces.find(name);
+  if (jt != _internals->namespaces.end()) {
+    throw runtime_error("typename `" + name + "` conflicts with namespace");
   }
   // Could also store a reverse-map from internal pointer type-id; probably
   // not a big deal.

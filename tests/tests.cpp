@@ -24,20 +24,23 @@ bool YangTest::filter(const std::string& filter)
   return _filters.empty() || _filters.count(filter);
 }
 
-Context YangTest::context()
+Context YangTest::context(bool with_types)
 {
   Context context;
+  if (!with_types) {
+    return context;
+  }
   // Standard context has a user type registed and a function to produce them.
   // Each one gets a different ID.
   context.register_type<user_type>("UserType");
-  auto get_user_type = [this]()
+  auto get_user_type = [this]
   {
     user_type* u = new user_type{_user_value_id++};
     _user_values.emplace_back(u);
     return u;
   };
 
-  auto constructor = make_fn([this]()
+  auto constructor = make_fn([this]
   {
     muser_type* m = new muser_type{_muser_value_id++};
     return m;

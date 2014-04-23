@@ -53,7 +53,7 @@ TEST_F(YangTest, ContextApiTest)
   EXPECT_THROW(ctxt.register_type<type_b>("TypeA"), runtime_error);
   EXPECT_NO_THROW(ctxt.register_type<type_b>("TypeB"));
 
-  auto voidf = make_fn([](){});
+  auto voidf = make_fn([]{});
   ASSERT_NO_THROW(ctxt.register_function("foo", voidf));
   EXPECT_THROW(ctxt.register_function("foo", voidf), runtime_error);
   EXPECT_NO_THROW(ctxt.register_function("bar", voidf));
@@ -74,7 +74,7 @@ TEST_F(YangTest, ContextApiTest)
   EXPECT_THROW(ctxt.get_type_name<type_c>(), runtime_error);
 
   // Bad names.
-  auto ccon = make_fn([](){return (type_c*)nullptr;});
+  auto ccon = make_fn([]{return (type_c*)nullptr;});
   auto voidcf = make_fn([](type_c*){});
   EXPECT_THROW(ctxt.register_function("!", voidf), runtime_error);
   EXPECT_THROW(ctxt.register_member_function("~", voidaf), runtime_error);
@@ -82,7 +82,7 @@ TEST_F(YangTest, ContextApiTest)
   EXPECT_THROW(ctxt.register_managed_type("a-b", ccon, voidcf), runtime_error);
 
   // Unregistered types.
-  auto cf = make_fn([](){
+  auto cf = make_fn([]{
     return (type_c*)nullptr;
   });
   EXPECT_THROW(ctxt.register_member_function("foo", voidcf), runtime_error);
@@ -100,10 +100,29 @@ TEST_F(YangTest, ContextApiTest)
   EXPECT_NO_THROW(ctxt.register_member_function("man", refcf));
 
   // Constructor conflicts.
-  auto dcon = make_fn([](){return (type_d*)nullptr;});
+  auto dcon = make_fn([]{return (type_d*)nullptr;});
   auto voiddf = make_fn([](type_d*){});
   EXPECT_THROW(ctxt.register_function("TypeC", voidf), runtime_error);
   EXPECT_THROW(ctxt.register_managed_type("bar", dcon, voiddf), runtime_error);
+
+  // Namespace conflicts.
+  auto dtxt = context(false);
+  EXPECT_THROW(dtxt.register_namespace("dtxt", dtxt), runtime_error);
+  EXPECT_THROW(ctxt.register_namespace("TypeC", dtxt), runtime_error);
+  EXPECT_THROW(ctxt.register_namespace("%", dtxt), runtime_error);
+  ctxt.register_namespace("dtxt", dtxt);
+  EXPECT_THROW(ctxt.register_namespace("dtxt", dtxt), runtime_error);
+  EXPECT_THROW(ctxt.register_type<type_d>("dtxt"), runtime_error);
+
+  struct type_e {};
+  struct type_f {};
+  auto etxt = context();
+  etxt.register_type<type_e>("E");
+  EXPECT_THROW(ctxt.register_function("make_e", make_fn([]{
+    return (type_e*)nullptr;
+  })), runtime_error);
+  ctxt.register_type<type_e>("E");
+  EXPECT_THROW(ctxt.register_namespace("whatever", etxt), runtime_error);
 }
 
 const std::string TestApisStr = R"(

@@ -120,7 +120,7 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
 %right P_UNARY_L
 %right T_POW
 %left '.' '[' '('
-  /* Precedence of '.' for member selection. */
+  /* Precedence of '.' and '::' for member selection. */
 %left T_IDENTIFIER T_SCOPE_RESOLUTION
 
   /* Types. */
@@ -139,6 +139,7 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
 %type <node> expr_list
 %type <node> expr_functional
 %type <node> expr
+%type <node> identifier
 %start program
 
 %%
@@ -301,12 +302,8 @@ expr
   /* Complicated type-expression interaction. */
   : T_TYPE_LITERAL
 {$$ = $1;}
-  | T_IDENTIFIER
+  | identifier
 {$$ = $1;}
-  | expr T_SCOPE_RESOLUTION T_IDENTIFIER
-{$$ = new Node(scan, $2, Node::SCOPE_RESOLUTION, $1);
- $$->string_value = $3->string_value;
- $$->extend_bounds($3);}
   | expr_functional '{' stmt_list '}'
 {$1->type = Node::TYPE_FUNCTION;
  $3->type = Node::BLOCK;
@@ -499,6 +496,15 @@ expr
   | expr '[' expr ']'
 {$$ = new Node(scan, $2, Node::VECTOR_INDEX, $1, $3);
  $$->extend_bounds($4);}
+  ;
+
+identifier
+  : T_IDENTIFIER
+{$$ = $1;}
+  | identifier T_SCOPE_RESOLUTION T_IDENTIFIER
+{$$ = $3;
+ $$->string_value = $1->string_value + "::" + $$->string_value;
+ $$->extend_inner_bounds($1);}
   ;
 
   /* Error-handling. */

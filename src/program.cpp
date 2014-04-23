@@ -35,7 +35,7 @@ Program::Program(const Context& context, const std::string& name,
   internal::ParseData data(name, contents);
   yyscan_t scan = nullptr;
 
-  auto log_errors = [&]()
+  auto log_errors = [&]
   {
     auto print = [&](const yang::ErrorInfo& error)
     {
@@ -88,6 +88,7 @@ Program::Program(const Context& context, const std::string& name,
   }
   _internals->ast = std::move(output);
 
+  context._internals->immutable = true;
   generate_ir(optimise);
 }
 

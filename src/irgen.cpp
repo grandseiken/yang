@@ -178,7 +178,6 @@ void IrGenerator::preorder(const Node& node)
       break;
     }
 
-    case Node::SCOPE_RESOLUTION:
     case Node::FUNCTION:
       fback.metadata.push();
       fback.metadata.add(LexScope::TYPE_EXPR_CONTEXT, nullptr);
@@ -522,15 +521,6 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       return Value();
     }
 
-    case Node::SCOPE_RESOLUTION:
-    {
-      fback.metadata.pop();
-      // Scope resolution always refers to a context function.
-      std::string s =
-          results[0].type.get_user_type_name() + "::" + node.string_value;
-      auto it = _context.functions.find(s);
-      return _b.function_value(it->second);
-    }
     case Node::MEMBER_SELECTION:
     {
       std::string s =
@@ -573,7 +563,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       }
 
       // It must be a context function.
-      std::string constructor = node.string_value + "::!" + node.string_value;
+      std::string constructor = node.string_value + "::!";
       auto it = _context.functions.find(constructor);
       if (it != _context.functions.end()) {
         Value v = get_constructor(node.string_value);
@@ -1085,7 +1075,7 @@ Value IrGenerator::get_constructor(const std::string& type)
 
   // Create the destructor which calls the user-type destructor (and usual chunk
   // destructor).
-  auto jt = _context.functions.find(type + "::~" + type);
+  auto jt = _context.functions.find(type + "::~");
   auto destructor_type = (llvm::FunctionType*)
       _chunk.structure_destructor()->getType()->getPointerElementType();
   auto destructor = llvm::Function::Create(
@@ -1105,7 +1095,7 @@ Value IrGenerator::get_constructor(const std::string& type)
   _b.b.CreateRetVoid();
 
   // Create the constructor (which overwrites the usual chunk destructor).
-  jt = _context.functions.find(type + "::!" + type);
+  jt = _context.functions.find(type + "::!");
   auto llvm_type = _b.raw_function_type(jt->second.type);
   auto f = llvm::Function::Create(
       llvm_type, llvm::Function::InternalLinkage, type, &_b.module);

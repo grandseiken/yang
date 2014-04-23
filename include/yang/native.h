@@ -129,6 +129,7 @@ public:
   // Check whether this is a NativeType instantiated on a particular type.
   template<typename T>
   bool is() const;
+  inline bool is(const NativeType& other) const;
 
 protected:
 
@@ -140,7 +141,7 @@ struct GenericNativeType {
   GenericNativeType()
     : obj(nullptr) {}
 
-  std::unique_ptr<NativeType<void>> obj;
+  std::shared_ptr<NativeType<void>> obj;
 };
 
 template<typename T>
@@ -306,6 +307,11 @@ bool NativeType<void>::is() const
 {
   NativeType<T> t;
   return id() == ((NativeType<void>*)&t)->id();
+}
+
+bool NativeType<void>::is(const NativeType& other) const
+{
+  return id() == (&other)->id();
 }
 
 template<typename T>

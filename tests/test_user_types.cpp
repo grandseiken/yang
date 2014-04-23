@@ -75,7 +75,7 @@ TEST_F(YangTest, UserTypes)
   {
     u->id = id;
   });
-  auto null_other_type = make_fn([]()
+  auto null_other_type = make_fn([]
   {
     return (other_t*)nullptr;
   });

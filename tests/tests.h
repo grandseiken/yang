@@ -29,7 +29,7 @@ protected:
     std::size_t id;
   };
 
-  Context context();
+  Context context(bool with_types = true);
   Program program_suppress_errors(const std::string& contents);
   Program program_suppress_errors(const Context& context,
                                   const std::string& contents);

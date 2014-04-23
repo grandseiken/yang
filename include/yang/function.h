@@ -218,7 +218,7 @@ struct GenericFunction {
   {}
 
   yang::Type type;
-  std::unique_ptr<FunctionBase> ptr;
+  std::shared_ptr<FunctionBase> ptr;
 };
 
 // Avoid including unnecessary files in this header.

@@ -108,7 +108,6 @@ void StaticChecker::preorder(const Node& node)
       _scopes.back().metadata.add(ASSIGN_LHS_CONTEXT, Type::VOID);
       break;
     case Node::FUNCTION:
-    case Node::SCOPE_RESOLUTION:
       _scopes.back().metadata.push();
       _scopes.back().metadata.add(TYPE_EXPR_CONTEXT, Type::VOID);
       break;
@@ -260,9 +259,6 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
   }
   else if (node.type == Node::BLOCK || node.type == Node::IF_STMT) {
     pop_symbol_tables();
-  }
-  else if (node.type == Node::SCOPE_RESOLUTION) {
-    _scopes.back().metadata.pop();
   }
 
   // See preorder for error.
@@ -428,24 +424,6 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
       return Type::ERROR;
 
-    case Node::SCOPE_RESOLUTION:
-    {
-      if (!results[0].user_type()) {
-        error(node, s + " applied to " + rs[0]);
-        return Type::ERROR;
-      }
-      if (results[0].is_error()) {
-        return Type::ERROR;
-      }
-      std::string s = results[0].user_type_name() + "::" + node.string_value;
-      auto context_it = _context.functions.find(s);
-      if (context_it == _context.functions.end()) {
-        error(node, "undeclared member function `" + s + "`");
-        return Type::ERROR;
-      }
-      return context_it->second.type;
-    }
-
     case Node::MEMBER_SELECTION:
     {
       if (!results[0].user_type()) {
@@ -493,7 +471,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         }
         if (it == --_scopes.rend()) {
           // Check Context if symbol isn't present in the Program table.
-          std::string cname = node.string_value + "::!" + node.string_value;
+          std::string cname = node.string_value + "::!";
           auto context_it = _context.functions.find(cname);
           if (context_it != _context.functions.end()) {
             // Replace return type of constructor with managed type.
@@ -780,7 +758,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
       const std::string& s = node.children[0]->string_value;
 
-      auto add_global = [&]()
+      auto add_global = [&]
       {
         bool exported = _scopes.back().metadata.has(EXPORT_GLOBAL);
         const Type& t = _scopes[0].symbol_table.get(s, 0).type;

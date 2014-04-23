@@ -266,7 +266,7 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
   _b.b.SetInsertPoint(block);
 
   std::vector<llvm::Value*> args;
-  auto handle = [&]()
+  auto handle = [&]
   {
     std::size_t i = 0;
     for (auto it = function->arg_begin();
