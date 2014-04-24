@@ -15,6 +15,8 @@ namespace yang {
 // A generic value wrapper than can store a value of any Yang type.
 // TODO: can this be used for anything useful? For example, calling Yang
 // functions using only Values rather than explicit types.
+// Context::register_namespace(const std::string&, const Instance&) is an
+// example of the kind of place this could really help.
 class Value {
 public:
 

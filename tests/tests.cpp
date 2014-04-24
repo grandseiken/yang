@@ -52,7 +52,7 @@ Context YangTest::context(bool with_types)
 
   context.register_member_function("foo", make_fn([](user_type*){}));
   context.register_function("get_user_type", make_fn(get_user_type));
-  context.register_managed_type("MuserType", constructor, destructor);
+  context.register_type("MuserType", constructor, destructor);
   return context;
 }
 

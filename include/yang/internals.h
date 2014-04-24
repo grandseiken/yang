@@ -19,9 +19,7 @@ namespace llvm {
 namespace yang {
 namespace internal {
 struct Node;
-
 struct ContextInternals;
-typedef std::unordered_map<std::string, yang::Type> symbol_table;
 
 // Data for a Program that is preserved as long as an Instance or some closure
 // structure needs it.

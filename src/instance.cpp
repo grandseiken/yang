@@ -53,6 +53,16 @@ Instance& Instance::operator=(const Instance& instance)
   return *this;
 }
 
+const symbol_table& Instance::get_functions() const
+{
+  return _internals->program->functions;
+}
+
+const symbol_table& Instance::get_globals() const
+{
+  return _internals->program->globals;
+}
+
 void* Instance::get_native_fp(const std::string& name) const
 {
   return get_native_fp(_internals->program->module->getFunction(name));

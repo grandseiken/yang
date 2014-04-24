@@ -6,6 +6,7 @@
 #define YANG_INCLUDE_YANG_TYPE_H
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace yang {
@@ -87,6 +88,8 @@ private:
   static Type void_type;
 
 };
+
+typedef std::unordered_map<std::string, yang::Type> symbol_table;
 
 // End namespace yang.
 }

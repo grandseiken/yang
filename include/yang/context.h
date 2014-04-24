@@ -32,10 +32,6 @@
 // can exist as well to get the current program instance as an interface value.
 //
 // Misc stuff:
-// TODO: as alternative to textual include, allow code-sharing by way of
-// treating a Program as a Context (using LLVM modules to avoid the need for
-// complicated trampolining back and forth). Also, treat an Instance as a
-// Context for sharing global state between programs?
 // TODO: better assignment with "references". E.g. a[i] and ++i should both be
 // assignable-to. Vectorised assignment? Pattern-matching assignment?
 // TODO: code hot-swapping. Careful with pointer values (e.g. functions) in
@@ -60,13 +56,15 @@
 // TODO: add a layer of abstraction so the LLVM backend can be swapped out
 // easily (e.g. for a bytecode backend).
 namespace yang {
+class Instance;
+
 namespace internal {
 
 // Data preserved while it's needed (by Context objects or Programs that depend
 // on them).
 struct ContextInternals {
   struct user_type_info {
-    internal::GenericNativeType native;
+    const void* uid;
     bool is_managed;
   };
   typedef std::unordered_map<std::string, user_type_info> type_map;
@@ -88,21 +86,32 @@ public:
 
   Context();
 
-  // Add the contents of another context into a namespace.
+  // Dump the contents of another Context into a namespace in this one.
   void register_namespace(const std::string& name, const Context& context);
+  // Add an Instance as a namespace. Everything compiled with this Context will
+  // share the state of the single given Instance.
+  void register_namespace(const std::string& name, const Instance& instance);
 
-  // Add a user type. Types must be registered before registering functions that
-  // make use of them.
+  // A slightly different kind of code-sharing between scripts would be to add
+  // a Program as a namespace, i.e. every Instance created from that Context
+  // having its own copy of the given Program's state.
+  // This can currently be hacked in by either using a separate Context with its
+  // own Instance namespace and recompiling every time, or plain old textual
+  // includes. Direct support might be nice.
+
+  // Add an (unmanaged) user type. Types must be registered before registering
+  // functions that make use of them.
   template<typename T>
   void register_type(const std::string& name);
 
   // Add a managed user type.
   template<typename T, typename... Args>
-  void register_managed_type(const std::string& name,
-                             const Function<T*(Args...)>& constructor,
-                             const Function<void(T*)>& destructor);
+  void register_type(const std::string& name,
+                     const Function<T*(Args...)>& constructor,
+                     const Function<void(T*)>& destructor);
 
-  // Add a member function to a user type.
+  // Add a member function to a user type. Unmanaged types must use the first
+  // overload, and managed types must use the second.
   template<typename T, typename R, typename... Args>
   void register_member_function(
       const std::string& name, const Function<R(T*, Args...)>& f);
@@ -152,7 +161,7 @@ template<typename T>
 bool context_has_type_impl(const ContextInternals& internals)
 {
   for (const auto& pair : internals.types) {
-    if (pair.second.native.obj->is<T*>()) {
+    if (pair.second.uid == internal::type_uid<T*>()) {
       return true;
     }
   }
@@ -163,7 +172,7 @@ template<typename T>
 bool context_is_managed_impl(const ContextInternals& internals)
 {
   for (const auto& pair : internals.types) {
-    if (pair.second.native.obj->is<T*>()) {
+    if (pair.second.uid == internal::type_uid<T*>()) {
       return pair.second.is_managed;
     }
   }
@@ -174,7 +183,7 @@ template<typename T>
 std::string context_get_type_name_impl(const ContextInternals& internals)
 {
   for (const auto& pair : internals.types) {
-    if (pair.second.native.obj->is<T*>()) {
+    if (pair.second.uid == internal::type_uid<T*>()) {
       return pair.first;
     }
   }
@@ -232,15 +241,14 @@ void Context::register_type(const std::string& name)
   check_type<T>(name);
   copy_internals();
   auto& symbol = _internals->types[name];
-  symbol.native.obj = std::unique_ptr<internal::NativeType<T*>>(
-      new internal::NativeType<T*>());
+  symbol.uid = internal::type_uid<T*>();
   symbol.is_managed = false;
 }
 
 template<typename T, typename... Args>
-void Context::register_managed_type(const std::string& name,
-                                    const Function<T*(Args...)>& constructor,
-                                    const Function<void(T*)>& destructor)
+void Context::register_type(const std::string& name,
+                            const Function<T*(Args...)>& constructor,
+                            const Function<void(T*)>& destructor)
 {
   // Ensure the constructor doesn't take the type itself as an argument,
   // because it would be the wrong kind of user type and would be useless
@@ -253,8 +261,7 @@ void Context::register_managed_type(const std::string& name,
   }
   copy_internals();
   auto& symbol = _internals->types[name];
-  symbol.native.obj = std::unique_ptr<internal::NativeType<T*>>(
-      new internal::NativeType<T*>());
+  symbol.uid = internal::type_uid<T*>();
   // Constructor/destructor work with T* rather than Ref<T> so we need to delay
   // setting is_managed until after.
   try {
@@ -347,7 +354,7 @@ void Context::check_type(const std::string& name) const
   // Could also store a reverse-map from internal pointer type-id; probably
   // not a big deal.
   for (const auto& pair : _internals->types) {
-    if (pair.second.native.obj->is<T*>()) {
+    if (pair.second.uid == internal::type_uid<T*>()) {
       throw runtime_error("duplicate types `" + name + "` and `" + pair.first +
                           "` registered in context");
     }

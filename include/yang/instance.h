@@ -41,6 +41,11 @@ public:
   template<typename T>
   T get_function(const std::string& name);
 
+  // Convenience functions (equivalent to calling the same on the Program the
+  // Instance was compiled from).
+  const symbol_table& get_functions() const;
+  const symbol_table& get_globals() const;
+
 private:
 
   template<typename>

@@ -191,7 +191,7 @@ TEST_F(YangTest, ManagedUserTypes)
   });
 
   auto ctxt = context();
-  ctxt.register_managed_type("Managed", constructor, destructor);
+  ctxt.register_type("Managed", constructor, destructor);
   ctxt.register_member_function("get_count", get_count);
   {
     auto inst = instance(ctxt, TestManagedUserTypesStr);
@@ -229,10 +229,8 @@ TEST_F(YangTest, ManagedUserTypes)
     return m;
   });
   auto dtor = make_fn([](BadManaged*){});
-  EXPECT_THROW(
-      ctxt.register_managed_type("bad", bad_ctor, dtor), runtime_error);
-  EXPECT_THROW(
-      ctxt.register_managed_type("worse", worse_ctor, dtor), runtime_error);
+  EXPECT_THROW(ctxt.register_type("bad", bad_ctor, dtor), runtime_error);
+  EXPECT_THROW(ctxt.register_type("worse", worse_ctor, dtor), runtime_error);
 }
 
 // End namespace yang.

@@ -3,6 +3,7 @@
 // MIT License. See LICENSE file for details.
 //============================================================================//
 #include <yang/context.h>
+#include <yang/instance.h>
 
 namespace {
 
@@ -44,7 +45,7 @@ void Context::register_namespace(const std::string& name,
   }
   for (const auto pair : context._internals->types) {
     for (const auto qair : _internals->types) {
-      if (pair.second.native.obj->is(*qair.second.native.obj)) {
+      if (pair.second.uid == qair.second.uid) {
         throw runtime_error(
             "type `" + pair.first + "` in context registered as namespace `"
             + name + "` duplicates type `" + qair.first + "`");
@@ -63,6 +64,28 @@ void Context::register_namespace(const std::string& name,
     _internals->functions[s].type = prefix_type(
         name + "::", _internals->functions[s].type);
   }
+}
+
+void Context::register_namespace(const std::string& name,
+                                 const Instance& instance)
+{
+  // Since this function makes the Context depend on some Instance, it would
+  // seem that an uncollectable cycle of shared_ptrs could be constructed by
+  // creating an Instance using some Context, and then registering that Instance
+  // back into the same Context as a namespace.
+  //
+  // However, this (and similar) issues are handily sidestepped by the lazy
+  // duplication of context internals. The second Context will in fact have a
+  // different internals than the original, and the cycle will be broken.
+  check_namespace(name);
+  Context context;
+  for (const auto& pair : instance.get_functions()) {
+    // TODO: what to do about types? We need to give up the idea that a type
+    // has a unique name, and rewrite all the type interaction so that C++
+    // types can have more than one name. This is the only thing that makes
+    // sense.
+  }
+  register_namespace(name, context);
 }
 
 void Context::check_namespace(const std::string& name) const

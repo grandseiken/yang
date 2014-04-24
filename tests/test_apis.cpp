@@ -79,7 +79,7 @@ TEST_F(YangTest, ContextApiTest)
   EXPECT_THROW(ctxt.register_function("!", voidf), runtime_error);
   EXPECT_THROW(ctxt.register_member_function("~", voidaf), runtime_error);
   EXPECT_THROW(ctxt.register_type<type_c>("$c"), runtime_error);
-  EXPECT_THROW(ctxt.register_managed_type("a-b", ccon, voidcf), runtime_error);
+  EXPECT_THROW(ctxt.register_type("a-b", ccon, voidcf), runtime_error);
 
   // Unregistered types.
   auto cf = make_fn([]{
@@ -92,7 +92,7 @@ TEST_F(YangTest, ContextApiTest)
   // Managed/unmanaged conflicts.
   auto refaf = make_fn([](Ref<type_a>){});
   auto refcf = make_fn([](Ref<type_c>){});
-  ctxt.register_managed_type("TypeC", ccon, voidcf);
+  ctxt.register_type("TypeC", ccon, voidcf);
   EXPECT_FALSE(ctxt.is_managed<type_a>());
   EXPECT_TRUE(ctxt.is_managed<type_c>());
   EXPECT_THROW(ctxt.register_member_function("man", voidcf), runtime_error);
@@ -103,7 +103,7 @@ TEST_F(YangTest, ContextApiTest)
   auto dcon = make_fn([]{return (type_d*)nullptr;});
   auto voiddf = make_fn([](type_d*){});
   EXPECT_THROW(ctxt.register_function("TypeC", voidf), runtime_error);
-  EXPECT_THROW(ctxt.register_managed_type("bar", dcon, voiddf), runtime_error);
+  EXPECT_THROW(ctxt.register_type("bar", dcon, voiddf), runtime_error);
 
   // Namespace conflicts.
   auto dtxt = context(false);

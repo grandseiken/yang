@@ -44,7 +44,6 @@ public:
   std::string print_ast() const;
   std::string print_ir() const;
 
-  typedef std::unordered_map<std::string, Type> symbol_table;
   const symbol_table& get_functions() const;
   const symbol_table& get_globals() const;
 

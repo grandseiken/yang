@@ -16,6 +16,10 @@
 namespace yang {
 namespace internal {
 
+// Maps types to unique identifiers.
+template<typename T>
+const void* type_uid();
+
 template<typename T>
 class NativeFunction {
   static_assert(sizeof(T) != sizeof(T),
@@ -114,52 +118,19 @@ private:
 
 };
 
-// Class for dynamic storage of an aribtrary user type.
+// Static member is guaranteed to have a different address per template
+// instantiation.
+template<typename>
+struct NativeTypeId {
+  static const void* id;
+};
 template<typename T>
-class NativeType {
-  static_assert(sizeof(T) != sizeof(T),
-                "incorrect native type argument used");
-};
-
-template<>
-class NativeType<void> {
-public:
-
-  virtual ~NativeType() {}
-  // Check whether this is a NativeType instantiated on a particular type.
-  template<typename T>
-  bool is() const;
-  inline bool is(const NativeType& other) const;
-
-protected:
-
-  virtual const void** id() const = 0;
-
-};
-
-struct GenericNativeType {
-  GenericNativeType()
-    : obj(nullptr) {}
-
-  std::shared_ptr<NativeType<void>> obj;
-};
-
+const void* NativeTypeId<T>::id = nullptr;
 template<typename T>
-class NativeType<T*> : public NativeType<void> {
-public:
-
-  ~NativeType() override {};
-
-protected:
-
-  virtual const void** id() const;
-
-private:
-
-  // Guaranteed to have a different address per template instantiation.
-  static const void* _id;
-
-};
+const void* type_uid()
+{
+  return &NativeTypeId<T>::id;
+}
 
 NativeFunction<void>::NativeFunction()
   : _reference_count(0)
@@ -301,27 +272,6 @@ auto RefCountedNativeFunction<R(Args...)>::get() -> internal&
 {
   return *_internal;
 }
-
-template<typename T>
-bool NativeType<void>::is() const
-{
-  NativeType<T> t;
-  return id() == ((NativeType<void>*)&t)->id();
-}
-
-bool NativeType<void>::is(const NativeType& other) const
-{
-  return id() == other.id();
-}
-
-template<typename T>
-const void** NativeType<T*>::id() const
-{
-  return &_id;
-}
-
-template<typename T>
-const void* NativeType<T*>::_id = nullptr;
 
 // End namespace yang::internal.
 }

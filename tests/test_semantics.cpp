@@ -316,7 +316,7 @@ TEST_F(YangTest, NamespacesTest)
   {
     return int_t(12);
   }));
-  inner_ctxt.register_managed_type("MType", make_inner, delete_inner);
+  inner_ctxt.register_type("MType", make_inner, delete_inner);
   inner_ctxt.register_member_function("mem", make_fn([](Ref<inner_type>)
   {
     return int_t(1);
