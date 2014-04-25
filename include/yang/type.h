@@ -61,20 +61,20 @@ public:
 
   // Int and float vector types.
   bool is_vector() const;
-  bool is_int_vector() const;
-  bool is_float_vector() const;
-  std::size_t get_vector_size() const;
+  bool is_ivec() const;
+  bool is_fvec() const;
+  std::size_t vector_size() const;
 
   // Function types.
   bool is_function() const;
-  std::size_t get_function_num_args() const;
-  const Type& get_function_return_type() const;
-  const Type& get_function_arg_type(std::size_t index) const;
+  std::size_t function_num_args() const;
+  const Type& function_return() const;
+  const Type& function_arg(std::size_t index) const;
 
   // User types.
   bool is_user_type() const;
   bool is_managed_user_type() const;
-  std::string get_user_type_name() const;
+  std::string user_type_name() const;
 
   bool operator==(const Type& t) const;
   bool operator!=(const Type& t) const;
@@ -84,8 +84,8 @@ public:
   static Type void_t();
   static Type int_t();
   static Type float_t();
-  static Type int_vector_t(std::size_t size);
-  static Type float_vector_t(std::size_t size);
+  static Type ivec_t(std::size_t size);
+  static Type fvec_t(std::size_t size);
   static Type function_t(
       const Type& return_t, const std::vector<Type>& args);
   template<typename>
@@ -102,7 +102,6 @@ public:
 private:
 
   friend struct std::hash<Type>;
-  friend class internal::Type;
   Type();
 
   enum type_base {

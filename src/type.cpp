@@ -11,7 +11,7 @@ std::string Type::string() const
 {
   std::string s;
   if (_base == USER_TYPE) {
-    s = get_user_type_name() + (_managed_user_type ? "&" : "*");
+    s = user_type_name() + (_managed_user_type ? "&" : "*");
   }
   else if (_base == FUNCTION) {
     s += _elements[0].string() + "(";
@@ -62,20 +62,20 @@ bool Type::is_float() const
 
 bool Type::is_vector() const
 {
-  return is_int_vector() || is_float_vector();
+  return is_ivec() || is_fvec();
 }
 
-bool Type::is_int_vector() const
+bool Type::is_ivec() const
 {
   return _base == INT && _count > 1;
 }
 
-bool Type::is_float_vector() const
+bool Type::is_fvec() const
 {
   return _base == FLOAT && _count > 1;
 }
 
-std::size_t Type::get_vector_size() const
+std::size_t Type::vector_size() const
 {
   return _count;
 }
@@ -85,17 +85,17 @@ bool Type::is_function() const
   return _base == FUNCTION;
 }
 
-std::size_t Type::get_function_num_args() const
+std::size_t Type::function_num_args() const
 {
   return _elements.empty() ? 0 : _elements.size() - 1;
 }
 
-const Type& Type::get_function_return_type() const
+const Type& Type::function_return() const
 {
   return _elements.empty() ? void_type : _elements[0];
 }
 
-const Type& Type::get_function_arg_type(std::size_t index) const
+const Type& Type::function_arg(std::size_t index) const
 {
   return 1 + index >= _elements.size() ? void_type : _elements[1 + index];
 }
@@ -110,7 +110,7 @@ bool Type::is_managed_user_type() const
   return _managed_user_type;
 }
 
-std::string Type::get_user_type_name() const
+std::string Type::user_type_name() const
 {
   return internal::type_uidstr(_user_type_uid);
 }
@@ -154,7 +154,7 @@ Type Type::float_t()
   return t;
 }
 
-Type Type::int_vector_t(std::size_t size)
+Type Type::ivec_t(std::size_t size)
 {
   if (size <= 1) {
     throw runtime_error(
@@ -165,7 +165,7 @@ Type Type::int_vector_t(std::size_t size)
   return t;
 }
 
-Type Type::float_vector_t(std::size_t size)
+Type Type::fvec_t(std::size_t size)
 {
   if (size <= 1) {
     throw runtime_error(

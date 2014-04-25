@@ -56,14 +56,14 @@ void StaticChecker::preorder(const Node& node)
     }
     // Avoid duplicated errors by adding an override context.
     _scopes.back().metadata.push();
-    _scopes.back().metadata.add(ERR_EXPR_CONTEXT, Type::VOID);
+    _scopes.back().metadata.add(ERR_EXPR_CONTEXT, {});
   }
 
   switch (node.type) {
     case Node::GLOBAL:
       if (node.int_value & Node::MODIFIER_NEGATION) {
         _scopes.emplace_back(node, "<~global>");
-        _scopes.back().metadata.add(GLOBAL_DESTRUCTOR, Type::VOID);
+        _scopes.back().metadata.add(GLOBAL_DESTRUCTOR, {});
       }
       else {
         _scopes.emplace_back(node, "<global>");
@@ -74,7 +74,7 @@ void StaticChecker::preorder(const Node& node)
           error(node, "~global marked export");
         }
         else {
-          _scopes.back().metadata.add(EXPORT_GLOBAL, Type::VOID);
+          _scopes.back().metadata.add(EXPORT_GLOBAL, {});
         }
       }
       break;
@@ -98,18 +98,17 @@ void StaticChecker::preorder(const Node& node)
       // the name.
       push_symbol_tables();
       if (node.children[0]->type == Node::IDENTIFIER) {
-        add_symbol(node, node.children[0]->string_value,
-                   Type::VOID, false, false);
+        add_symbol(node, node.children[0]->string_value, {}, false, false);
       }
       break;
     case Node::ASSIGN:
       // Change which warning references affect.
       _scopes.back().metadata.push();
-      _scopes.back().metadata.add(ASSIGN_LHS_CONTEXT, Type::VOID);
+      _scopes.back().metadata.add(ASSIGN_LHS_CONTEXT, {});
       break;
     case Node::FUNCTION:
       _scopes.back().metadata.push();
-      _scopes.back().metadata.add(TYPE_EXPR_CONTEXT, Type::VOID);
+      _scopes.back().metadata.add(TYPE_EXPR_CONTEXT, {});
       break;
     case Node::BLOCK:
     case Node::IF_STMT:
@@ -121,7 +120,7 @@ void StaticChecker::preorder(const Node& node)
       _scopes.back().metadata.push();
       // Insert a marker into the symbol table that break and continue
       // statements can check for.
-      _scopes.back().metadata.add(LOOP_BODY, Type::VOID);
+      _scopes.back().metadata.add(LOOP_BODY, {});
       break;
 
     default: {}
@@ -135,14 +134,13 @@ void StaticChecker::infix(const Node& node, const result_list& results)
     {
       // Erase type context.
       _scopes.back().metadata.pop();
-      Type t = results[0];
       // Make sure it's const so functions can't set themselves to different
       // values inside the body.
-      t.set_const(true);
+      Type t = results[0].make_const(true);
       if (!t.function()) {
         // Grammar no longer allows this, but leave it in for future-proofing.
         error(node, "function defined with non-function type " + t.string());
-        t = Type::ERROR;
+        t = Type(true);
       }
 
       // Functions need two symbol table frames: one for recursive hack, one for
@@ -178,8 +176,8 @@ void StaticChecker::infix(const Node& node, const result_list& results)
             error(*ptr, "duplicate argument name `" + name + "`");
           }
           // Arguments are implicitly const!
-          Type u = t.elements(elem);
-          u.set_const(true);
+          Type u = (elem ? t.external().function_arg(elem - 1) :
+                           t.external().function_return()).make_const(true);
           add_symbol(*ptr, name, u, false);
           // TODO: arguments are implicitly closed so far, since it's a bit
           // tricky to allow closed on arglists in the parser. Fix that.
@@ -188,7 +186,7 @@ void StaticChecker::infix(const Node& node, const result_list& results)
           ++elem;
         }
       }
-      enter_function(t.elements(0));
+      enter_function(t.external().function_return());
       push_symbol_tables();
       break;
     }
@@ -222,6 +220,27 @@ void StaticChecker::infix(const Node& node, const result_list& results)
 
 Type StaticChecker::visit(const Node& node, const result_list& results)
 {
+  auto element_type = [](const Type& t) -> Type
+  {
+    return t.is_error() ? Type(true) :
+        t.is_int() ? yang::Type::int_t() :
+        t.is_float() ? yang::Type::float_t() : Type(true);
+  };
+  auto numeric_type = [](bool is_float, std::size_t num) -> Type
+  {
+    return is_float ?
+        (num == 1 ? yang::Type::float_t() : yang::Type::fvec_t(num)) :
+        (num == 1 ? yang::Type::int_t() : yang::Type::ivec_t(num));
+  };
+  auto binary_type = [&](const Type& a, const Type& b, bool to_int) -> Type
+  {
+    if (a.is_error() || b.is_error()) {
+      return Type(true);
+    }
+    std::size_t max = std::max(a.external().vector_size(),
+                               b.external().vector_size());
+    return numeric_type(results[0].is_float() && !to_int, max);
+  };
   std::string s = "`" + node_op_string(node.type) + "`";
   std::vector<std::string> rs;
   for (const Type& t : results) {
@@ -267,7 +286,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
   if (context_err) {
     // And make sure to pop the override context.
     _scopes.back().metadata.pop();
-    return Type::ERROR;
+    return Type(true);
   }
 
   // To make the error messages useful, the general idea here is to fall back to
@@ -279,16 +298,16 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
   // not the operand type was intended to be int or float.
   switch (node.type) {
     case Node::TYPE_VOID:
-      return Type::VOID;
+      return {};
     case Node::TYPE_INT:
-      return Type(Type::INT, node.int_value);
+      return numeric_type(false, node.int_value);
     case Node::TYPE_FLOAT:
-      return Type(Type::FLOAT, node.int_value);
+      return numeric_type(true, node.int_value);
     case Node::TYPE_FUNCTION:
     {
       type_function:
       bool err = results[0].is_error();
-      Type t(Type::FUNCTION, results[0]);
+      std::vector<yang::Type> args;
       for (std::size_t i = 1; i < results.size(); ++i) {
         if (!results[i].not_void()) {
           error(*node.children[i], "function type with `void` argument type");
@@ -296,29 +315,28 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         if (results[i].is_error()) {
           err = true;
         }
-        t.add_element(results[i]);
+        args.push_back(results[i].external());
       }
-      return err ? Type::ERROR : t;
+      return err ? Type(true) :
+          yang::Type::function_t(results[0].external(), args);
     }
 
     case Node::PROGRAM:
       // Make sure to warn on unused top-level elements. This doesn't actually
       // pop anything, since it's the last frame.
       pop_symbol_tables();
-      return Type::VOID;
     case Node::GLOBAL:
-      return Type::VOID;
+      return {};
     case Node::GLOBAL_ASSIGN:
     {
       if (node.children[0]->type != Node::IDENTIFIER) {
         if (!results[0].is_error()) {
           error(node, "assignments must be directly to an identifier");
         }
-        return Type::VOID;
+        return {};
       }
       const std::string& s = node.children[0]->string_value;
-      Type t = results[1];
-      t.set_const(true);
+      Type t = results[1].make_const(true);
       if (!results[1].function()) {
         error(node, "global assignment of type " + rs[1]);
         add_symbol_checking_collision(node, s, results[1], true, false);
@@ -331,16 +349,16 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       // Only export functions get added to the function table. They also are
       // automatically assumed to be referenced.
       if (!t.is_error() && node.int_value & Node::MODIFIER_EXPORT) {
-        _functions_output.emplace(s, t.external(true));
+        _functions_output.emplace(s, t.external().make_exported(true));
         _scopes[0].symbol_table[s].warn_reads = false;
       }
-      return Type::VOID;
+      return {};
     }
     case Node::FUNCTION:
     {
       // We've already reported an error in infix() if the first type is not
       // a function type.
-      return results[0].function() ? results[0] : Type::ERROR;
+      return results[0].function() ? results[0] : Type(true);
     }
     case Node::NAMED_EXPRESSION:
       return results[0];
@@ -364,16 +382,16 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
           return t;
         }
       }
-      return Type::ERROR;
+      return Type(true);
     }
 
     case Node::EMPTY_STMT:
     case Node::EXPR_STMT:
-      return Type::ERROR;
+      return Type(true);
     case Node::RETURN_VOID_STMT:
     case Node::RETURN_STMT:
     {
-      Type t = node.type == Node::RETURN_STMT ? results[0] : Type::VOID;
+      Type t = node.type == Node::RETURN_STMT ? results[0] : Type();
       // If we're not in a function, we must be in a global block.
       if (!inside_function()) {
         error(node, "return statement inside `global`");
@@ -390,7 +408,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     }
     case Node::IF_STMT:
     {
-      if (!results[0].is(Type::INT)) {
+      if (!results[0].is(yang::Type::int_t())) {
         error(*node.children[0], "branching on " + rs[0]);
       }
       if (results.size() > 2) {
@@ -404,49 +422,49 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       // An IF_STMT definitely returns a value only if both branches definitely
       // return a value.
       Type left = results[1];
-      Type right = results.size() > 2 ? results[2] : Type::ERROR;
-      return !left.is_error() && !right.is_error() ? left : Type::ERROR;
+      Type right = results.size() > 2 ? results[2] : Type(true);
+      return !left.is_error() && !right.is_error() ? left : Type(true);
     }
     case Node::DO_WHILE_STMT:
     case Node::FOR_STMT:
-      if (!results[1].is(Type::INT)) {
+      if (!results[1].is(yang::Type::int_t())) {
         error(*node.children[1], "branching on " + rs[1]);
       }
-      return Type::ERROR;
+      return Type(true);
     case Node::BREAK_STMT:
       if (!_scopes.back().metadata.has(LOOP_BODY)) {
         error(node, "`break` outside of loop body");
       }
-      return Type::ERROR;
+      return Type(true);
     case Node::CONTINUE_STMT:
       if (!_scopes.back().metadata.has(LOOP_BODY)) {
         error(node, "`continue` outside of loop body");
       }
-      return Type::ERROR;
+      return Type(true);
 
     case Node::MEMBER_SELECTION:
     {
       if (!results[0].user_type()) {
         error(node, "member function access on " + rs[0]);
-        return Type::ERROR;
+        return Type(true);
       }
       if (results[0].is_error()) {
-        return Type::ERROR;
+        return Type(true);
       }
 
-      const auto& m = _context.member_lookup(
-          results[0].external(false), node.string_value);
+      const auto& m =
+          _context.member_lookup(results[0].external(), node.string_value);
       if (m.type.is_void()) {
         error(node, "undeclared member function `" + s + "`");
-        return Type::ERROR;
+        return Type(true);
       }
       // Omit the first argument (self). Unfortunately, the indirection here
       // makes errors when calling the returned function somewhat vague.
-      Type t = Type(Type::FUNCTION, m.type.get_function_return_type());
-      for (std::size_t i = 1; i < m.type.get_function_num_args(); ++i) {
-        t.add_element(m.type.get_function_arg_type(i));
+      std::vector<yang::Type> args;
+      for (std::size_t i = 1; i < m.type.function_num_args(); ++i) {
+        args.push_back(m.type.function_arg(i));
       }
-      return t;
+      return yang::Type::function_t(m.type.function_return(), args);
     }
 
     case Node::IDENTIFIER:
@@ -458,7 +476,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
           return t.type;
         }
         error(node, "undeclared type `" + node.string_value + "`");
-        return Type::ERROR;
+        return Type(true);
       }
 
       // Regular symbols.
@@ -472,12 +490,12 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
           const auto& t = _context.type_lookup(node.string_value);
           if (t.type.is_managed_user_type()) {
             // Fix the constructor return type.
-            Type tt(Type::FUNCTION, t.type);
+            std::vector<yang::Type> args;
             for (std::size_t i = 0;
-                 i < t.constructor.type.get_function_num_args(); ++i) {
-              tt.add_element(t.constructor.type.get_function_arg_type(i));
+                 i < t.constructor.type.function_num_args(); ++i) {
+              args.push_back(t.constructor.type.function_arg(i));
             }
-            return tt;
+            return yang::Type::function_t(t.type, args);
           }
 
           const auto& f = _context.function_lookup(node.string_value);
@@ -486,7 +504,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
           }
 
           error(node, "undeclared identifier `" + node.string_value + "`");
-          add_symbol(node, node.string_value, Type::ERROR, false, false);
+          add_symbol(node, node.string_value, Type(true), false, false);
           it = _scopes.rbegin();
           break;
         }
@@ -504,7 +522,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         symbol.warn_closed = false;
         it->function.static_info.closed_environment.emplace(
             node.string_value + "/" + std::to_string(symbol.scope_number),
-            symbol.type.external(false));
+            symbol.type.external());
       }
 
       // Update read/write warnings.
@@ -513,9 +531,9 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       return symbol.type;
     }
     case Node::INT_LITERAL:
-      return Type::INT;
+      return yang::Type::int_t();
     case Node::FLOAT_LITERAL:
-      return Type::FLOAT;
+      return yang::Type::float_t();
 
     case Node::TERNARY:
     {
@@ -540,11 +558,11 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
 
       if (results[0].is_vector() && !err &&
-          (!results[1].is_vector() ||
-           results[0].count() != results[1].count())) {
-        error(node, "length-" + std::to_string(results[0].count()) +
-                    " vectorised branch applied to " +
-                    rs[1] + " and " + rs[2]);
+          (!results[1].is_vector() || results[0].external().vector_size() !=
+                                      results[1].external().vector_size())) {
+        error(node, "length-" +
+                    std::to_string(results[0].external().vector_size()) +
+                    " vectorised branch applied to " + rs[1] + " and " + rs[2]);
       }
       return results[1].unify(results[2]);
     }
@@ -562,7 +580,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
       if (!results[0].function()) {
         error(node, s + " applied to " + rs[0]);
-        return Type::ERROR;
+        return Type(true);
       }
       if (!results[0].element_size(results.size())) {
         error(node, rs[0] + " called with " +
@@ -576,7 +594,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
           }
         }
       }
-      return results[0].elements(0);
+      return results[0].is_error() ?
+          Type(true) : results[0].external().function_return();
 
     case Node::LOGICAL_OR:
     case Node::LOGICAL_AND:
@@ -588,15 +607,17 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     case Node::BITWISE_XOR:
     case Node::BITWISE_LSHIFT:
     case Node::BITWISE_RSHIFT:
+    {
       // Takes two integers and produces an integer, with vectorisation.
-      if (!results[0].count_binary_match(results[1])) {
+      if (!results[0].is_binary_match(results[1])) {
         error(node, s + " applied to " + rs[0] + " and " + rs[1]);
-        return Type::ERROR;
+        return Type(true);
       }
       else if (!results[0].is_int() || !results[1].is_int()) {
         error(node, s + " applied to " + rs[0] + " and " + rs[1]);
       }
-      return Type(Type::INT, std::max(results[0].count(), results[1].count()));
+      return binary_type(results[0], results[1], true);
+    }
 
     case Node::POW:
     case Node::MOD:
@@ -604,16 +625,17 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     case Node::SUB:
     case Node::MUL:
     case Node::DIV:
+    {
       // Takes two integers or floats and produces a value of the same type,
       // with vectorisation.
-      if (!results[0].count_binary_match(results[1]) ||
+      if (!results[0].is_binary_match(results[1]) ||
           (!(results[0].is_int() && results[1].is_int()) &&
            !(results[0].is_float() && results[1].is_float()))) {
         error(node, s + " applied to " + rs[0] + " and " + rs[1]);
-        return Type::ERROR;
+        return Type(true);
       }
-      return Type(results[0].base(),
-                  std::max(results[0].count(), results[1].count()));
+      return binary_type(results[0], results[1], false);
+    }
 
     case Node::EQ:
     case Node::NE:
@@ -621,17 +643,19 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     case Node::LE:
     case Node::GT:
     case Node::LT:
+    {
       // Takes two integers or floats and produces an integer, with
       // vectorisation.
-      if (!results[0].count_binary_match(results[1])) {
+      if (!results[0].is_binary_match(results[1])) {
         error(node, s + " applied to " + rs[0] + " and " + rs[1]);
-        return Type::ERROR;
+        return Type(true);
       }
       else if (!(results[0].is_int() && results[1].is_int()) &&
                !(results[0].is_float() && results[1].is_float())) {
         error(node, s + " applied to " + rs[0] + " and " + rs[1]);
       }
-      return Type(Type::INT, std::max(results[0].count(), results[1].count()));
+      return binary_type(results[0], results[1], true);
+    }
 
     case Node::FOLD_LOGICAL_OR:
     case Node::FOLD_LOGICAL_AND:
@@ -643,7 +667,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       if (!results[0].is_vector() || !results[0].is_int()) {
         error(node, s + " applied to " + rs[0]);
       }
-      return Type::INT;
+      return yang::Type::int_t();
 
     case Node::FOLD_POW:
     case Node::FOLD_MOD:
@@ -654,9 +678,9 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       if (!results[0].is_vector() ||
           !(results[0].is_int() || results[0].is_float())) {
         error(node, s + " applied to " + rs[0]);
-        return Type::ERROR;
+        return Type(true);
       }
-      return results[0].base();
+      return element_type(results[0]);
 
     case Node::FOLD_EQ:
     case Node::FOLD_NE:
@@ -668,19 +692,19 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
           !(results[0].is_int() || results[0].is_float())) {
         error(node, s + " applied to " + rs[0]);
       }
-      return Type::INT;
+      return yang::Type::int_t();
 
     case Node::LOGICAL_NEGATION:
     case Node::BITWISE_NEGATION:
       if (!results[0].is_int()) {
         error(node, s + " applied to " + rs[0]);
       }
-      return Type(Type::INT, results[0].count());
+      return numeric_type(false, results[0].external().vector_size());
 
     case Node::ARITHMETIC_NEGATION:
       if (!(results[0].is_int() || results[0].is_float())) {
         error(node, s + " applied to " + rs[0]);
-        return Type::ERROR;
+        return Type(true);
       }
       return results[0];
     case Node::INCREMENT:
@@ -688,13 +712,13 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     {
       if (!(results[0].is_int() || results[0].is_float())) {
         error(node, s + " applied to " + rs[0]);
-        return Type::ERROR;
+        return Type(true);
       }
       Type t = results[0];
       if (node.children[0]->type == Node::IDENTIFIER) {
-        if (results[0].is_const()) {
+        if (results[0].external().is_const()) {
           error(node, s + " applied to " + rs[0]);
-          t.set_const(false);
+          t = t.make_const(false);
         }
         std::string s = node.children[0]->string_value;
         for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it) {
@@ -722,9 +746,9 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         Type t = it->symbol_table[s].type;
         if (!t.is(results[1])) {
           error(node, rs[1] + " assigned to `" + s + "` of type " + t.string());
-          return Type::ERROR;
+          return Type(true);
         }
-        else if (t.is_const()) {
+        else if (t.external().is_const()) {
           error(node, "assignment to `" + s + "` of type " + t.string());
         }
         return results[1];
@@ -760,7 +784,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         bool exported = _scopes.back().metadata.has(EXPORT_GLOBAL);
         const Type& t = _scopes[0].symbol_table.get(s, 0).type;
         if (!t.is_error()) {
-          _globals_output.emplace(s, t.external(exported));
+          _globals_output.emplace(s, t.external().make_exported(exported));
         }
         if (exported) {
           _scopes[0].symbol_table.get(s, 0).warn_writes = false;
@@ -774,8 +798,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         node.static_info.scope_number = _scopes.back().scope_numbering.back();
       }
 
-      Type t = results[1];
-      t.set_const(node.type == Node::ASSIGN_CONST);
+      Type t = results[1].make_const(node.type == Node::ASSIGN_CONST);
       // Merge warnings for immediate assign hack.
       bool warn_reads = true;
       if (use_function_immediate_assign_hack(node)) {
@@ -806,13 +829,13 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       if (!results[0].is_float()) {
         error(node, s + " applied to " + rs[0]);
       }
-      return Type(Type::INT, results[0].count());
+      return numeric_type(false, results[0].external().vector_size());
 
     case Node::FLOAT_CAST:
       if (!results[0].is_int()) {
         error(node, s + " applied to " + rs[0]);
       }
-      return Type(Type::FLOAT, results[0].count());
+      return numeric_type(true, results[0].external().vector_size());
 
     case Node::VECTOR_CONSTRUCT:
     {
@@ -829,7 +852,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
           // Store the bad types we saw already so as not to repeat the error.
           error(*node.children[i], s + ": element with non-primitive type " +
                                    rs[i] + " in vector construction");
-          t = Type::ERROR;
+          t = Type(true);
           bad_types.insert(results[i]);
         }
         if (i) {
@@ -844,20 +867,20 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
       if (unify_error) {
         error(node, s + " applied to different types " + ts);
-        return Type(Type::ERROR, results.size());
+        return Type(true);
       }
-      return Type(t.base(), results.size());
+      return numeric_type(t.is_float(), results.size());
     }
     case Node::VECTOR_INDEX:
-      if (!results[0].is_vector() || !results[1].is(Type::INT)) {
+      if (!results[0].is_vector() || !results[1].is(yang::Type::int_t())) {
         error(node, s + " applied to " + rs[0] + " and " + rs[1]);
-        return results[0].is_vector() ? results[0].base() : Type::ERROR;
+        return results[0].is_vector() ? element_type(results[0]) : Type(true);
       }
-      return results[0].base();
+      return element_type(results[0]);
 
     default:
       error(node, "unimplemented construct");
-      return Type::ERROR;
+      return Type(true);
   }
 }
 
@@ -950,7 +973,7 @@ void StaticChecker::add_symbol(
   sym.declaration = &node;
   // We don't care if there are no writes to a const symbol, so we just set
   // warn_writes to false.
-  sym.warn_writes = unreferenced_warning && !type.is_const();
+  sym.warn_writes = unreferenced_warning && !type.external().is_const();
   sym.warn_reads = unreferenced_warning;
   (global ? _scopes[0] : _scopes.back()).symbol_table.add(name, sym);
 }
@@ -990,8 +1013,7 @@ void StaticChecker::error(
 }
 
 StaticChecker::symbol_t::symbol_t()
-  : type(Type::VOID)
-  , closed(false)
+  : closed(false)
   , scope_number(0)
   , declaration(nullptr)
   , warn_writes(false)
@@ -1004,7 +1026,7 @@ StaticChecker::lex_scope_t::lex_scope_t(
     const Node& function, const std::string& name)
   : function(function)
   , name(name)
-  , metadata(Type::VOID)
+  , metadata(Type())
   , symbol_table(symbol_t())
   , scope_numbering{0}
   , scope_numbering_next(1)

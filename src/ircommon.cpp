@@ -125,13 +125,13 @@ llvm::Function* IrCommon::get_trampoline_function(
   // definitely going to work. Essentially, we unpack vectors into individual
   // values, and convert return values to pointer arguments; the trampoline
   // takes the actual function to be called as the final argument.
-  const yang::Type& return_t = function_type.get_function_return_type();
+  const yang::Type& return_t = function_type.function_return();
   // Handle the transitive closure.
   if (return_t.is_function()) {
     get_trampoline_function(return_t, forward);
   }
-  for (std::size_t i = 0; i < function_type.get_function_num_args(); ++i) {
-    yang::Type t = function_type.get_function_arg_type(i);
+  for (std::size_t i = 0; i < function_type.function_num_args(); ++i) {
+    yang::Type t = function_type.function_arg(i);
     if (t.is_function()) {
       get_reverse_trampoline_function(t, forward);
     }
@@ -158,21 +158,20 @@ llvm::Function* IrCommon::get_trampoline_function(
   auto jt = function->arg_begin();
   std::size_t return_args =
       return_t.is_void() ? 0 :
-      return_t.is_vector() ? return_t.get_vector_size() :
+      return_t.is_vector() ? return_t.vector_size() :
       return_t.is_function() ? 2 : 1;
   for (std::size_t i = 0; i < return_args; ++i) {
     jt->setName("r" + std::to_string(i));
     ++jt;
   }
 
-  std::size_t function_args = function_type.get_function_num_args();
-  for (std::size_t i = 0; i < function_args; ++i) {
-    const yang::Type& t = function_type.get_function_arg_type(i);
+  for (std::size_t i = 0; i < function_type.function_num_args(); ++i) {
+    const yang::Type& t = function_type.function_arg(i);
 
     if (t.is_vector()) {
-      std::size_t size = t.get_vector_size();
-      llvm::Value* v = (t.is_int_vector() ?
-          _b.constant_int_vector(0, size) : _b.constant_float_vector(0, size));
+      std::size_t size = t.vector_size();
+      llvm::Value* v = t.is_ivec() ? _b.constant_ivec(0, size) :
+                                     _b.constant_fvec(0, size);
 
       for (std::size_t j = 0; j < size; ++j) {
         jt->setName("a" + std::to_string(i) + "_" + std::to_string(j));
@@ -203,7 +202,7 @@ llvm::Function* IrCommon::get_trampoline_function(
   llvm::Value* result = _b.b.CreateCall(callee, call_args);
   if (return_t.is_vector()) {
     auto it = function->arg_begin();
-    for (std::size_t i = 0; i < return_t.get_vector_size(); ++i) {
+    for (std::size_t i = 0; i < return_t.vector_size(); ++i) {
       llvm::Value* v = _b.b.CreateExtractElement(result, _b.constant_int(i));
       _b.b.CreateStore(v, it++);
     }
@@ -232,12 +231,12 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
     return it->second;
   }
   // Handle transitive closure.
-  const yang::Type& return_t = function_type.get_function_return_type();
+  const yang::Type& return_t = function_type.function_return();
   if (return_t.is_function()) {
     get_reverse_trampoline_function(return_t, forward);
   }
-  for (std::size_t i = 0; i < function_type.get_function_num_args(); ++i) {
-    yang::Type t = function_type.get_function_arg_type(i);
+  for (std::size_t i = 0; i < function_type.function_num_args(); ++i) {
+    yang::Type t = function_type.function_arg(i);
     if (t.is_function()) {
       get_trampoline_function(t, forward);
     }
@@ -314,8 +313,8 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
   }
   else if (return_t.is_vector()) {
     std::vector<llvm::Value*> allocs;
-    std::size_t size = return_t.get_vector_size();
-    llvm::Type* t = return_t.is_int_vector() ? _b.int_type() : _b.float_type();
+    std::size_t size = return_t.vector_size();
+    llvm::Type* t = return_t.is_ivec() ? _b.int_type() : _b.float_type();
     for (std::size_t i = 0; i < size; ++i) {
       llvm::Value* v = _b.b.CreateAlloca(t, nullptr);
       allocs.push_back(v);
@@ -323,9 +322,9 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
     }
     handle();
 
-    llvm::Value* v = return_t.is_int_vector() ?
-        _b.constant_int_vector(0, size) : _b.constant_float_vector(0, size);
-    for (std::size_t i = 0; i < return_t.get_vector_size(); ++i) {
+    llvm::Value* v = return_t.is_ivec() ?
+        _b.constant_ivec(0, size) : _b.constant_fvec(0, size);
+    for (std::size_t i = 0; i < return_t.vector_size(); ++i) {
       llvm::Value* load = _b.b.CreateLoad(allocs[i]);
       v = _b.b.CreateInsertElement(v, load, _b.constant_int(i));
     }

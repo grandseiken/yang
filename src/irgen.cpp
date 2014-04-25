@@ -386,10 +386,10 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       return yang::Type::void_t();
     case Node::TYPE_INT:
       return node.int_value > 1 ?
-          yang::Type::int_vector_t(node.int_value) : yang::Type::int_t();
+          yang::Type::ivec_t(node.int_value) : yang::Type::int_t();
     case Node::TYPE_FLOAT:
       return node.int_value > 1 ?
-          yang::Type::float_vector_t(node.int_value) : yang::Type::float_t();
+          yang::Type::fvec_t(node.int_value) : yang::Type::float_t();
     case Node::TYPE_FUNCTION:
     {
       type_function:
@@ -419,7 +419,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     }
     case Node::FUNCTION:
     {
-      if (results[0].type.get_function_return_type().is_void()) {
+      if (results[0].type.function_return().is_void()) {
         fback.dereference_scoped_locals(0);
         _b.b.CreateRetVoid();
       }
@@ -639,10 +639,9 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       llvm::Type* type = _b.int_type();
       llvm::Value* constant = nullptr;
       if (results[1].type.is_vector()) {
-        std::size_t n = results[1].type.get_vector_size();
-        constant =
-            _b.constant_int_vector(node.type == Node::LOGICAL_OR, n);
-        type = _b.int_vector_type(n);
+        std::size_t n = results[1].type.vector_size();
+        constant = _b.constant_ivec(node.type == Node::LOGICAL_OR, n);
+        type = _b.ivec_type(n);
       }
       else {
         constant = _b.constant_int(node.type == Node::LOGICAL_OR);
@@ -722,7 +721,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     case Node::ARITHMETIC_NEGATION:
     {
       Value v = _b.default_for_type(results[0].type);
-      v.irval = results[0].type.is_int() || results[0].type.is_int_vector() ?
+      v.irval = results[0].type.is_int() || results[0].type.is_ivec() ?
           _b.b.CreateSub(v, results[0]) : _b.b.CreateFSub(v, results[0]);
       return v;
     }
@@ -731,7 +730,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     {
       Value v = _b.default_for_type(
           results[0].type, node.type == Node::INCREMENT ? 1 : -1);
-      v.irval = results[0].type.is_int() || results[0].type.is_int_vector() ?
+      v.irval = results[0].type.is_int() || results[0].type.is_ivec() ?
           _b.b.CreateAdd(results[0], v) : _b.b.CreateFAdd(results[0], v);
       if (node.children[0]->type == Node::IDENTIFIER) {
         const std::string& s = node.children[0]->string_value;
@@ -795,9 +794,8 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
 
     case Node::VECTOR_CONSTRUCT:
     {
-      Value v = results[0].type.is_int() ?
-          _b.constant_int_vector(0, results.size()) :
-          _b.constant_float_vector(0, results.size());
+      Value v = results[0].type.is_int() ? _b.constant_ivec(0, results.size()) :
+                                           _b.constant_fvec(0, results.size());
       for (std::size_t i = 0; i < results.size(); ++i) {
         v.irval = _b.b.CreateInsertElement(
             v.irval, results[i], _b.constant_int(i));
@@ -807,11 +805,11 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     case Node::VECTOR_INDEX:
     {
       // Indexing out-of-bounds produces constant zero.
-      Value v = results[0].type.is_int_vector() ?
+      Value v = results[0].type.is_ivec() ?
           _b.constant_int(0) : _b.constant_float(0);
       auto ge = _b.b.CreateICmpSGE(results[1], _b.constant_int(0));
       auto lt = _b.b.CreateICmpSLT(
-          results[1], _b.constant_int(results[0].type.get_vector_size()));
+          results[1], _b.constant_int(results[0].type.vector_size()));
 
       auto in = _b.b.CreateAnd(ge, lt);
       v.irval =_b.b.CreateSelect(
@@ -983,7 +981,7 @@ void IrGenerator::create_function(
        it != --function->arg_end(); ++it, ++arg_num) {
     const std::string& name =
         node.children[0]->children[1 + arg_num]->string_value;
-    const yang::Type& arg = function_type.get_function_arg_type(arg_num);
+    const yang::Type& arg = function_type.function_arg(arg_num);
     llvm::Value* storage = assign_storage(arg, name, 0);
     it->setName(name);
 
@@ -1021,11 +1019,11 @@ Value IrGenerator::get_member_function(
 
   const auto& cf = _context.member_lookup(type, name);
   std::vector<yang::Type> args;
-  for (std::size_t i = 1; i < cf.type.get_function_num_args(); ++i) {
-    args.push_back(cf.type.get_function_arg_type(i));
+  for (std::size_t i = 1; i < cf.type.function_num_args(); ++i) {
+    args.push_back(cf.type.function_arg(i));
   }
   yang::Type closed_type =
-      yang::Type::function_t(cf.type.get_function_return_type(), args);
+      yang::Type::function_t(cf.type.function_return(), args);
 
   auto llvm_type = _b.raw_function_type(closed_type);
   auto f = llvm::Function::Create(
@@ -1039,16 +1037,16 @@ Value IrGenerator::get_member_function(
 
   std::vector<Value> fargs;
   if (type.is_managed_user_type()) {
-    fargs.emplace_back(cf.type.get_function_arg_type(0), closure);
+    fargs.emplace_back(cf.type.function_arg(0), closure);
   }
   else {
     closure = _b.b.CreateBitCast(closure, _chunk.structure_type());
     auto object = _chunk.memory_load(closure, "object");
-    fargs.emplace_back(cf.type.get_function_arg_type(0), object);
+    fargs.emplace_back(cf.type.function_arg(0), object);
   }
   std::size_t i = 0;
   for (auto it = f->arg_begin(); it != --f->arg_end(); ++it) {
-    fargs.emplace_back(cf.type.get_function_arg_type(++i), it);
+    fargs.emplace_back(cf.type.function_arg(++i), it);
   }
   _b.b.CreateRet(create_call(_b.function_value(cf), fargs));
   _b.b.SetInsertPoint(prev);
@@ -1098,7 +1096,7 @@ Value IrGenerator::get_constructor(const std::string& type)
   std::vector<Value> fargs;
   std::size_t i = 0;
   for (auto it = f->arg_begin(); it != --f->arg_end(); ++it) {
-    fargs.emplace_back(ctor.type.get_function_arg_type(++i), it);
+    fargs.emplace_back(ctor.type.function_arg(++i), it);
   }
   Value r = create_call(_b.function_value(ctor), fargs);
   llvm::Value* global = --f->arg_end();
@@ -1111,8 +1109,8 @@ Value IrGenerator::get_constructor(const std::string& type)
 
   // Convert signature to return managed type.
   std::vector<yang::Type> args;
-  for (std::size_t i = 0; i < ctor.type.get_function_num_args(); ++i) {
-    args.push_back(ctor.type.get_function_arg_type(i));
+  for (std::size_t i = 0; i < ctor.type.function_num_args(); ++i) {
+    args.push_back(ctor.type.function_arg(i));
   }
   Value v(yang::Type::function_t(ct.type, args), f);
   _constructors.emplace(type, v);
@@ -1164,7 +1162,7 @@ Value IrGenerator::create_call(const Value& f, const std::vector<Value>& args)
   }
 
   _b.b.SetInsertPoint(merge_block);
-  const yang::Type& return_t = f.type.get_function_return_type();
+  const yang::Type& return_t = f.type.function_return();
   if (!return_t.is_void()) {
     auto phi_v = _b.b.CreatePHI(_b.get_llvm_type(return_t), 2);
     Value phi(return_t, phi_v);
@@ -1188,9 +1186,9 @@ Value IrGenerator::i2b(const Value& v)
 Value IrGenerator::b2i(const Value& v)
 {
   if (v.type.is_vector()) {
-    std::size_t size = v.type.get_vector_size();
-    return Value(yang::Type::int_vector_t(size),
-                 _b.b.CreateZExt(v, _b.int_vector_type(size)));
+    std::size_t size = v.type.vector_size();
+    return Value(yang::Type::ivec_t(size),
+                 _b.b.CreateZExt(v, _b.ivec_type(size)));
   }
   return Value(yang::Type::int_t(), _b.b.CreateZExt(v, _b.int_type()));
 }
@@ -1198,9 +1196,9 @@ Value IrGenerator::b2i(const Value& v)
 Value IrGenerator::i2f(const Value& v)
 {
   if (v.type.is_vector()) {
-    std::size_t size = v.type.get_vector_size();
-    return Value(yang::Type::float_vector_t(size),
-                 _b.b.CreateSIToFP(v, _b.float_vector_type(size)));
+    std::size_t size = v.type.vector_size();
+    return Value(yang::Type::fvec_t(size),
+                 _b.b.CreateSIToFP(v, _b.fvec_type(size)));
   }
   return Value(yang::Type::float_t(), _b.b.CreateSIToFP(v, _b.float_type()));
 }
@@ -1208,7 +1206,7 @@ Value IrGenerator::i2f(const Value& v)
 Value IrGenerator::f2i(const Value& v)
 {
   yang::Type type = v.type.is_vector() ?
-      yang::Type::int_vector_t(v.type.get_vector_size()) : yang::Type::int_t();
+      yang::Type::ivec_t(v.type.vector_size()) : yang::Type::int_t();
   Value zero = _b.default_for_type(v.type);
 
   // Mathematical floor. Implements the algorithm:
@@ -1249,7 +1247,7 @@ Value IrGenerator::raw_binary(const Node& node, const Value& v, const Value& u)
       node.type == Node::FOLD_LT ? Node::LT :
       node.type;
 
-  if (v.type.is_int() or v.type.is_int_vector()) {
+  if (v.type.is_int() or v.type.is_ivec()) {
     llvm::Value* out =
         type == Node::LOGICAL_OR ? _b.b.CreateOr(vi, ui) :
         type == Node::LOGICAL_AND ? _b.b.CreateAnd(vi, ui) :
@@ -1306,9 +1304,9 @@ llvm::Value* IrGenerator::vectorise(
         f2i(Value(yang::Type::float_t(), r)) : r;
   }
 
-  std::size_t size = v.type.get_vector_size();
+  std::size_t size = v.type.vector_size();
   Value result = to_float ?
-      _b.constant_float_vector(0, size) : _b.default_for_type(v.type);
+      _b.constant_fvec(0, size) : _b.default_for_type(v.type);
   for (std::size_t i = 0; i < size; ++i) {
     std::vector<llvm::Value*> args{
         flt(_b.b.CreateExtractElement(v, _b.constant_int(i))),
@@ -1316,7 +1314,7 @@ llvm::Value* IrGenerator::vectorise(
     llvm::Value* call = _b.b.CreateCall(f, args);
     result.irval = _b.b.CreateInsertElement(result, call, _b.constant_int(i));
   }
-  return to_float && v.type.is_int_vector() ? f2i(result) : result;
+  return to_float && v.type.is_ivec() ? f2i(result) : result;
 }
 
 llvm::Value* IrGenerator::lsh(const Value& v, const Value& u)
@@ -1350,7 +1348,7 @@ llvm::Value* IrGenerator::mod(const Value& v, const Value& u)
 {
   // Should be able to use LLVM "frem" instruction, but breaks on e.g.
   // const t = 1; return t. % 2.;
-  if (!v.type.is_int() && !v.type.is_int_vector()) {
+  if (!v.type.is_int() && !v.type.is_ivec()) {
     std::vector<llvm::Type*> args{_b.float_type(), _b.float_type()};
     auto fmod_ptr = _b.get_native_function(
         "fmod", (yang::void_fp)&::fmod,
@@ -1378,7 +1376,7 @@ llvm::Value* IrGenerator::mod(const Value& v, const Value& u)
 
 llvm::Value* IrGenerator::div(const Value& v, const Value& u)
 {
-  if (!v.type.is_int() && !v.type.is_int_vector()) {
+  if (!v.type.is_int() && !v.type.is_ivec()) {
     return _b.b.CreateFDiv(v, u);
   }
 
@@ -1415,7 +1413,7 @@ Value IrGenerator::binary(
   const Value& single = left.type.is_vector() ? right : left;
   Value v = _b.default_for_type(vector.type);
 
-  for (std::size_t i = 0; i < vector.type.get_vector_size(); ++i) {
+  for (std::size_t i = 0; i < vector.type.vector_size(); ++i) {
     v.irval = _b.b.CreateInsertElement(v, single, _b.constant_int(i));
   }
   return left.type.is_vector() ?
@@ -1426,11 +1424,11 @@ Value IrGenerator::fold(const Node& node, const Value& value,
                         bool to_bool, bool with_ands, bool right_assoc)
 {
   yang::Type etype =
-      value.type.is_int_vector() ? yang::Type::int_t() : yang::Type::float_t();
+      value.type.is_ivec() ? yang::Type::int_t() : yang::Type::float_t();
 
   // Convert each argument to boolean, if necessary.
   std::vector<Value> elements;
-  for (std::size_t i = 0; i < value.type.get_vector_size(); ++i) {
+  for (std::size_t i = 0; i < value.type.vector_size(); ++i) {
     Value v(etype, _b.b.CreateExtractElement(value, _b.constant_int(i)));
     elements.push_back(to_bool ? i2b(v) : v);
   }

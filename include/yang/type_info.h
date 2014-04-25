@@ -58,7 +58,7 @@ template<std::size_t N>
 struct TypeInfoImpl<ivec_t<N>> {
   yang::Type operator()() const
   {
-    return yang::Type::int_vector_t(N);
+    return yang::Type::ivec_t(N);
   }
 };
 
@@ -66,7 +66,7 @@ template<std::size_t N>
 struct TypeInfoImpl<fvec_t<N>> {
   yang::Type operator()() const
   {
-    return yang::Type::float_vector_t(N);
+    return yang::Type::fvec_t(N);
   }
 };
 

@@ -8,177 +8,96 @@ namespace yang {
 namespace internal {
 
 Type::Type(const yang::Type& type)
-  : Type(VOID)
+  : _wrap(type)
+  , _error(false)
 {
-  _base =
-      type.is_int() || type.is_int_vector() ? INT :
-      type.is_float() || type.is_float_vector() ? FLOAT :
-      type.is_function() ? FUNCTION :
-      type.is_user_type() ? USER_TYPE :
-      VOID;
-  _const = type.is_const();
-  _count = type.get_vector_size();
-  _user_type_uid = type._user_type_uid;
-  _managed_user_type = type.is_managed_user_type();
-  if (type.is_function()) {
-    _elements.push_back(type.get_function_return_type());
-    for (std::size_t i = 0; i < type.get_function_num_args(); ++i) {
-      _elements.push_back(type.get_function_arg_type(i));
-    }
-  }
 }
 
-Type::Type(type_base base, std::size_t count)
-  : _base(base)
-  , _count(count)
-  , _const(false)
-  , _user_type_uid(nullptr)
-  , _managed_user_type(false)
+Type::Type(bool error)
+  : _wrap(yang::Type::void_t())
+  , _error(error)
 {
-  if (base == FUNCTION || count == 0 ||
-      (count != 1 && base != INT && base != FLOAT && base != ERROR)) {
-    _base = ERROR;
-    _count = 1;
-  }
 }
 
-Type::Type(type_base base, const Type& return_type)
-  : _base(FUNCTION)
-  , _count(1)
-  , _const(false)
-  , _user_type_uid(nullptr)
-  , _managed_user_type(false)
+const yang::Type& Type::external() const
 {
-  if (base != FUNCTION) {
-    _base = ERROR;
-    return;
-  }
-  _elements.push_back(return_type);
-}
-
-Type::Type(type_base base, const void* user_type_uid, bool managed)
-  : _base(USER_TYPE)
-  , _count(1)
-  , _const(false)
-  , _user_type_uid(user_type_uid)
-  , _managed_user_type(managed)
-{
-  if (base != USER_TYPE) {
-    _base = ERROR;
-  }
-}
-
-void Type::set_const(bool is_const)
-{
-  _const = is_const;
-}
-
-Type::type_base Type::base() const
-{
-  return _base;
-}
-
-std::size_t Type::count() const
-{
-  return _count;
-}
-
-std::string Type::user_type_name() const
-{
-  return type_uidstr(_user_type_uid);
-}
-
-bool Type::managed() const
-{
-  return _managed_user_type;
-}
-
-bool Type::is_const() const
-{
-  return _const;
+  return _wrap;
 }
 
 std::string Type::string() const
 {
-  return "`" + string_internal() + "`";
+  return _error ? "<error>" : "`" + _wrap.string() + "`";
+}
+
+Type Type::make_const(bool is_const) const
+{
+  return _error ? *this : external().make_const(is_const);
 }
 
 bool Type::is_error() const
 {
-  return _base == ERROR;
+  return _error;
 }
 
 bool Type::is_void() const
 {
-  return is_error() || _base == VOID;
+  return is_error() || _wrap.is_void();
 }
 
 bool Type::not_void() const
 {
-  return _base != VOID;
+  return is_error() || !_wrap.is_void();
 }
 
 bool Type::primitive() const
 {
-  return is_error() ||
-      (_count == 1 && (is_int() || is_float()));
+  return is_error() || _wrap.is_int() || _wrap.is_float();
 }
 
 bool Type::is_vector() const
 {
-  return is_error() ||
-      (_count > 1 && (is_int() || is_float()));
+  return is_error() || _wrap.is_ivec() || _wrap.is_fvec();
 }
 
 bool Type::is_int() const
 {
-  return is_error() || _base == INT;
+  return is_error() || _wrap.is_int() || _wrap.is_ivec();
 }
 
 bool Type::is_float() const
 {
-  return is_error() || _base == FLOAT;
+  return is_error() || _wrap.is_float() || _wrap.is_fvec();
 }
 
 bool Type::function() const
 {
-  return is_error() || _base == FUNCTION;
+  return is_error() || _wrap.is_function();
 }
 
 bool Type::user_type() const
 {
-  return is_error() || _base == USER_TYPE;
-}
-
-const Type& Type::elements(std::size_t index) const
-{
-  return is_error() ? *this : _elements[std::min(index, _elements.size() - 1)];
-}
-
-void Type::add_element(const Type& type)
-{
-  _elements.push_back(type);
-}
-
-std::size_t Type::element_size() const
-{
-  return _elements.size();
+  return is_error() || _wrap.is_user_type();
 }
 
 bool Type::element_size(std::size_t num_elements) const
 {
-  return is_error() || _elements.size() == num_elements;
+  return is_error() ||
+      (!_wrap.is_function() && num_elements == 0) ||
+      (_wrap.is_function() && 1 + _wrap.function_num_args() == num_elements);
 }
 
 bool Type::element_is(std::size_t index, const Type& type) const
 {
-  return is_error() || _elements[index].is(type);
+  return is_error() || type.is_error() ||
+      (!index && Type(_wrap.function_return()) == type) ||
+      (index && Type(_wrap.function_arg(index - 1)) == type);
 }
 
-bool Type::count_binary_match(const Type& t) const
+bool Type::is_binary_match(const Type& t) const
 {
   return is_error() || t.is_error() ||
-      count() == t.count() || count() == 1 || t.count() == 1;
+      _wrap.vector_size() == t._wrap.vector_size() ||
+      _wrap.vector_size() == 1 || t._wrap.vector_size() == 1;
 }
 
 bool Type::is(const Type& t) const
@@ -188,82 +107,23 @@ bool Type::is(const Type& t) const
 
 Type Type::unify(const Type& t) const
 {
-  return *this != t ? ERROR : *this;
+  return *this != t ? Type(true) : *this;
 }
 
 bool Type::operator==(const Type& t) const
 {
-  if (_elements.size() != t._elements.size()) {
+  if (_error != t._error) {
     return false;
   }
-  for (std::size_t i = 0; i < _elements.size(); ++i) {
-    if (_elements[i] != t._elements[i]) {
-      return false;
-    }
+  if (_error) {
+    return true;
   }
-  return _base == t._base && _count == t._count &&
-      _user_type_uid == t._user_type_uid &&
-      _managed_user_type == t._managed_user_type;
+  return _wrap == t._wrap;
 }
 
 bool Type::operator!=(const Type& t) const
 {
   return !(*this == t);
-}
-
-yang::Type Type::external(bool exported) const
-{
-  yang::Type t =
-      _base == INT ? yang::Type::int_t() :
-      _base == FLOAT ? yang::Type::float_t() :
-      yang::Type::void_t();
-  if (_count > 1) {
-    t = _base == INT ? yang::Type::int_vector_t(_count) :
-        _base == FLOAT ? yang::Type::float_vector_t(_count) :
-        yang::Type::void_t();
-  }
-  if (_base == FUNCTION) {
-    std::vector<yang::Type> args;
-    auto it = _elements.begin();
-    for (++it; it != _elements.end(); ++it) {
-      args.push_back(it->external(false));
-    }
-    t = yang::Type::function_t(_elements[0].external(false), args);
-  }
-  if (_base == USER_TYPE) {
-    t = yang::Type::user_t<void>(_managed_user_type);
-    t._user_type_uid = _user_type_uid;
-  }
-  return t.make_exported(exported).make_const(_const);
-}
-
-std::string Type::string_internal() const
-{
-  if (_base == USER_TYPE) {
-    return user_type_name() +
-        (_managed_user_type ? "&" : "*") + (_const ? " const" : "");
-  }
-
-  if (_base == FUNCTION) {
-    std::string s = _elements[0].string_internal() + "(";
-    for (std::size_t i = 1; i < _elements.size(); ++i) {
-      if (i > 1) {
-        s += ", ";
-      }
-      s += _elements[i].string_internal();
-    }
-    return s + ")" + (_const ? " const" : "");
-  }
-
-  std::string s =
-      _base == VOID ? "void" :
-      _base == INT ? "int" :
-      _base == FLOAT ? "float" : "error";
-
-  if (_count > 1) {
-    s += std::to_string(_count);
-  }
-  return s + (_const ? " const" : "");
 }
 
 // End namespace yang::internal.

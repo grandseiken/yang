@@ -82,12 +82,12 @@ llvm::Type* Builder::float_type() const
   return llvm::Type::getDoubleTy(b.getContext());
 }
 
-llvm::Type* Builder::int_vector_type(std::size_t n) const
+llvm::Type* Builder::ivec_type(std::size_t n) const
 {
   return llvm::VectorType::get(int_type(), n);
 }
 
-llvm::Type* Builder::float_vector_type(std::size_t n) const
+llvm::Type* Builder::fvec_type(std::size_t n) const
 {
   return llvm::VectorType::get(float_type(), n);
 }
@@ -95,13 +95,13 @@ llvm::Type* Builder::float_vector_type(std::size_t n) const
 llvm::FunctionType* Builder::raw_function_type(const yang::Type& type) const
 {
   std::vector<llvm::Type*> args;
-  for (std::size_t i = 0; i < type.get_function_num_args(); ++i) {
-    args.push_back(get_llvm_type(type.get_function_arg_type(i)));
+  for (std::size_t i = 0; i < type.function_num_args(); ++i) {
+    args.push_back(get_llvm_type(type.function_arg(i)));
   }
   args.push_back(void_ptr_type());
 
   return llvm::FunctionType::get(
-      get_llvm_type(type.get_function_return_type()), args, false);
+      get_llvm_type(type.function_return()), args, false);
 }
 
 llvm::StructType* Builder::gen_function_type() const
@@ -133,17 +133,17 @@ Value Builder::constant_float(yang::float_t value) const
                llvm::ConstantFP::get(b.getContext(), llvm::APFloat(value)));
 }
 
-Value Builder::constant_int_vector(yang::int_t value, std::size_t n) const
+Value Builder::constant_ivec(yang::int_t value, std::size_t n) const
 {
   auto constant = (llvm::Constant*)constant_int(value).irval;
-  return Value(yang::Type::int_vector_t(n),
+  return Value(yang::Type::ivec_t(n),
                llvm::ConstantVector::getSplat(n, constant));
 }
 
-Value Builder::constant_float_vector(yang::float_t value, std::size_t n) const
+Value Builder::constant_fvec(yang::float_t value, std::size_t n) const
 {
   auto constant = (llvm::Constant*)constant_float(value).irval;
-  return Value(yang::Type::float_vector_t(n),
+  return Value(yang::Type::fvec_t(n),
                llvm::ConstantVector::getSplat(n, constant));
 }
 
@@ -195,11 +195,11 @@ Value Builder::default_for_type(const yang::Type& type, int_t fill) const
   if (type.is_float()) {
     return constant_float(fill);
   }
-  if (type.is_int_vector()) {
-    return constant_int_vector(fill, type.get_vector_size());
+  if (type.is_ivec()) {
+    return constant_ivec(fill, type.vector_size());
   }
-  if (type.is_float_vector()) {
-    return constant_float_vector(fill, type.get_vector_size());
+  if (type.is_fvec()) {
+    return constant_fvec(fill, type.vector_size());
   }
   return Value(type, constant_ptr(nullptr));
 }
@@ -215,11 +215,11 @@ llvm::Type* Builder::get_llvm_type(const yang::Type& type) const
   if (type.is_float()) {
     return float_type();
   }
-  if (type.is_int_vector()) {
-    return int_vector_type(type.get_vector_size());
+  if (type.is_ivec()) {
+    return ivec_type(type.vector_size());
   }
-  if (type.is_float_vector()) {
-    return float_vector_type(type.get_vector_size());
+  if (type.is_fvec()) {
+    return fvec_type(type.vector_size());
   }
   if (type.is_user_type()) {
     return void_ptr_type();

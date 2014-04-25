@@ -13,15 +13,15 @@ TEST_F(YangTest, TypeOfTest)
   }
 
   EXPECT_TRUE(type_of<int_t>().is_int());
-  EXPECT_FALSE(type_of<int_t>().is_int_vector());
-  EXPECT_TRUE(type_of<fvec_t<3>>().is_float_vector());
-  EXPECT_EQ(type_of<fvec_t<3>>().get_vector_size(), 3);
+  EXPECT_FALSE(type_of<int_t>().is_ivec());
+  EXPECT_TRUE(type_of<fvec_t<3>>().is_fvec());
+  EXPECT_EQ(type_of<fvec_t<3>>().vector_size(), 3);
 
   typedef Function<user_type*(int_t)> ft;
   EXPECT_TRUE(type_of<ft>().is_function());
-  EXPECT_EQ(type_of<ft>().get_function_num_args(), 1);
-  EXPECT_TRUE(type_of<ft>().get_function_return_type().is_user_type());
-  EXPECT_FALSE(type_of<ft>().get_function_return_type().is_managed_user_type());
+  EXPECT_EQ(type_of<ft>().function_num_args(), 1);
+  EXPECT_TRUE(type_of<ft>().function_return().is_user_type());
+  EXPECT_FALSE(type_of<ft>().function_return().is_managed_user_type());
 
   struct a {};
   struct b {};
@@ -172,9 +172,9 @@ TEST_F(YangTest, ProgramApiTest)
   EXPECT_TRUE(type.is_const());
   EXPECT_TRUE(type.is_exported());
   ASSERT_TRUE(type.is_function());
-  ASSERT_EQ(type.get_function_num_args(), 1);
-  EXPECT_TRUE(type.get_function_arg_type(0).is_int());
-  EXPECT_TRUE(type.get_function_return_type().is_int());
+  ASSERT_EQ(type.function_num_args(), 1);
+  EXPECT_TRUE(type.function_arg(0).is_int());
+  EXPECT_TRUE(type.function_return().is_int());
 
   // Global access.
   ASSERT_EQ(prog.get_globals().size(), 4);
@@ -189,21 +189,21 @@ TEST_F(YangTest, ProgramApiTest)
   auto dt = prog.get_globals().find("d");
 
   EXPECT_TRUE(at->second.is_vector());
-  EXPECT_TRUE(at->second.is_int_vector());
+  EXPECT_TRUE(at->second.is_ivec());
   EXPECT_FALSE(at->second.is_int());
-  EXPECT_EQ(at->second.get_vector_size(), 3);
+  EXPECT_EQ(at->second.vector_size(), 3);
   EXPECT_TRUE(at->second.is_exported());
   EXPECT_FALSE(at->second.is_const());
 
   EXPECT_TRUE(bt->second.is_vector());
-  EXPECT_TRUE(bt->second.is_float_vector());
+  EXPECT_TRUE(bt->second.is_fvec());
   EXPECT_FALSE(bt->second.is_float());
-  EXPECT_EQ(bt->second.get_vector_size(), 3);
+  EXPECT_EQ(bt->second.vector_size(), 3);
   EXPECT_TRUE(bt->second.is_exported());
   EXPECT_TRUE(bt->second.is_const());
 
   EXPECT_FALSE(ct->second.is_vector());
-  EXPECT_FALSE(ct->second.is_int_vector());
+  EXPECT_FALSE(ct->second.is_ivec());
   EXPECT_FALSE(ct->second.is_float());
   EXPECT_TRUE(ct->second.is_int());
   EXPECT_FALSE(ct->second.is_const());
@@ -212,7 +212,7 @@ TEST_F(YangTest, ProgramApiTest)
   EXPECT_TRUE(dt->second.is_int());
   EXPECT_FALSE(dt->second.is_function());
   EXPECT_FALSE(dt->second.is_user_type());
-  EXPECT_FALSE(dt->second.is_float_vector());
+  EXPECT_FALSE(dt->second.is_fvec());
   EXPECT_TRUE(dt->second.is_const());
   EXPECT_FALSE(dt->second.is_exported());
 }

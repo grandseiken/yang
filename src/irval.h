@@ -59,8 +59,8 @@ struct Builder {
   llvm::Type* void_type() const;
   llvm::Type* int_type() const;
   llvm::Type* float_type() const;
-  llvm::Type* int_vector_type(std::size_t n) const;
-  llvm::Type* float_vector_type(std::size_t n) const;
+  llvm::Type* ivec_type(std::size_t n) const;
+  llvm::Type* fvec_type(std::size_t n) const;
 
   // Functions.
   llvm::FunctionType* raw_function_type(const yang::Type& type) const;
@@ -70,8 +70,8 @@ struct Builder {
   llvm::Constant* constant_ptr(void* ptr) const;
   Value constant_int(yang::int_t value) const;
   Value constant_float(yang::float_t value) const;
-  Value constant_int_vector(yang::int_t value, std::size_t n) const;
-  Value constant_float_vector(yang::float_t value, std::size_t n) const;
+  Value constant_ivec(yang::int_t value, std::size_t n) const;
+  Value constant_fvec(yang::float_t value, std::size_t n) const;
 
   // Functions.
   Value function_value_null(const yang::Type& function_type) const;
