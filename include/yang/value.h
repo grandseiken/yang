@@ -46,7 +46,7 @@ private:
 
 template<typename T>
 Value::Value(const T& t)
-  : _type(internal::TypeInfo<T>()())
+  : _type(type_of<T>())
   , _data(new T(t))
   , _deleter(new deleter<T>)
 {
@@ -65,7 +65,7 @@ const Type& Value::type() const
 template<typename T>
 const T& Value::as() const
 {
-  Type type = internal::TypeInfo<T>()();
+  Type type = type_of<T>();
   if (_type != type) {
     throw runtime_error(
         "accessed " + _type.string() + " value as " + type.string());

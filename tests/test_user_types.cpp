@@ -219,19 +219,9 @@ TEST_F(YangTest, ManagedUserTypes)
   }
   instance("");
   EXPECT_EQ(count, 0);
-
-  auto bad_ctor = make_fn([](Managed* m)
-  {
-    return (BadManaged*)nullptr;
-  });
-  auto worse_ctor = make_fn([](BadManaged* m)
-  {
-    return m;
-  });
-  auto dtor = make_fn([](BadManaged*){});
-  EXPECT_THROW(ctxt.register_type("bad", bad_ctor, dtor), runtime_error);
-  EXPECT_THROW(ctxt.register_type("worse", worse_ctor, dtor), runtime_error);
 }
 
+// TODO: test using a single type as both managed an unmanaged, with multiple
+// names, with no names, while importing Instances, and so on.
 // End namespace yang.
 }

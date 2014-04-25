@@ -16,10 +16,6 @@
 namespace yang {
 namespace internal {
 
-// Maps types to unique identifiers.
-template<typename T>
-const void* type_uid();
-
 template<typename T>
 class NativeFunction {
   static_assert(sizeof(T) != sizeof(T),
@@ -117,20 +113,6 @@ private:
   internal* _internal;
 
 };
-
-// Static member is guaranteed to have a different address per template
-// instantiation.
-template<typename>
-struct NativeTypeId {
-  static const void* id;
-};
-template<typename T>
-const void* NativeTypeId<T>::id = nullptr;
-template<typename T>
-const void* type_uid()
-{
-  return &NativeTypeId<T>::id;
-}
 
 NativeFunction<void>::NativeFunction()
   : _reference_count(0)

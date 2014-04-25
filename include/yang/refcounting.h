@@ -83,19 +83,17 @@ public:
 
 private:
 
-  friend struct internal::ValueInitialise<Ref<T>>;
-
   template<typename...>
   friend struct internal::TrampolineCallArgs;
   template<typename>
   friend struct internal::TrampolineCallReturn;
   template<typename, typename...>
   friend struct internal::TrampolineCall;
-
   template<typename, typename>
   friend struct internal::ReverseTrampolineCallArgs;
   template<typename, typename...>
   friend struct internal::ReverseTrampolineCallReturn;
+  friend struct internal::ValueInitialise<Ref>;
 
   // Null Ref must never be returned to client code!
   Ref();
@@ -157,24 +155,7 @@ Ref<T>::Ref(internal::Prefix* wrap)
   }
 }
 
-namespace internal {
-
-template<typename T>
-struct ValueInitialise {
-  void operator()(T&) const {}
-};
-template<typename T>
-struct ValueInitialise<Ref<T>> {
-  void operator()(Ref<T>& ref) const
-  {
-    if (ref._wrap) {
-      internal::update_structure_refcount(ref._wrap, 1);
-    }
-  }
-};
-
-// End namespace yang::internal.
-}
+// End namespace yang.
 }
 
 #endif

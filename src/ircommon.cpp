@@ -12,7 +12,7 @@
 #include <llvm/PassManager.h>
 #include <llvm/Support/TargetSelect.h>
 #include <yang/error.h>
-#include <yang/type_info.h>
+#include <yang/trampoline.h>
 
 namespace yang {
 namespace internal {

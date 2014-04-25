@@ -5,34 +5,60 @@
 #include <yang/context.h>
 #include <yang/instance.h>
 
-namespace {
-
-yang::Type prefix_type(const std::string& name, const yang::Type& type)
-{
-  if (type.is_function()) {
-    std::vector<yang::Type> args;
-    for (std::size_t i = 0; i < type.get_function_num_args(); ++i) {
-      args.push_back(prefix_type(name, type.get_function_arg_type(i)));
-    }
-    yang::Type t = yang::Type::function_t(
-        prefix_type(name, type.get_function_return_type()), args);
-    return t.make_exported(type.is_exported()).make_const(type.is_const());
-  }
-  else if (type.is_user_type()) {
-    yang::Type t = yang::Type::user_t(name + type.get_user_type_name(),
-                                      type.is_managed_user_type());
-    return t.make_exported(type.is_exported()).make_const(type.is_const());
-  }
-  return type;
-}
-
-// End anonymous namespace.
-}
-
 namespace yang {
+namespace internal {
+
+ContextInternals::type_def::type_def(const yang::Type& type)
+  : type(type)
+{
+}
+
+const ContextInternals::type_def& ContextInternals::type_lookup(
+    const std::string& name) const
+{
+  static type_def none(yang::Type::void_t());
+  auto it = types.find(name);
+  return it == types.end() ? none : it->second;
+}
+
+const GenericFunction& ContextInternals::function_lookup(
+    const std::string& name) const
+{
+  static GenericFunction none;
+  auto it = functions.find(name);
+  return it == functions.end() ? member_lookup(name) : it->second;
+}
+
+const GenericFunction& ContextInternals::member_lookup(
+    const std::string& name) const
+{
+  static GenericFunction none;
+  std::size_t index = name.find_last_of(':');
+  if (index == std::string::npos) {
+    return none;
+  }
+  std::string first = name.substr(0, index - 1);
+  std::string last = name.substr(index + 1);
+  return member_lookup(type_lookup(first).type, last);
+}
+
+const GenericFunction& ContextInternals::member_lookup(
+    const yang::Type& type, const std::string& name) const
+{
+  static GenericFunction none;
+  auto member_it = members.find(type);
+  if (member_it == members.end()) {
+    return none;
+  }
+  auto member_jt = member_it->second.find(name);
+  return member_jt == member_it->second.end() ? none : member_jt->second;
+}
+
+// End namespace internal.
+}
 
 Context::Context()
-  : _internals{new internal::ContextInternals{{}, {}, {}, false}}
+  : _internals{new internal::ContextInternals{{}, {}, {}, {}, false}}
 {
 }
 
@@ -43,12 +69,15 @@ void Context::register_namespace(const std::string& name,
   if (&*_internals == &*context._internals) {
     throw runtime_error("context registered as a namespace in itself");
   }
-  for (const auto pair : context._internals->types) {
-    for (const auto qair : _internals->types) {
-      if (pair.second.uid == qair.second.uid) {
+  for (const auto& pair : context._internals->members) {
+    for (const auto& qair : pair.second) {
+      // TODO: is there any way around this? We could perhaps merge if the member
+      // functions are identical... is there any use-case for that?
+      const auto& map = _internals->members[pair.first];
+      if (map.find(qair.first) != map.end()) {
         throw runtime_error(
-            "type `" + pair.first + "` in context registered as namespace `"
-            + name + "` duplicates type `" + qair.first + "`");
+            "context registered as namespace with conflicting member "
+            "function `" + pair.first.string() + "::" + qair.first + "`");
       }
     }
   }
@@ -59,10 +88,12 @@ void Context::register_namespace(const std::string& name,
     _internals->types.emplace(name + "::" + pair.first, pair.second);
   }
   for (const auto& pair : context._internals->functions) {
-    std::string s = name + "::" + pair.first;
-    _internals->functions.emplace(s, pair.second);
-    _internals->functions[s].type = prefix_type(
-        name + "::", _internals->functions[s].type);
+    _internals->functions.emplace(name + "::" + pair.first, pair.second);
+  }
+  for (const auto& pair : context._internals->members) {
+    for (const auto& qair : pair.second) {
+      _internals->members[pair.first].emplace(qair.first, qair.second);
+    }
   }
 }
 
@@ -80,10 +111,7 @@ void Context::register_namespace(const std::string& name,
   check_namespace(name);
   Context context;
   for (const auto& pair : instance.get_functions()) {
-    // TODO: what to do about types? We need to give up the idea that a type
-    // has a unique name, and rewrite all the type interaction so that C++
-    // types can have more than one name. This is the only thing that makes
-    // sense.
+    // TODO: finish implementing this.
   }
   register_namespace(name, context);
 }

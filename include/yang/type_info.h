@@ -5,13 +5,16 @@
 #ifndef YANG_INCLUDE_YANG_TYPE_INFO_H
 #define YANG_INCLUDE_YANG_TYPE_INFO_H
 
-#include "function.h"
 #include "type.h"
 #include "typedefs.h"
 
 namespace yang {
-namespace internal {
+template<typename>
+class Function;
+template<typename>
+class Ref;
 
+namespace internal {
 template<typename>
 struct TypeInfo;
 struct ContextInternals;
@@ -21,11 +24,6 @@ struct TypeInfoImpl {
   static_assert(sizeof(T) != sizeof(T), "use of unsupported type");
 
   // Avoid extra unnecessary error messages (beyond static assert above).
-  yang::Type operator()(const ContextInternals&) const
-  {
-    return yang::Type::void_t();
-  }
-
   yang::Type operator()() const
   {
     return yang::Type::void_t();
@@ -34,11 +32,6 @@ struct TypeInfoImpl {
 
 template<>
 struct TypeInfoImpl<void> {
-  yang::Type operator()(const ContextInternals&) const
-  {
-    return yang::Type::void_t();
-  }
-
   yang::Type operator()() const
   {
     return yang::Type::void_t();
@@ -47,11 +40,6 @@ struct TypeInfoImpl<void> {
 
 template<>
 struct TypeInfoImpl<int_t> {
-  yang::Type operator()(const ContextInternals&) const
-  {
-    return yang::Type::int_t();
-  }
-
   yang::Type operator()() const
   {
     return yang::Type::int_t();
@@ -60,11 +48,6 @@ struct TypeInfoImpl<int_t> {
 
 template<>
 struct TypeInfoImpl<float_t> {
-  yang::Type operator()(const ContextInternals&) const
-  {
-    return yang::Type::float_t();
-  }
-
   yang::Type operator()() const
   {
     return yang::Type::float_t();
@@ -73,11 +56,6 @@ struct TypeInfoImpl<float_t> {
 
 template<std::size_t N>
 struct TypeInfoImpl<ivec_t<N>> {
-  yang::Type operator()(const ContextInternals&) const
-  {
-    return yang::Type::int_vector_t(N);
-  }
-
   yang::Type operator()() const
   {
     return yang::Type::int_vector_t(N);
@@ -86,11 +64,6 @@ struct TypeInfoImpl<ivec_t<N>> {
 
 template<std::size_t N>
 struct TypeInfoImpl<fvec_t<N>> {
-  yang::Type operator()(const ContextInternals&) const
-  {
-    return yang::Type::float_vector_t(N);
-  }
-
   yang::Type operator()() const
   {
     return yang::Type::float_vector_t(N);
@@ -114,19 +87,10 @@ template<typename...>
 struct ArgsTypeInfo {};
 template<>
 struct ArgsTypeInfo<> {
-  void operator()(const std::vector<yang::Type>&,
-                  const ContextInternals&) const {}
   void operator()(const std::vector<yang::Type>&) const {}
 };
 template<typename A, typename... Args>
 struct ArgsTypeInfo<A, Args...> {
-  void operator()(std::vector<yang::Type>& output,
-                  const ContextInternals& context) const
-  {
-    output.push_back(TypeInfo<A>()(context));
-    ArgsTypeInfo<Args...>()(output, context);
-  }
-
   void operator()(std::vector<yang::Type>& output) const
   {
     output.push_back(TypeInfo<A>()());
@@ -136,13 +100,6 @@ struct ArgsTypeInfo<A, Args...> {
 
 template<typename R, typename... Args>
 struct TypeInfoImpl<Function<R(Args...)>> {
-  yang::Type operator()(const ContextInternals& context) const
-  {
-    std::vector<yang::Type> args;
-    ArgsTypeInfo<Args...>()(args, context);
-    return yang::Type::function_t(TypeInfo<R>()(context), args);
-  }
-
   yang::Type operator()() const
   {
     std::vector<yang::Type> args;
@@ -151,14 +108,25 @@ struct TypeInfoImpl<Function<R(Args...)>> {
   }
 };
 
+template<typename T>
+struct TypeInfoImpl<T*> {
+  yang::Type operator()() const
+  {
+    return yang::Type::user_t<T>(false);
+  }
+};
+
+template<typename T>
+struct TypeInfoImpl<Ref<T>> {
+  yang::Type operator()() const
+  {
+    return yang::Type::user_t<T>(true);
+  }
+};
+
 // Wrapper for other modifiers.
 template<typename T>
 struct TypeInfoBase {
-  yang::Type operator()(const ContextInternals& context) const
-  {
-    return TypeInfoImpl<T>()(context);
-  }
-
   yang::Type operator()() const
   {
     return TypeInfoImpl<T>()();
@@ -184,8 +152,16 @@ struct TypeInfo<const T&> : TypeInfoError<T> {};
 template<typename T>
 struct TypeInfo<const T&&> : TypeInfoError<T> {};
 
-// End namespace yang::internal.
+// End namespace internal.
 }
+
+template<typename T>
+Type type_of()
+{
+  return internal::TypeInfo<T>()();
+}
+
+// End namespace yang.
 }
 
 #endif

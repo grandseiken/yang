@@ -8,12 +8,12 @@
 #include <functional>
 #include <tuple>
 #include <unordered_map>
+#include "native.h"
+#include "refcounting.h"
 #include "type_info.h"
 
 namespace yang {
 namespace internal {
-template<typename>
-struct TypeInfo;
 struct Prefix;
 
 // Boost's metaprogramming list implementation fakes variadic templates for
@@ -183,6 +183,28 @@ struct TrampolineType {
       typename TrampolineArgs<Args...>::type>::type join_type;
   typedef typename Functions<void, join_type>::type type;
   typedef typename Functions<void, join_type>::fp_type fp_type;
+};
+
+// Initialise reference-counting for values which must be constructed oddly.
+template<typename T>
+struct ValueInitialise {
+  void operator()(T&) const {}
+};
+template<typename T>
+struct ValueInitialise<Ref<T>> {
+  void operator()(Ref<T>& ref) const
+  {
+    if (ref._wrap) {
+      internal::update_structure_refcount(ref._wrap, 1);
+    }
+  }
+};
+template<typename R, typename... Args>
+struct ValueInitialise<Function<R(Args...)>> {
+  void operator()(Function<R(Args...)>& function) const
+  {
+    function.update_env_refcount(1);
+  }
 };
 
 // Function call instrumentation for converting native types to the Yang calling
@@ -490,12 +512,11 @@ struct ReverseTrampolineLookupGenerator {
   ReverseTrampolineLookupGenerator()
   {
     auto& map = get_cpp_trampoline_lookup_map();
-    yang::Type t = TypeInfo<Function<R(Args...)>>()();
     yang::void_fp ptr = (yang::void_fp)&internal::ReverseTrampolineCall<
         R(Args...),
         typename internal::TrampolineReturn<R>::type,
         typename internal::TrampolineArgs<Args...>::type>::call;
-    map.emplace(t, ptr);
+    map.emplace(type_of<Function<R(Args...)>>().erase_user_types(), ptr);
   }
 
   void operator()() const

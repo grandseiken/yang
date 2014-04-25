@@ -15,6 +15,10 @@ namespace internal {
 // TYPE_ERROR is a special type assigned to expressions containing an error
 // where the type cannot be determined. Further errors involving a value
 // of this type are suppressed (to avoid cascading error messages).
+// TODO: the implementation of this class can probably be replaced with
+// something like the external type and an error bit (and then we won't
+// need to be a friend to access the uid). Also, clean up the member names of
+// external Type.
 class Type {
 public:
 
@@ -46,14 +50,14 @@ public:
   Type(type_base base, const Type& return_type);
   // Construct USER_TYPE types. Passing anything other than USER_TYPE will
   // result in an error.
-  Type(type_base base, const std::string& user_type_name, bool managed);
+  Type(type_base base, const void* user_type_uid, bool managed);
   // Set const.
   void set_const(bool is_const);
 
   // Return components of the type.
   type_base base() const;
   std::size_t count() const;
-  const std::string& user_type_name() const;
+  std::string user_type_name() const;
   bool managed() const;
   bool is_const() const;
   // Return a string representation of the type.
@@ -116,7 +120,7 @@ private:
   std::size_t _count;
   bool _const;
   std::vector<Type> _elements;
-  std::string _user_type_name;
+  const void* _user_type_uid;
   bool _managed_user_type;
 
 };
@@ -141,7 +145,7 @@ namespace std {
       std::size_t seed = 0;
       hash_combine(seed, t._base);
       hash_combine(seed, t._count);
-      hash_combine(seed, std::hash<std::string>()(t._user_type_name));
+      hash_combine(seed, (std::intptr_t)t._user_type_uid);
       for (const yang::internal::Type& u : t._elements) {
         hash_combine(seed, operator()(u));
       }

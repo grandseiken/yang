@@ -6,6 +6,32 @@
 
 namespace yang {
 
+TEST_F(YangTest, TypeOfTest)
+{
+  if (!filter("apis")) {
+    return;
+  }
+
+  EXPECT_TRUE(type_of<int_t>().is_int());
+  EXPECT_FALSE(type_of<int_t>().is_int_vector());
+  EXPECT_TRUE(type_of<fvec_t<3>>().is_float_vector());
+  EXPECT_EQ(type_of<fvec_t<3>>().get_vector_size(), 3);
+
+  typedef Function<user_type*(int_t)> ft;
+  EXPECT_TRUE(type_of<ft>().is_function());
+  EXPECT_EQ(type_of<ft>().get_function_num_args(), 1);
+  EXPECT_TRUE(type_of<ft>().get_function_return_type().is_user_type());
+  EXPECT_FALSE(type_of<ft>().get_function_return_type().is_managed_user_type());
+
+  struct a {};
+  struct b {};
+  EXPECT_EQ(type_of<a*>(), type_of<a*>());
+  EXPECT_EQ(type_of<Ref<a>>(), type_of<Ref<a>>());
+  EXPECT_NE(type_of<a*>(), type_of<b*>());
+  EXPECT_NE(type_of<Ref<a>>(), type_of<Ref<b>>());
+  EXPECT_NE(type_of<a*>(), type_of<Ref<a>>());
+}
+
 TEST_F(YangTest, FunctionApiTest)
 {
   if (!filter("apis")) {
@@ -18,21 +44,7 @@ TEST_F(YangTest, FunctionApiTest)
   typedef Function<int_t(int_t, int_t, int_t)> uf_t;
   ASSERT_NO_THROW((uf_t(unused)));
   EXPECT_EQ(uf_t(unused)(1, 2, 3), 1);
-
-  // Get type.
-  auto ctxt = context();
-  EXPECT_TRUE(uf_t::get_type(ctxt).is_function());
-
-  typedef Function<user_type*()> userf_t;
-  Type t = userf_t::get_type(ctxt);
-  ASSERT_TRUE(t.is_function());
-  EXPECT_TRUE(t.get_function_return_type().is_user_type());
-  EXPECT_EQ(t.get_function_return_type().get_user_type_name(), "UserType");
-
-  // Using unregistered type.
-  struct undef {};
-  typedef Function<undef*()> undeff_t;
-  EXPECT_THROW(undeff_t::get_type(ctxt), runtime_error);
+  EXPECT_EQ(make_fn(unused)(1, 2, 3), 1);
 }
 
 TEST_F(YangTest, ContextApiTest)
@@ -49,9 +61,9 @@ TEST_F(YangTest, ContextApiTest)
 
   ASSERT_NO_THROW(ctxt.register_type<type_a>("TypeA"));
   EXPECT_THROW(ctxt.register_type<type_a>("TypeA"), runtime_error);
-  EXPECT_THROW(ctxt.register_type<type_a>("TypeB"), runtime_error);
   EXPECT_THROW(ctxt.register_type<type_b>("TypeA"), runtime_error);
   EXPECT_NO_THROW(ctxt.register_type<type_b>("TypeB"));
+  EXPECT_NO_THROW(ctxt.register_type<type_a>("TypeA2"));
 
   auto voidf = make_fn([]{});
   ASSERT_NO_THROW(ctxt.register_function("foo", voidf));
@@ -68,11 +80,6 @@ TEST_F(YangTest, ContextApiTest)
   EXPECT_NO_THROW(ctxt.register_member_function("baz", voidaf));
   EXPECT_THROW(ctxt.register_member_function("baz", voidaf), runtime_error);
 
-  EXPECT_TRUE(ctxt.has_type<type_a>());
-  EXPECT_FALSE(ctxt.has_type<type_c>());
-  EXPECT_EQ(ctxt.get_type_name<type_a>(), "TypeA");
-  EXPECT_THROW(ctxt.get_type_name<type_c>(), runtime_error);
-
   // Bad names.
   auto ccon = make_fn([]{return (type_c*)nullptr;});
   auto voidcf = make_fn([](type_c*){});
@@ -81,23 +88,13 @@ TEST_F(YangTest, ContextApiTest)
   EXPECT_THROW(ctxt.register_type<type_c>("$c"), runtime_error);
   EXPECT_THROW(ctxt.register_type("a-b", ccon, voidcf), runtime_error);
 
-  // Unregistered types.
-  auto cf = make_fn([]{
-    return (type_c*)nullptr;
-  });
-  EXPECT_THROW(ctxt.register_member_function("foo", voidcf), runtime_error);
-  EXPECT_THROW(ctxt.register_function("voidcf", voidcf), runtime_error);
-  EXPECT_THROW(ctxt.register_function("cf", cf), runtime_error);
-
-  // Managed/unmanaged conflicts.
+  // Managed/unmanaged simultaeneously.
   auto refaf = make_fn([](Ref<type_a>){});
   auto refcf = make_fn([](Ref<type_c>){});
   ctxt.register_type("TypeC", ccon, voidcf);
-  EXPECT_FALSE(ctxt.is_managed<type_a>());
-  EXPECT_TRUE(ctxt.is_managed<type_c>());
-  EXPECT_THROW(ctxt.register_member_function("man", voidcf), runtime_error);
-  EXPECT_THROW(ctxt.register_member_function("umn", refaf), runtime_error);
-  EXPECT_NO_THROW(ctxt.register_member_function("man", refcf));
+  EXPECT_NO_THROW(ctxt.register_member_function("man", voidcf));
+  EXPECT_NO_THROW(ctxt.register_member_function("umn", refaf));
+  EXPECT_NO_THROW(ctxt.register_member_function("man2", refcf));
 
   // Constructor conflicts.
   auto dcon = make_fn([]{return (type_d*)nullptr;});
@@ -116,13 +113,16 @@ TEST_F(YangTest, ContextApiTest)
 
   struct type_e {};
   struct type_f {};
-  auto etxt = context();
+  auto etxt = context(false);
   etxt.register_type<type_e>("E");
-  EXPECT_THROW(ctxt.register_function("make_e", make_fn([]{
+  ctxt.register_function("make_e", make_fn([]{
     return (type_e*)nullptr;
-  })), runtime_error);
-  ctxt.register_type<type_e>("E");
-  EXPECT_THROW(ctxt.register_namespace("whatever", etxt), runtime_error);
+  }));
+  ctxt.register_type<type_e>("Eman");
+  EXPECT_NO_THROW(ctxt.register_namespace("whatever", etxt));
+  EXPECT_NO_THROW(ctxt.register_namespace("again", etxt));
+  etxt.register_member_function("foo", voidaf);
+  EXPECT_THROW(ctxt.register_namespace("another", etxt), runtime_error);
 }
 
 const std::string TestApisStr = R"(

@@ -9,7 +9,7 @@
 #include <unordered_map>
 
 #include "error.h"
-#include "native.h"
+#include "function.h"
 #include "refcounting.h"
 #include "type.h"
 #include "type_info.h"
@@ -63,18 +63,35 @@ namespace internal {
 // Data preserved while it's needed (by Context objects or Programs that depend
 // on them).
 struct ContextInternals {
-  struct user_type_info {
-    const void* uid;
-    bool is_managed;
+  struct type_def {
+    type_def(const yang::Type& type);
+
+    yang::Type type;
+    // TODO: this is a little odd: constructor/destructor pairs are associated
+    // with typedefs rather than native types themselves. It actually kind of
+    // makes sense, since it allows multiple constructors. But it'd be redundant
+    // with function overloading.
+    GenericFunction constructor;
+    GenericFunction destructor;
   };
-  typedef std::unordered_map<std::string, user_type_info> type_map;
-  typedef std::unordered_map<
-      std::string, internal::GenericFunction> function_map;
+
+  const type_def& type_lookup(const std::string& name) const;
+  const GenericFunction& function_lookup(const std::string& name) const;
+  const GenericFunction& member_lookup(const std::string& name) const;
+  const GenericFunction& member_lookup(const yang::Type& t,
+                                       const std::string& name) const;
+
+  // Using some real heirarchical data structures for namespaces rather than
+  // this still somewhat string-based mess might be a little bit nicer.
   typedef std::unordered_set<std::string> namespace_set;
+  typedef std::unordered_map<std::string, type_def> type_map;
+  typedef std::unordered_map<std::string, GenericFunction> function_map;
+  typedef std::unordered_map<yang::Type, function_map> member_map;
 
   namespace_set namespaces;
   type_map types;
   function_map functions;
+  member_map members;
   mutable bool immutable;
 };
 
@@ -126,14 +143,6 @@ public:
   void register_function(
       const std::string& name, const Function<R(Args...)>& f);
 
-  // Information about registered types.
-  template<typename T>
-  bool has_type() const;
-  template<typename T>
-  bool is_managed() const;
-  template<typename T>
-  std::string get_type_name() const;
-
 private:
 
   template<typename T>
@@ -143,106 +152,19 @@ private:
   void copy_internals();
 
   template<typename R, typename... Args>
-  void register_function_internal(
-      const std::string& name, const Function<R(Args...)>& f);
+  void make_function_internal(const Function<R(Args...)>& f);
 
   friend class Program;
-  friend const internal::ContextInternals&
-      internal::context_internals(const Context&);
   std::shared_ptr<internal::ContextInternals> _internals;
 
 };
-
-// Implementation of TypeInfo for user types, which has to see the definition of
-// Context.
-namespace internal {
-
-template<typename T>
-bool context_has_type_impl(const ContextInternals& internals)
-{
-  for (const auto& pair : internals.types) {
-    if (pair.second.uid == internal::type_uid<T*>()) {
-      return true;
-    }
-  }
-  return false;
-}
-
-template<typename T>
-bool context_is_managed_impl(const ContextInternals& internals)
-{
-  for (const auto& pair : internals.types) {
-    if (pair.second.uid == internal::type_uid<T*>()) {
-      return pair.second.is_managed;
-    }
-  }
-  return false;
-}
-
-template<typename T>
-std::string context_get_type_name_impl(const ContextInternals& internals)
-{
-  for (const auto& pair : internals.types) {
-    if (pair.second.uid == internal::type_uid<T*>()) {
-      return pair.first;
-    }
-  }
-  throw runtime_error("use of unregistered user type");
-}
-
-template<typename T>
-struct TypeInfoImpl<T*> {
-  yang::Type operator()(const ContextInternals& context) const
-  {
-    if (!context_has_type_impl<T>(context)) {
-      throw runtime_error("use of unregistered user type");
-    }
-    if (context_is_managed_impl<T>(context)) {
-      throw runtime_error("use of `" + context_get_type_name_impl<T>(context) +
-                          "` as an unmanaged user type");
-    }
-    return yang::Type::user_t(context_get_type_name_impl<T>(context), false);
-  }
-
-  // Without passing a context, we just construct erased user-types.
-  yang::Type operator()() const
-  {
-    return yang::Type::user_t("", false);
-  }
-};
-
-template<typename T>
-struct TypeInfoImpl<Ref<T>> {
-  yang::Type operator()(const ContextInternals& context) const
-  {
-    if (!context_has_type_impl<T>(context)) {
-      throw runtime_error("use of unregistered user type");
-    }
-    if (!context_is_managed_impl<T>(context)) {
-      throw runtime_error("use of `" + context_get_type_name_impl<T>(context) +
-                          "` as a managed user type");
-    }
-    return yang::Type::user_t(context_get_type_name_impl<T>(context), true);
-  }
-
-  // Without passing a context, we just construct erased user-types.
-  yang::Type operator()() const
-  {
-    return yang::Type::user_t("", true);
-  }
-};
-
-// End namespace internal.
-}
 
 template<typename T>
 void Context::register_type(const std::string& name)
 {
   check_type<T>(name);
   copy_internals();
-  auto& symbol = _internals->types[name];
-  symbol.uid = internal::type_uid<T*>();
-  symbol.is_managed = false;
+  _internals->types.emplace(name, Type::user_t<T>(false));
 }
 
 template<typename T, typename... Args>
@@ -250,59 +172,45 @@ void Context::register_type(const std::string& name,
                             const Function<T*(Args...)>& constructor,
                             const Function<void(T*)>& destructor)
 {
-  // Ensure the constructor doesn't take the type itself as an argument,
-  // because it would be the wrong kind of user type and would be useless
-  // anyway.
-  internal::TypeInfo<Function<void(Args...)>>()(*_internals);
   check_type<T>(name);
   if (_internals->functions.find(name) != _internals->functions.end()) {
     throw runtime_error(
         "managed type `" + name + "` conflicts with registered function");
   }
   copy_internals();
-  auto& symbol = _internals->types[name];
-  symbol.uid = internal::type_uid<T*>();
-  // Constructor/destructor work with T* rather than Ref<T> so we need to delay
-  // setting is_managed until after.
-  try {
-    register_function_internal(name + "::!", constructor);
-    register_function_internal(name + "::~", destructor);
-  }
-  catch (...) {
-    _internals->types.erase(name);
-    throw;
-  }
-  symbol.is_managed = true;
+  auto it = _internals->types.emplace(name, Type::user_t<T>(true));
+  it.first->second.constructor = make_generic(constructor);
+  it.first->second.destructor = make_generic(destructor);
 }
 
 template<typename T, typename R, typename... Args>
 void Context::register_member_function(
     const std::string& name, const Function<R(T*, Args...)>& f)
 {
-  if (!has_type<T>()) {
-    throw runtime_error(
-        "member `" + name + "` registered on unregistered type");
-  }
   check_identifier(name);
-
+  Type t = Type::user_t<T>(false);
+  if (_internals->members[t].find(name) != _internals->members[t].end()) {
+    throw runtime_error(
+        "duplicate member function `" + internal::type_uidstr<T>() + "::" +
+        name + "` registered in context");
+  }
   copy_internals();
-  std::string type_name = get_type_name<T>();
-  register_function_internal(type_name + "::" + name, f);
+  _internals->members[t][name] = make_generic(f);
 }
 
 template<typename T, typename R, typename... Args>
 void Context::register_member_function(
     const std::string& name, const Function<R(Ref<T>, Args...)>& f)
 {
-  if (!has_type<T>()) {
-    throw runtime_error(
-        "member `" + name + "` registered on unregistered type");
-  }
   check_identifier(name);
-
+  Type t = Type::user_t<T>(true);
+  if (_internals->members[t].find(name) != _internals->members[t].end()) {
+    throw runtime_error(
+        "duplicate member function `" + internal::type_uidstr<T>() + "::" +
+        name + "` registered in context");
+  }
   copy_internals();
-  std::string type_name = get_type_name<T>();
-  register_function_internal(type_name + "::" + name, f);
+  _internals->members[t][name] = make_generic(f);
 }
 
 template<typename R, typename... Args>
@@ -310,32 +218,20 @@ void Context::register_function(
     const std::string& name, const Function<R(Args...)>& f)
 {
   check_identifier(name);
-  std::string cname = name + "::!";
-  if (_internals->functions.find(cname) != _internals->functions.end()) {
+  auto type_it = _internals->types.find(name);
+  if (type_it != _internals->types.end() &&
+      type_it->second.type.is_managed_user_type()) {
     throw runtime_error(
         "function `" + name + "` conflicts with registered managed type");
   }
+  auto it = _internals->functions.find(name);
+  if (it != _internals->functions.end()) {
+    throw runtime_error(
+        "duplicate function `" + name + "` registered in context");
+  }
 
   copy_internals();
-  register_function_internal(name, f);
-}
-
-template<typename T>
-bool Context::has_type() const
-{
-  return internal::context_has_type_impl<T>(*_internals);
-}
-
-template<typename T>
-bool Context::is_managed() const
-{
-  return internal::context_is_managed_impl<T>(*_internals);
-}
-
-template<typename T>
-std::string Context::get_type_name() const
-{
-  return internal::context_get_type_name_impl<T>(*_internals);
+  _internals->functions[name] = make_generic(f);
 }
 
 template<typename T>
@@ -351,34 +247,16 @@ void Context::check_type(const std::string& name) const
   if (jt != _internals->namespaces.end()) {
     throw runtime_error("typename `" + name + "` conflicts with namespace");
   }
-  // Could also store a reverse-map from internal pointer type-id; probably
-  // not a big deal.
-  for (const auto& pair : _internals->types) {
-    if (pair.second.uid == internal::type_uid<T*>()) {
-      throw runtime_error("duplicate types `" + name + "` and `" + pair.first +
-                          "` registered in context");
-    }
-  }
 }
 
 template<typename R, typename... Args>
-void Context::register_function_internal(
-    const std::string& name, const Function<R(Args...)>& f)
+internal::GenericFunction make_generic(const Function<R(Args...)>& f)
 {
-  auto it = _internals->functions.find(name);
-  if (it != _internals->functions.end()) {
-    throw runtime_error(
-        "duplicate function `" + name + "` registered in context");
-  }
-
-  // Info lookup might throw; make sure not to enter anything in the function
-  // table until after that.
-  yang::Type t = internal::TypeInfo<Function<R(Args...)>>()(*_internals);
-  internal::GenericFunction& symbol = _internals->functions[name];
-  symbol.type = t;
-  symbol.ptr =
-      std::unique_ptr<internal::FunctionBase>(new Function<R(Args...)>(f));
+  internal::GenericFunction g;
+  g.type = type_of<Function<R(Args...)>>();
+  g.ptr = std::make_shared<Function<R(Args...)>>(f);
   internal::GenerateReverseTrampolineLookupTable<Function<R(Args...)>>()();
+  return g;
 }
 
 // End namepsace yang.

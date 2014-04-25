@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "function.h"
 #include "internals.h"
 #include "type.h"
 #include "type_info.h"
@@ -71,11 +72,9 @@ private:
 template<typename T>
 T Instance::get_global(const std::string& name) const
 {
-  // TypeInfo will fail at compile-time for completely unsupported types; will
-  // at runtime for pointers to unregistered user types.
-  internal::TypeInfo<T> info;
-  check_global(name, info(*_internals->program->context), false);
-
+  // type_of will fail at compile-time for completely unsupported types; will
+  // fail at runtime for incorrect (but plausible) types.
+  check_global(name, type_of<T>(), false);
   auto fp = (yang::void_fp)
       (std::intptr_t)get_native_fp("!global_get_" + name);
   return internal::call_via_trampoline<T>(fp, _global_data);
@@ -84,9 +83,7 @@ T Instance::get_global(const std::string& name) const
 template<typename T>
 void Instance::set_global(const std::string& name, const T& value)
 {
-  internal::TypeInfo<T> info;
-  check_global(name, info(*_internals->program->context), true);
-
+  check_global(name, type_of<T>(), true);
   auto fp = (yang::void_fp)
       (std::intptr_t)get_native_fp("!global_set_" + name);
   internal::call_via_trampoline<void>(fp, _global_data, value);
@@ -95,10 +92,8 @@ void Instance::set_global(const std::string& name, const T& value)
 template<typename T>
 T Instance::get_function(const std::string& name)
 {
-  internal::TypeInfo<T> info;
-  check_function(name, info(*_internals->program->context));
-  internal::FunctionConstruct<T> construct;
-  return construct(get_native_fp(name), _global_data);
+  check_function(name, type_of<T>());
+  return internal::FunctionConstruct<T>()(get_native_fp(name), _global_data);
 }
 
 template<typename R, typename... Args>

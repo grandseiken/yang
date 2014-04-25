@@ -50,7 +50,7 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // single closure structure type with just a void pointer, and transform t.f
   // to (mem[T::f], env_mem(t)).
   symbol_frame user_type;
-  user_type.emplace("object", yang::Type::user_t("", false));
+  user_type.emplace("object", yang::Type::user_t<void>(false));
   _chunk.init_structure_type("chunk", user_type, false);
 
   // We need to generate a reverse trampoline function for each function in the
@@ -523,22 +523,17 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
 
     case Node::MEMBER_SELECTION:
     {
-      std::string s =
-          results[0].type.get_user_type_name() + "::" + node.string_value;
       llvm::Value* env = nullptr;
-      Value v;
-
       // Don't need to allocate anything for managed user-types: we already
       // have a chunk.
       if (results[0].type.is_managed_user_type()) {
         env = results[0];
-        v = get_member_function(s, true);
       }
       else {
         env = _chunk.allocate_closure_struct(get_global_struct());
         _chunk.memory_store(results[0], env, "object");
-        v = get_member_function(s, false);
       }
+      Value v = get_member_function(results[0].type, node.string_value);
       v = _b.function_value(v.type, v, env);
       fback.update_reference_count(v, 1);
       fback.refcount_init(v);
@@ -549,8 +544,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     {
       // In type-context, we just want to return a user type.
       if (fback.metadata.has(LexScope::TYPE_EXPR_CONTEXT)) {
-        auto it = _context.types.find(node.string_value);
-        return yang::Type::user_t(node.string_value, it->second.is_managed);
+        return _context.type_lookup(node.string_value).type;
       }
 
       // Load the variable, if it's there. We must be careful to only return
@@ -563,15 +557,14 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       }
 
       // It must be a context function.
-      std::string constructor = node.string_value + "::!";
-      auto it = _context.functions.find(constructor);
-      if (it != _context.functions.end()) {
+      const auto& t = _context.type_lookup(node.string_value);
+      if (t.type.is_managed_user_type()) {
         Value v = get_constructor(node.string_value);
         return _b.function_value(v.type, v, get_global_struct());
       }
-      it = _context.functions.find(node.string_value);
-      if (it != _context.functions.end()) {
-        return _b.function_value(it->second);
+      const auto& f = _context.function_lookup(node.string_value);
+      if (!f.type.is_void()) {
+        return _b.function_value(f);
       }
       // It's possible that nothing matches, when this is the identifier on the
       // left of a variable declaration.
@@ -1018,21 +1011,21 @@ void IrGenerator::create_function(
   _b.b.SetInsertPoint(main_block);
 }
 
-Value IrGenerator::get_member_function(const std::string& name, bool managed)
+Value IrGenerator::get_member_function(
+    const yang::Type& type, const std::string& name)
 {
-  auto it = _member_functions.find(name);
-  if (it != _member_functions.end()) {
-    return it->second;
+  auto jt = _member_functions[type].find(name);
+  if (jt != _member_functions[type].end()) {
+    return jt->second;
   }
 
-  auto jt = _context.functions.find(name);
-  const yang::Type& full_type = jt->second.type;
+  const auto& cf = _context.member_lookup(type, name);
   std::vector<yang::Type> args;
-  for (std::size_t i = 1; i < full_type.get_function_num_args(); ++i) {
-    args.push_back(full_type.get_function_arg_type(i));
+  for (std::size_t i = 1; i < cf.type.get_function_num_args(); ++i) {
+    args.push_back(cf.type.get_function_arg_type(i));
   }
   yang::Type closed_type =
-      yang::Type::function_t(full_type.get_function_return_type(), args);
+      yang::Type::function_t(cf.type.get_function_return_type(), args);
 
   auto llvm_type = _b.raw_function_type(closed_type);
   auto f = llvm::Function::Create(
@@ -1044,25 +1037,24 @@ Value IrGenerator::get_member_function(const std::string& name, bool managed)
   auto block = llvm::BasicBlock::Create(_b.b.getContext(), "entry", f);
   _b.b.SetInsertPoint(block);
 
-  Value genf = _b.function_value(jt->second);
   std::vector<Value> fargs;
-  if (managed) {
-    fargs.emplace_back(full_type.get_function_arg_type(0), closure);
+  if (type.is_managed_user_type()) {
+    fargs.emplace_back(cf.type.get_function_arg_type(0), closure);
   }
   else {
     closure = _b.b.CreateBitCast(closure, _chunk.structure_type());
     auto object = _chunk.memory_load(closure, "object");
-    fargs.emplace_back(full_type.get_function_arg_type(0), object);
+    fargs.emplace_back(cf.type.get_function_arg_type(0), object);
   }
   std::size_t i = 0;
   for (auto it = f->arg_begin(); it != --f->arg_end(); ++it) {
-    fargs.emplace_back(full_type.get_function_arg_type(++i), it);
+    fargs.emplace_back(cf.type.get_function_arg_type(++i), it);
   }
-  _b.b.CreateRet(create_call(genf, fargs));
+  _b.b.CreateRet(create_call(_b.function_value(cf), fargs));
   _b.b.SetInsertPoint(prev);
 
   Value v(closed_type, f);
-  _member_functions.emplace(name, v);
+  _member_functions[type].emplace(name, v);
   return v;
 }
 
@@ -1075,7 +1067,8 @@ Value IrGenerator::get_constructor(const std::string& type)
 
   // Create the destructor which calls the user-type destructor (and usual chunk
   // destructor).
-  auto jt = _context.functions.find(type + "::~");
+  const auto& ct = _context.type_lookup(type);
+  const auto& dtor = ct.destructor;
   auto destructor_type = (llvm::FunctionType*)
       _chunk.structure_destructor()->getType()->getPointerElementType();
   auto destructor = llvm::Function::Create(
@@ -1089,27 +1082,25 @@ Value IrGenerator::get_constructor(const std::string& type)
   closure->setName("boxed_object");
   closure = _b.b.CreateBitCast(closure, _chunk.structure_type());
   auto object = _chunk.memory_load(closure, "object");
-  Value gen_destructor = _b.function_value(jt->second);
-  create_call(gen_destructor, std::vector<Value>{object});
+  create_call(_b.function_value(dtor), std::vector<Value>{object});
   _b.b.CreateCall(_chunk.structure_destructor(), closure);
   _b.b.CreateRetVoid();
 
   // Create the constructor (which overwrites the usual chunk destructor).
-  jt = _context.functions.find(type + "::!");
-  auto llvm_type = _b.raw_function_type(jt->second.type);
+  const auto& ctor = ct.constructor;
+  auto llvm_type = _b.raw_function_type(ctor.type);
   auto f = llvm::Function::Create(
       llvm_type, llvm::Function::InternalLinkage, type, &_b.module);
 
   block = llvm::BasicBlock::Create(_b.b.getContext(), "entry", f);
   _b.b.SetInsertPoint(block);
 
-  Value genf = _b.function_value(jt->second);
   std::vector<Value> fargs;
   std::size_t i = 0;
   for (auto it = f->arg_begin(); it != --f->arg_end(); ++it) {
-    fargs.emplace_back(jt->second.type.get_function_arg_type(++i), it);
+    fargs.emplace_back(ctor.type.get_function_arg_type(++i), it);
   }
-  Value r = create_call(genf, fargs);
+  Value r = create_call(_b.function_value(ctor), fargs);
   llvm::Value* global = --f->arg_end();
   llvm::Value* chunk = _chunk.allocate_closure_struct(global);
   _chunk.memory_store(r, chunk, "object");
@@ -1120,10 +1111,10 @@ Value IrGenerator::get_constructor(const std::string& type)
 
   // Convert signature to return managed type.
   std::vector<yang::Type> args;
-  for (std::size_t i = 0; i < jt->second.type.get_function_num_args(); ++i) {
-    args.push_back(jt->second.type.get_function_arg_type(i));
+  for (std::size_t i = 0; i < ctor.type.get_function_num_args(); ++i) {
+    args.push_back(ctor.type.get_function_arg_type(i));
   }
-  Value v(yang::Type::function_t(yang::Type::user_t(type, true), args), f);
+  Value v(yang::Type::function_t(ct.type, args), f);
   _constructors.emplace(type, v);
   return v;
 }

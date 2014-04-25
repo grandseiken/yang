@@ -434,33 +434,31 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         return Type::ERROR;
       }
 
-      std::string s = results[0].user_type_name() + "::" + node.string_value;
-      auto it = _context.functions.find(s);
-      if (it == _context.functions.end()) {
+      const auto& m = _context.member_lookup(
+          results[0].external(false), node.string_value);
+      if (m.type.is_void()) {
         error(node, "undeclared member function `" + s + "`");
         return Type::ERROR;
       }
       // Omit the first argument (self). Unfortunately, the indirection here
       // makes errors when calling the returned function somewhat vague.
-      const yang::Type& t = it->second.type;
-      Type member = Type(Type::FUNCTION, t.get_function_return_type());
-      for (std::size_t i = 1; i < t.get_function_num_args(); ++i) {
-        member.add_element(t.get_function_arg_type(i));
+      Type t = Type(Type::FUNCTION, m.type.get_function_return_type());
+      for (std::size_t i = 1; i < m.type.get_function_num_args(); ++i) {
+        t.add_element(m.type.get_function_arg_type(i));
       }
-      return member;
+      return t;
     }
 
     case Node::IDENTIFIER:
     {
       // Look up user types in a type-context.
       if (inside_type_context()) {
-        auto context_it = _context.types.find(node.string_value);
-        if (context_it == _context.types.end()) {
-          error(node, "undeclared type `" + node.string_value + "`");
-          return Type::ERROR;
+        const auto& t = _context.type_lookup(node.string_value);
+        if (!t.type.is_void()) {
+          return t.type;
         }
-        return Type(Type::USER_TYPE,
-                    node.string_value, context_it->second.is_managed);
+        error(node, "undeclared type `" + node.string_value + "`");
+        return Type::ERROR;
       }
 
       // Regular symbols.
@@ -471,23 +469,22 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         }
         if (it == --_scopes.rend()) {
           // Check Context if symbol isn't present in the Program table.
-          std::string cname = node.string_value + "::!";
-          auto context_it = _context.functions.find(cname);
-          if (context_it != _context.functions.end()) {
-            // Replace return type of constructor with managed type.
-            const Type& ctype = context_it->second.type;
-            Type return_type(
-                Type::USER_TYPE, ctype.elements(0).user_type_name(), true);
-            Type t(Type::FUNCTION, return_type);
-            for (std::size_t i = 1; i < ctype.element_size(); ++i) {
-              t.add_element(ctype.elements(i));
+          const auto& t = _context.type_lookup(node.string_value);
+          if (t.type.is_managed_user_type()) {
+            // Fix the constructor return type.
+            Type tt(Type::FUNCTION, t.type);
+            for (std::size_t i = 0;
+                 i < t.constructor.type.get_function_num_args(); ++i) {
+              tt.add_element(t.constructor.type.get_function_arg_type(i));
             }
-            return t;
+            return tt;
           }
-          context_it = _context.functions.find(node.string_value);
-          if (context_it != _context.functions.end()) {
-            return context_it->second.type;
+
+          const auto& f = _context.function_lookup(node.string_value);
+          if (!f.type.is_void()) {
+            return f.type;
           }
+
           error(node, "undeclared identifier `" + node.string_value + "`");
           add_symbol(node, node.string_value, Type::ERROR, false, false);
           it = _scopes.rbegin();
@@ -733,10 +730,10 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         return results[1];
       }
 
-      if (_context.functions.count(s)) {
+      if (!_context.function_lookup(s).type.is_void()) {
         error(node, "cannot assign to context function `" + s + "`");
       }
-      else if (_context.types.count(s)) {
+      else if (!_context.type_lookup(s).type.is_void()) {
         error(node, "cannot assign to context type `" + s + "`");
       }
       else {

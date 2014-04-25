@@ -7,13 +7,12 @@
 
 #include "native.h"
 #include "refcounting.h"
+#include "trampoline.h"
 #include "type.h"
 #include "typedefs.h"
 
 namespace yang {
-
 class Context;
-class Instance;
 
 namespace internal {
 
@@ -21,19 +20,16 @@ template<typename>
 struct FunctionConstruct;
 template<typename>
 struct ValueInitialise;
-
 template<typename...>
 struct TrampolineCallArgs;
 template<typename>
 struct TrampolineCallReturn;
 template<typename, typename...>
 struct TrampolineCall;
-
 template<typename, typename>
 struct ReverseTrampolineCallArgs;
 template<typename, typename...>
 struct ReverseTrampolineCallReturn;
-
 template<typename>
 struct GenerateReverseTrampolineLookupTable;
 
@@ -124,9 +120,6 @@ public:
   ~Function() override;
   Function& operator=(const Function& function);
 
-  // Get the type corresponding to this function type as a Yang Type object.
-  static Type get_type(const Context& context);
-
   // Invoke the function.
   R operator()(const Args&... args) const;
 
@@ -138,16 +131,12 @@ private:
   friend struct internal::TrampolineCallReturn;
   template<typename, typename...>
   friend struct internal::TrampolineCall;
-
   template<typename, typename>
   friend struct internal::ReverseTrampolineCallArgs;
   template<typename, typename...>
   friend struct internal::ReverseTrampolineCallReturn;
-
-  template<typename>
-  friend struct internal::FunctionConstruct;
-  template<typename>
-  friend struct internal::ValueInitialise;
+  friend struct internal::ValueInitialise<Function>;
+  friend struct internal::FunctionConstruct<Function>;
 
   // Invariant: Function objects returned to client code must never be null.
   // They must reference a genuine Yang function or C++ function, so that they
@@ -169,6 +158,22 @@ private:
 };
 
 namespace internal {
+
+template<typename T>
+struct FunctionConstruct {
+  static_assert(sizeof(T) != sizeof(T), "use of non-function type");
+  T operator()(void*, void*) const
+  {
+    return {};
+  }
+};
+template<typename R, typename... Args>
+struct FunctionConstruct<Function<R(Args...)>> {
+  Function<R(Args...)> operator()(void* function, void* env) const
+  {
+    return Function<R(Args...)>(function, env);
+  }
+};
 
 // Template deduction for make_fn.
 template<typename T> struct RemoveClass {};
@@ -226,7 +231,17 @@ yang::void_fp get_global_trampoline_function(const yang::Type& type);
 
 // Call a Yang function via global trampolines.
 template<typename R, typename... Args>
-R call_via_trampoline(yang::void_fp target, void* env, const Args&... args);
+R call_via_trampoline(yang::void_fp target, void* env, const Args&... args)
+{
+  yang::Type type = type_of<Function<R(Args...)>>().erase_user_types();
+  yang::void_fp trampoline = get_global_trampoline_function(type);
+  // Generate the C++ side of the trampoline at compile-time.
+  internal::GenerateForwardTrampolineLookupTable<Function<R(Args...)>>()();
+
+  typedef internal::TrampolineCall<R, Args..., void*, yang::void_fp> call_type;
+  auto trampoline_expanded = (typename call_type::fp_type)trampoline;
+  return call_type()(trampoline_expanded, args..., env, target);
+}
 
 // End namespace internal.
 }
@@ -318,70 +333,6 @@ void Function<R(Args...)>::update_env_refcount(int_t change)
   if (_env) {
     internal::update_structure_refcount((internal::Prefix*)_env, change);
   }
-}
-
-namespace internal {
-
-template<typename T>
-struct FunctionConstruct {
-  static_assert(sizeof(T) != sizeof(T), "use of non-function type");
-  T operator()(void*, void*) const
-  {
-    return {};
-  }
-};
-template<typename R, typename... Args>
-struct FunctionConstruct<Function<R(Args...)>> {
-  Function<R(Args...)> operator()(void* function, void* env) const
-  {
-    return Function<R(Args...)>(function, env);
-  }
-};
-template<typename R, typename... Args>
-struct ValueInitialise<Function<R(Args...)>> {
-  void operator()(Function<R(Args...)>& function) const
-  {
-    function.update_env_refcount(1);
-  }
-};
-
-// End namespace yang::internal.
-}
-}
-
-// Due to an awkward set of template dependencies, these includes need to come
-// all the way down here so that get_type and call_via_trampoline can be defined
-// without recursively including function.h again.
-#include "trampoline.h"
-
-namespace yang {
-namespace internal {
-
-// Call a Yang function via global trampolines.
-template<typename R, typename... Args>
-R call_via_trampoline(yang::void_fp target, void* env, const Args&... args)
-{
-  yang::Type type = TypeInfo<Function<R(Args...)>>()();
-  yang::void_fp trampoline = get_global_trampoline_function(type);
-  // Generate the C++ side of the trampoline at compile-time.
-  internal::GenerateForwardTrampolineLookupTable<Function<R(Args...)>>()();
-
-  typedef internal::TrampolineCall<R, Args..., void*, yang::void_fp> call_type;
-  auto trampoline_expanded = (typename call_type::fp_type)trampoline;
-  return call_type()(trampoline_expanded, args..., env, target);
-}
-
-struct ContextInternals;
-const ContextInternals& context_internals(const Context& context);
-
-// End namespace internal.
-}
-
-template<typename R, typename... Args>
-Type Function<R(Args...)>::get_type(const Context& context)
-{
-  return internal::TypeInfo<Function<R(Args...)>>()(
-      internal::context_internals(context));
 }
 
 // End namespace yang.

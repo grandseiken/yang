@@ -10,6 +10,39 @@
 #include <vector>
 
 namespace yang {
+namespace internal {
+class Type;
+
+// Static member is guaranteed to have a different address per template
+// instantiation.
+template<typename>
+struct NativeTypeId {
+  static const void* id;
+};
+template<typename T>
+const void* NativeTypeId<T>::id = nullptr;
+// Maps native types to unique identifiers. Probably, type_uid<const T>
+// (and volatile, etc) should be aliased to type_uid<T>.
+template<typename T>
+const void* type_uid()
+{
+  return &NativeTypeId<T>::id;
+}
+// TODO: this function existing at all is a super big temporary hack and should
+// be got rid of. These need to be replaced with proper data structures, and
+// [get_]user_type_name() on both Type classes with proper lookup.
+inline std::string type_uidstr(const void* uid)
+{
+  return std::to_string((std::intptr_t)uid);
+}
+template<typename T>
+std::string type_uidstr()
+{
+  return type_uidstr(type_uid<T>());
+}
+
+// End namespace internal.
+}
 
 class Type {
 public:
@@ -41,7 +74,7 @@ public:
   // User types.
   bool is_user_type() const;
   bool is_managed_user_type() const;
-  const std::string& get_user_type_name() const;
+  std::string get_user_type_name() const;
 
   bool operator==(const Type& t) const;
   bool operator!=(const Type& t) const;
@@ -55,19 +88,21 @@ public:
   static Type float_vector_t(std::size_t size);
   static Type function_t(
       const Type& return_t, const std::vector<Type>& args);
-  static Type user_t(const std::string& name, bool managed);
+  template<typename>
+  static Type user_t(bool managed);
 
   // Return a new type that's identical except exported.
   Type make_exported(bool exported = true) const;
   // Return a new type that's identical except const.
   Type make_const(bool is_const = true) const;
   // Return a new type with user types erased; that is, all user types replaced
-  // by a single placeholder user type with no name.
+  // by a single placeholder managed or unmanaged user type.
   Type erase_user_types() const;
 
 private:
 
   friend struct std::hash<Type>;
+  friend class internal::Type;
   Type();
 
   enum type_base {
@@ -83,13 +118,23 @@ private:
   type_base _base;
   std::size_t _count;
   std::vector<Type> _elements;
-  std::string _user_type_name;
+  const void* _user_type_uid;
   bool _managed_user_type;
   static Type void_type;
 
 };
 
 typedef std::unordered_map<std::string, yang::Type> symbol_table;
+
+template<typename T>
+Type Type::user_t(bool managed)
+{
+  Type t;
+  t._base = USER_TYPE;
+  t._user_type_uid = internal::type_uid<T>();
+  t._managed_user_type = managed;
+  return t;
+}
 
 // End namespace yang.
 }

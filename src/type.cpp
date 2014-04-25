@@ -11,7 +11,7 @@ std::string Type::string() const
 {
   std::string s;
   if (_base == USER_TYPE) {
-    s = _user_type_name + (_managed_user_type ? "&" : "*");
+    s = get_user_type_name() + (_managed_user_type ? "&" : "*");
   }
   else if (_base == FUNCTION) {
     s += _elements[0].string() + "(";
@@ -110,9 +110,9 @@ bool Type::is_managed_user_type() const
   return _managed_user_type;
 }
 
-const std::string& Type::get_user_type_name() const
+std::string Type::get_user_type_name() const
 {
-  return _user_type_name;
+  return internal::type_uidstr(_user_type_uid);
 }
 
 bool Type::operator==(const Type& t) const
@@ -125,7 +125,7 @@ bool Type::operator==(const Type& t) const
       return false;
     }
   }
-  return _user_type_name == t._user_type_name &&
+  return _user_type_uid == t._user_type_uid &&
       _managed_user_type == t._managed_user_type &&
       _base == t._base && _count == t._count;
 }
@@ -187,15 +187,6 @@ Type Type::function_t(const Type& return_t, const std::vector<Type>& args)
   return t;
 }
 
-Type Type::user_t(const std::string& name, bool managed)
-{
-  Type t;
-  t._base = USER_TYPE;
-  t._user_type_name = name;
-  t._managed_user_type = managed;
-  return t;
-}
-
 Type Type::make_exported(bool exported) const
 {
   Type t = *this;
@@ -213,7 +204,7 @@ Type Type::make_const(bool is_const) const
 Type Type::erase_user_types() const
 {
   Type t = *this;
-  t._user_type_name.clear();
+  t._user_type_uid = nullptr;
   for (auto& u : t._elements) {
     u = u.erase_user_types();
   }
@@ -225,6 +216,7 @@ Type::Type()
   , _const(false)
   , _base(VOID)
   , _count(1)
+  , _user_type_uid(nullptr)
   , _managed_user_type(false)
 {
 }
@@ -251,6 +243,7 @@ namespace std {
     for (const auto& t : type._elements) {
       hash_combine(seed, operator()(t));
     }
+    hash_combine(seed, (std::intptr_t)type._user_type_uid);
     hash_combine(seed, type._managed_user_type);
     return seed;
   }
