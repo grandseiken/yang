@@ -455,7 +455,9 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       const auto& m =
           _context.member_lookup(results[0].external(), node.string_value);
       if (m.type.is_void()) {
-        error(node, "undeclared member function `" + s + "`");
+        error(node,
+              "undeclared member function `" + results[0].external().string() +
+              "::" + node.string_value + "`");
         return Type(true);
       }
       // Omit the first argument (self). Unfortunately, the indirection here

@@ -221,7 +221,77 @@ TEST_F(YangTest, ManagedUserTypes)
   EXPECT_EQ(count, 0);
 }
 
-// TODO: test using a single type as both managed an unmanaged, with multiple
-// names, with no names, while importing Instances, and so on.
+const std::string TestUserTypedefsStrA = R"(
+export foo = a1()
+{
+  return get_a();
+}
+export bar = a2()
+{
+  return get_a();
+}
+export do_it = int()
+{
+  const a = foo();
+  const b = bar();
+  return foo().afn() + b.afn() +
+         a2::afn(a) + a1::afn(bar());
+}
+)";
+
+const std::string TestUserTypedefsStrB = R"(
+export foo = a1()
+{
+  return get_a();
+}
+export bar = ma()
+{
+  return ma(foo());
+}
+)";
+
+TEST_F(YangTest, UserTypedefs)
+{
+  if (!filter("user_types")) {
+    return;
+  }
+
+  struct type_a {
+    std::size_t count;
+  };
+  type_a the_a{0};
+
+  auto afn = [](type_a*){
+    return (int_t)4;
+  };
+  auto ctxt = context(false);
+  ctxt.register_member_function("afn", make_fn(afn));
+  ctxt.register_type<type_a>("a1");
+  ctxt.register_type<type_a>("a2");
+  ctxt.register_function("get_a", make_fn([&]{return &the_a;}));
+
+  auto inst = instance(ctxt, TestUserTypedefsStrA);
+  EXPECT_EQ(inst.call<int_t>("do_it"), 16);
+
+  auto ma_ctor = [](type_a* a)
+  {
+    ++a->count;
+    return a;
+  };
+  auto ma_dtor = [](type_a* a)
+  {
+    --a->count;
+  };
+  ctxt.register_type("ma", make_fn(ma_ctor), make_fn(ma_dtor));
+  {
+    ASSERT_EQ(the_a.count, 0);
+    auto jnst = instance(ctxt, TestUserTypedefsStrB);
+    auto ref = jnst.call<Ref<type_a>>("bar");
+    EXPECT_EQ(the_a.count, 1);
+  }
+  instance("");
+  EXPECT_EQ(the_a.count, 0);
+}
+
 // End namespace yang.
 }

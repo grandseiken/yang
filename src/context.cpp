@@ -111,7 +111,8 @@ void Context::register_namespace(const std::string& name,
   check_namespace(name);
   Context context;
   for (const auto& pair : instance.get_functions()) {
-    // TODO: finish implementing this.
+    // TODO: finish implementing this. With tests: using internal types with
+    // no names; using external types with many namespaced names.
   }
   register_namespace(name, context);
 }

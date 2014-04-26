@@ -118,6 +118,9 @@ public:
 
   // Add an (unmanaged) user type. Types must be registered before registering
   // functions that make use of them.
+  // TODO: consider requiring the first overload of register_type to take a
+  // template argument T*, and the second to take a Ref<T>; it makes common
+  // mistakes less confusing.
   template<typename T>
   void register_type(const std::string& name);
 
