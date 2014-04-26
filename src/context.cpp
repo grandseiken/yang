@@ -71,10 +71,11 @@ void Context::register_namespace(const std::string& name,
   }
   for (const auto& pair : context._internals->members) {
     for (const auto& qair : pair.second) {
-      // TODO: is there any way around this? We could perhaps merge if the member
-      // functions are identical... is there any use-case for that?
+      // If types have duplicated member functions, we can merge only if we're
+      // sure they're absolutely identical.
       const auto& map = _internals->members[pair.first];
-      if (map.find(qair.first) != map.end()) {
+      auto it = map.find(qair.first);
+      if (it != map.end() && it->second != qair.second) {
         throw runtime_error(
             "context registered as namespace with conflicting member "
             "function `" + pair.first.string() + "::" + qair.first + "`");
@@ -111,8 +112,22 @@ void Context::register_namespace(const std::string& name,
   check_namespace(name);
   Context context;
   for (const auto& pair : instance.get_functions()) {
-    // TODO: finish implementing this. With tests: using internal types with
-    // no names; using external types with many namespaced names.
+    // This is kind of awkward; we just use Function<void()> for every type and
+    // rely on it never being directly invoked. It only works because the
+    // functions are all Yang functions. It depends on otherwise-unnecessary
+    // friendship from Instance. A nice integration of yang::Value might make it
+    // a lot better.
+    auto& g = context._internals->functions[pair.first];
+    g.type = pair.second.make_exported(false);
+    g.ptr = std::make_shared<Function<void()>>(
+        internal::FunctionConstruct<Function<void()>>()(
+            instance.get_native_fp(pair.first), instance._global_data));
+  }
+  // Not entirely obvious which types should be automatically exposed, if any.
+  for (const auto& pair : instance._internals->program->context->types) {
+    if (pair.first.find(':') == std::string::npos) {
+      context._internals->types.insert(pair);
+    }
   }
   register_namespace(name, context);
 }

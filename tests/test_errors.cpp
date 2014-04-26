@@ -91,6 +91,11 @@ TEST_F(YangTest, ErrorTest)
   }
 
   auto ctxt = context();
+  struct other {};
+  ctxt.register_type<other>("OtherType");
+  ctxt.register_type("MotherType", make_fn([]{return (other*)nullptr;}),
+                                   make_fn([](other*){}));
+
   auto erc = [&](const std::string& str,
                  const std::string& text, std::size_t count)
   {
@@ -196,6 +201,10 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {get_user_type().foo(1);}", "(");
   err("x = void() {UserType();}", "UserType");
   err("x = void() {MuserType(0);}", "(");
+  err("x = OtherType() {return get_user_type();}", "(");
+  err("x = MotherType() {return MuserType();}", "(");
+  err("x = MuserType() {return get_user_type();}", "(");
+  err("x = OtherType() {return MotherType();}", "(");
 
   // Ternary errors.
   err("x = void() {1. ? 0 : 0;}", "?");

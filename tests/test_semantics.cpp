@@ -272,7 +272,7 @@ TEST_F(YangTest, TestTco)
   // TODO: EXPECT_NO_THROW(inst.call<int_t>("tco_fac", 1000000)).
 }
 
-const std::string TestNamespacesStr = R"(
+const std::string TestContextNamespacesStr = R"(
 export fn = int()
 {
   const m = outer::MType();
@@ -283,11 +283,12 @@ export fn = int()
       other::
              h() +
       t.mem() + other::Type::mem(t) +
-      m.mem() + outer::MType::mem(m);
+      m.mem() + outer::MType::mem(m) +
+      Type::mem(t);
 }
 )";
 
-TEST_F(YangTest, NamespacesTest)
+TEST_F(YangTest, ContextNamespacesTest)
 {
   if (!filter("semantics")) {
     return;
@@ -330,20 +331,73 @@ TEST_F(YangTest, NamespacesTest)
   other_ctxt.register_type<type>("Type");
 
   auto ctxt = context();
-  ctxt.register_namespace("outer", inner_ctxt);
-  ctxt.register_namespace("other", other_ctxt);
   ctxt.register_member_function("mem", make_fn([](type*)
   {
     return int_t(2);
   }));
+  ctxt.register_namespace("outer", inner_ctxt);
+  ctxt.register_namespace("other", other_ctxt);
   type closed_type;
   ctxt.register_function("make_type", make_fn([&]
   {
     return &closed_type;
   }));
+  ctxt.register_type<type>("Type");
 
-  auto inst = instance(ctxt, TestNamespacesStr);
-  EXPECT_EQ(inst.call<int_t>("fn"), 45);
+  auto inst = instance(ctxt, TestContextNamespacesStr);
+  EXPECT_EQ(inst.call<int_t>("fn"), 47);
+}
+
+const std::string TestInstanceNamespacesStrA = R"(
+g = UserType()
+{
+  return get_user_type();
+}
+export f = UserType()
+{
+  return g();
+}
+)";
+
+const std::string TestInstanceNamespacesStrB = R"(
+export global {
+  var u = inst::f();
+}
+export g = void()
+{
+  u = inst::f();
+}
+export get = inst::UserType()
+{
+  return inst::f();
+}
+)";
+
+TEST_F(YangTest, InstanceNamespacesTest)
+{
+  if (!filter("semantics")) {
+    return;
+  }
+
+  auto iictxt = context(false);
+  iictxt.register_type<user_type*>("UserType");
+  auto ictxt = context();
+  ictxt.register_namespace("inner", iictxt);
+  auto inst = instance(ictxt, TestInstanceNamespacesStrA);
+  auto ctxt = context(false);
+  ctxt.register_namespace("inst", inst);
+  auto jnst = instance(ctxt, TestInstanceNamespacesStrB);
+  EXPECT_EQ(jnst.get_global<user_type*>("u")->id, 0);
+  jnst.call<void>("g");
+  EXPECT_EQ(jnst.get_global<user_type*>("u")->id, 1);
+  EXPECT_EQ(jnst.call<user_type*>("get")->id, 2);
+
+  auto prog = program_suppress_errors(ctxt, "x = void() {inst::g();}");
+  EXPECT_FALSE(prog.success());
+  prog = program_suppress_errors(ctxt, "x = void(inst::inner::UserType) {}");
+  EXPECT_FALSE(prog.success());
+  // Register an instance back into the same context it's compiled against.
+  ctxt.register_namespace("jnst", jnst);
 }
 
 // End namespace yang.

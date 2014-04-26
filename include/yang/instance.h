@@ -51,6 +51,7 @@ private:
 
   template<typename>
   friend class Function;
+  friend class Context;
 
   void* get_native_fp(const std::string& name) const;
   void* get_native_fp(llvm::Function* ir_fp) const;

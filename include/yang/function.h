@@ -53,6 +53,7 @@ public:
 private:
 
   friend class Builder;
+  friend struct GenericFunction;
   virtual void get_representation(void** function, void** env) = 0;
 
 };
@@ -224,6 +225,9 @@ struct GenericFunction {
 
   yang::Type type;
   std::shared_ptr<FunctionBase> ptr;
+
+  bool operator==(const GenericFunction& other) const;
+  bool operator!=(const GenericFunction& other) const;
 };
 
 // Avoid including unnecessary files in this header.

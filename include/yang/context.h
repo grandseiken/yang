@@ -102,7 +102,6 @@ class Context {
 public:
 
   Context();
-
   // Dump the contents of another Context into a namespace in this one.
   void register_namespace(const std::string& name, const Context& context);
   // Add an Instance as a namespace. Everything compiled with this Context will
@@ -155,7 +154,7 @@ private:
   void copy_internals();
 
   template<typename R, typename... Args>
-  void make_function_internal(const Function<R(Args...)>& f);
+  internal::GenericFunction make_generic(const Function<R(Args...)>& f);
 
   friend class Program;
   std::shared_ptr<internal::ContextInternals> _internals;
@@ -253,7 +252,7 @@ void Context::check_type(const std::string& name) const
 }
 
 template<typename R, typename... Args>
-internal::GenericFunction make_generic(const Function<R(Args...)>& f)
+internal::GenericFunction Context::make_generic(const Function<R(Args...)>& f)
 {
   internal::GenericFunction g;
   g.type = type_of<Function<R(Args...)>>();

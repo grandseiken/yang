@@ -16,7 +16,9 @@ namespace yang {
 // TODO: can this be used for anything useful? For example, calling Yang
 // functions using only Values rather than explicit types.
 // Context::register_namespace(const std::string&, const Instance&) is an
-// example of the kind of place this could really help.
+// example of the kind of place this could really help. Ideally that should
+// be easily implementable in terms of the rest of the public interface of
+// Context.
 class Value {
 public:
 

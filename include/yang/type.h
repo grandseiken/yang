@@ -29,8 +29,8 @@ const void* type_uid()
   return &NativeTypeId<T>::id;
 }
 // TODO: this function existing at all is a super big temporary hack and should
-// be got rid of. These need to be replaced with proper data structures, and
-// [get_]user_type_name() on both Type classes with proper lookup.
+// be got rid of. Printing out random pointers needs to be replaced with proper
+// typedef lookup.
 inline std::string type_uidstr(const void* uid)
 {
   return std::to_string((std::intptr_t)uid);

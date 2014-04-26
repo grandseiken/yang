@@ -120,9 +120,11 @@ TEST_F(YangTest, ContextApiTest)
   }));
   ctxt.register_type<type_e>("Eman");
   EXPECT_NO_THROW(ctxt.register_namespace("whatever", etxt));
-  EXPECT_NO_THROW(ctxt.register_namespace("again", etxt));
   etxt.register_member_function("foo", voidaf);
-  EXPECT_THROW(ctxt.register_namespace("another", etxt), runtime_error);
+  EXPECT_NO_THROW(ctxt.register_namespace("again", etxt));
+  auto ftxt = context(false);
+  ftxt.register_member_function("foo", make_fn([](type_a*){}));
+  EXPECT_THROW(ctxt.register_namespace("another", ftxt), runtime_error);
 }
 
 const std::string TestApisStr = R"(
