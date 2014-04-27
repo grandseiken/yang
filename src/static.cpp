@@ -457,7 +457,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
           _context.member_lookup(results[0].external(), node.string_value);
       if (m.type.is_void()) {
         error(
-            node, "undeclared member function `" + results[0].string(_context) +
+            node, "undeclared member function `" +
+                  results[0].string(_context, false) +
                   "::" + node.string_value + "`");
         return Type(true);
       }

@@ -83,9 +83,9 @@ void Context::register_namespace(const std::string& name,
       }
     }
   }
-  _internals->namespaces.insert(name);
   copy_internals();
 
+  _internals->namespaces.insert(name);
   for (const auto& pair : context._internals->types) {
     _internals->types.emplace(name + "::" + pair.first, pair.second);
   }
@@ -124,26 +124,63 @@ void Context::register_namespace(const std::string& name,
         internal::FunctionConstruct<Function<void()>>()(
             instance.get_native_fp(pair.first), instance._global_data));
   }
-  // Not entirely obvious which types should be automatically exposed, if any.
-  for (const auto& pair : instance._internals->program->context->types) {
-    if (pair.first.find(':') == std::string::npos) {
-      context._internals->types.insert(pair);
-    }
-  }
+  // Conservative decision: no type used by the instance is automatically
+  // exposed. Clearly, member functions shouldn't be added, so it'd be weird
+  // to expose types but not their members.
+  // This could be revisited: it might be okay to expose the namespace-prefixed
+  // shortest name of each type that actually appears in the exported API, for
+  // example.
   register_namespace(name, context);
+}
+
+void Context::check_type(const std::string& name) const
+{
+  check_identifier(name);
+  if (_internals->functions.find(name) != _internals->functions.end()) {
+    throw runtime_error(
+        "typename `" + name + "` conflicts with registered function");
+  }
+  if (_internals->namespaces.find(name) != _internals->namespaces.end()) {
+    throw runtime_error(
+        "typename `" + name + "` conflicts with registered namespace");
+  }
+  if (_internals->types.find(name) != _internals->types.end()) {
+    throw runtime_error(
+        "duplicate typename `" + name + "` registered in context");
+  }
+}
+
+void Context::check_function(const std::string& name) const
+{
+  check_identifier(name);
+  if (_internals->types.find(name) != _internals->types.end()) {
+    throw runtime_error(
+        "function `" + name + "` conflicts with registered type");
+  }
+  if (_internals->namespaces.find(name) != _internals->namespaces.end()) {
+    throw runtime_error(
+        "function `" + name + "` conflicts with registered namespace");
+  }
+  if (_internals->functions.find(name) != _internals->functions.end()) {
+    throw runtime_error(
+        "duplicate function `" + name + "` registered in context");
+  }
 }
 
 void Context::check_namespace(const std::string& name) const
 {
   check_identifier(name);
-  auto jt = _internals->namespaces.find(name);
-  if (jt != _internals->namespaces.end()) {
+  if (_internals->functions.find(name) != _internals->functions.end()) {
+    throw runtime_error(
+        "namespace `" + name + "` conflicts with registered function");
+  }
+  if (_internals->types.find(name) != _internals->types.end()) {
+    throw runtime_error(
+        "namespace `" + name + "` conflicts with registered type");
+  }
+  if (_internals->namespaces.find(name) != _internals->namespaces.end()) {
     throw runtime_error(
         "duplicate namespace `" + name + "` registered in context");
-  }
-  auto it = _internals->types.find(name);
-  if (it != _internals->types.end()) {
-    throw runtime_error("namespace `" + name + "` conflicts with typename");
   }
 }
 

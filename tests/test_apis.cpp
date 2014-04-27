@@ -87,6 +87,7 @@ TEST_F(YangTest, ContextApiTest)
   EXPECT_THROW(ctxt.register_member_function("~", voidaf), runtime_error);
   EXPECT_THROW(ctxt.register_type<type_c>("$c"), runtime_error);
   EXPECT_THROW(ctxt.register_type("a-b", ccon, voidcf), runtime_error);
+  EXPECT_THROW(ctxt.register_namespace(" ", context()), runtime_error);
 
   // Managed/unmanaged simultaeneously.
   auto refaf = make_fn([](Ref<type_a>){});
@@ -105,11 +106,13 @@ TEST_F(YangTest, ContextApiTest)
   // Namespace conflicts.
   auto dtxt = context(false);
   EXPECT_THROW(dtxt.register_namespace("dtxt", dtxt), runtime_error);
+  EXPECT_THROW(ctxt.register_namespace("foo", dtxt), runtime_error);
   EXPECT_THROW(ctxt.register_namespace("TypeC", dtxt), runtime_error);
-  EXPECT_THROW(ctxt.register_namespace("%", dtxt), runtime_error);
   ctxt.register_namespace("dtxt", dtxt);
   EXPECT_THROW(ctxt.register_namespace("dtxt", dtxt), runtime_error);
   EXPECT_THROW(ctxt.register_type<type_d>("dtxt"), runtime_error);
+  EXPECT_THROW(ctxt.register_function("dtxt", voidf), runtime_error);
+  EXPECT_THROW(ctxt.register_type("dtxt", dcon, voiddf), runtime_error);
 
   struct type_e {};
   struct type_f {};

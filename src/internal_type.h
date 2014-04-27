@@ -28,7 +28,7 @@ public:
   // Convert to external type.
   const yang::Type& external() const;
   // Return a string representation of the type.
-  std::string string(const ContextInternals& context) const;
+  std::string string(const ContextInternals& context, bool quote = true) const;
   // Change constness.
   Type make_const(bool is_const) const;
 

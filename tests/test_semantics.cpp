@@ -367,7 +367,7 @@ export g = void()
 {
   u = inst::f();
 }
-export get = inst::UserType()
+export get = Ut()
 {
   return inst::f();
 }
@@ -379,13 +379,10 @@ TEST_F(YangTest, InstanceNamespacesTest)
     return;
   }
 
-  auto iictxt = context(false);
-  iictxt.register_type<user_type*>("UserType");
-  auto ictxt = context();
-  ictxt.register_namespace("inner", iictxt);
-  auto inst = instance(ictxt, TestInstanceNamespacesStrA);
+  auto inst = instance(context(), TestInstanceNamespacesStrA);
   auto ctxt = context(false);
   ctxt.register_namespace("inst", inst);
+  ctxt.register_type<user_type>("Ut");
   auto jnst = instance(ctxt, TestInstanceNamespacesStrB);
   EXPECT_EQ(jnst.get_global<user_type*>("u")->id, 0);
   jnst.call<void>("g");
@@ -394,7 +391,7 @@ TEST_F(YangTest, InstanceNamespacesTest)
 
   auto prog = program_suppress_errors(ctxt, "x = void() {inst::g();}");
   EXPECT_FALSE(prog.success());
-  prog = program_suppress_errors(ctxt, "x = void(inst::inner::UserType) {}");
+  prog = program_suppress_errors(ctxt, "x = void(inst::UserType) {}");
   EXPECT_FALSE(prog.success());
   // Register an instance back into the same context it's compiled against.
   ctxt.register_namespace("jnst", jnst);

@@ -198,9 +198,44 @@ std::string Type::string(const internal::ContextInternals& context) const
 {
   std::string s;
   if (_base == USER_TYPE) {
-    // TODO: look up type names in the context instead of bailing out.
-    s = "anon." + std::to_string((std::intptr_t)_user_type_uid) +
-        (_managed_user_type ? "&" : "*");
+    // Find the name(s) of this type with the fewest namespace prefixes.
+    bool first = true;
+    std::size_t scope_min = 0;
+    std::vector<std::string> names;
+    for (const auto& pair : context.types) {
+      if (*this != pair.second.type) {
+        continue;
+      }
+      std::size_t scope = 0;
+      for (std::size_t i = 0; i < pair.first.length(); ++i) {
+        scope += pair.first[i] == ':';
+      }
+      if (scope < scope_min || first) {
+        scope_min = scope;
+        names.clear();
+      }
+      if (scope == scope_min) {
+        names.push_back(pair.first);
+      }
+      first = false;
+    }
+
+    if (names.empty()) {
+      s = "anon." + std::to_string((std::intptr_t)_user_type_uid);
+    }
+    else if (names.size() == 1) {
+      s = names.back();
+    }
+    else {
+      for (std::size_t i = 0; i < names.size(); ++i) {
+        if (i) {
+          s += ",";
+        }
+        s += names[i];
+      }
+      s = "{" + s + "}";
+    }
+    s += (_managed_user_type ? "&" : "*");
   }
   else if (_base == FUNCTION) {
     s += _elements[0].string(context) + "(";

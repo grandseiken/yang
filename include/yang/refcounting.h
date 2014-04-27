@@ -79,7 +79,10 @@ public:
   Ref(const Ref& ref);
   ~Ref();
   Ref& operator=(const Ref& ref);
-  T* operator->();
+
+  T& operator*() const;
+  T* operator->() const;
+  T* get() const;
 
 private:
 
@@ -135,7 +138,19 @@ Ref<T>& Ref<T>::operator=(const Ref& ref)
 }
 
 template<typename T>
-T* Ref<T>::operator->()
+T& Ref<T>::operator*() const
+{
+  return *(T*)_wrap->data;
+}
+
+template<typename T>
+T* Ref<T>::operator->() const
+{
+  return (T*)_wrap->data;
+}
+
+template<typename T>
+T* Ref<T>::get() const
 {
   return (T*)_wrap->data;
 }

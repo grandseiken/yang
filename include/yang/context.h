@@ -67,10 +67,10 @@ struct ContextInternals {
     type_def(const yang::Type& type);
 
     yang::Type type;
-    // TODO: this is a little odd: constructor/destructor pairs are associated
-    // with typedefs rather than native types themselves. It actually kind of
-    // makes sense, since it allows multiple constructors. But it'd be redundant
-    // with function overloading.
+    // This is a little odd: constructor/destructor pairs are associated with
+    // with typedefs rather than native types themselves. It kind of makes
+    // sense, since it allows multiple constructors; function overloading
+    // would make it redundant.
     GenericFunction constructor;
     GenericFunction destructor;
   };
@@ -116,10 +116,8 @@ public:
   // includes. Direct support might be nice.
 
   // Add an (unmanaged) user type. Types must be registered before registering
-  // functions that make use of them.
-  // TODO: consider requiring the first overload of register_type to take a
-  // template argument T*, and the second to take a Ref<T>; it makes common
-  // mistakes less confusing.
+  // functions that make use of them. Note that register_type for unmanaged
+  // type T should be called with template parameter T (and not T*).
   template<typename T>
   void register_type(const std::string& name);
 
@@ -139,16 +137,14 @@ public:
       const std::string& name, const Function<R(Ref<T>, Args...)>& f);
 
   // Add a globally-available function to the context.
-  // TODO: perhaps functions should conflict with typenames and namespaces in
-  // general, rather than just constructors?
   template<typename R, typename... Args>
   void register_function(
       const std::string& name, const Function<R(Args...)>& f);
 
 private:
 
-  template<typename T>
   void check_type(const std::string& name) const;
+  void check_function(const std::string& name) const;
   void check_namespace(const std::string& name) const;
   void check_identifier(const std::string& ident) const;
   void copy_internals();
@@ -165,7 +161,7 @@ private:
 template<typename T>
 void Context::register_type(const std::string& name)
 {
-  check_type<T>(name);
+  check_type(name);
   copy_internals();
   _internals->types.emplace(name, Type::user_t<T>(false));
 }
@@ -175,11 +171,7 @@ void Context::register_type(const std::string& name,
                             const Function<T*(Args...)>& constructor,
                             const Function<void(T*)>& destructor)
 {
-  check_type<T>(name);
-  if (_internals->functions.find(name) != _internals->functions.end()) {
-    throw runtime_error(
-        "managed type `" + name + "` conflicts with registered function");
-  }
+  check_type(name);
   copy_internals();
   auto it = _internals->types.emplace(name, Type::user_t<T>(true));
   it.first->second.constructor = make_generic(constructor);
@@ -220,36 +212,9 @@ template<typename R, typename... Args>
 void Context::register_function(
     const std::string& name, const Function<R(Args...)>& f)
 {
-  check_identifier(name);
-  auto type_it = _internals->types.find(name);
-  if (type_it != _internals->types.end() &&
-      type_it->second.type.is_managed_user_type()) {
-    throw runtime_error(
-        "function `" + name + "` conflicts with registered managed type");
-  }
-  auto it = _internals->functions.find(name);
-  if (it != _internals->functions.end()) {
-    throw runtime_error(
-        "duplicate function `" + name + "` registered in context");
-  }
-
+  check_function(name);
   copy_internals();
   _internals->functions[name] = make_generic(f);
-}
-
-template<typename T>
-void Context::check_type(const std::string& name) const
-{
-  check_identifier(name);
-  auto it = _internals->types.find(name);
-  if (it != _internals->types.end()) {
-    throw runtime_error(
-        "duplicate typename `" + name + "` registered in context");
-  }
-  auto jt = _internals->namespaces.find(name);
-  if (jt != _internals->namespaces.end()) {
-    throw runtime_error("typename `" + name + "` conflicts with namespace");
-  }
 }
 
 template<typename R, typename... Args>
