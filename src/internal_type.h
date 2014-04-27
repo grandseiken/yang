@@ -11,6 +11,7 @@
 
 namespace yang {
 namespace internal {
+struct ContextInternals;
 
 // Type together with an error flag, for expressions containing an error
 // where the type cannot be determined. Further errors involving a value
@@ -27,7 +28,7 @@ public:
   // Convert to external type.
   const yang::Type& external() const;
   // Return a string representation of the type.
-  std::string string() const;
+  std::string string(const ContextInternals& context) const;
   // Change constness.
   Type make_const(bool is_const) const;
 

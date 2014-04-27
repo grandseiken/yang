@@ -24,9 +24,9 @@ const yang::Type& Type::external() const
   return _wrap;
 }
 
-std::string Type::string() const
+std::string Type::string(const ContextInternals& context) const
 {
-  return _error ? "<error>" : "`" + _wrap.string() + "`";
+  return _error ? "<error>" : "`" + _wrap.string(context) + "`";
 }
 
 Type Type::make_const(bool is_const) const

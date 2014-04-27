@@ -77,8 +77,9 @@ void Context::register_namespace(const std::string& name,
       auto it = map.find(qair.first);
       if (it != map.end() && it->second != qair.second) {
         throw runtime_error(
-            "context registered as namespace with conflicting member "
-            "function `" + pair.first.string() + "::" + qair.first + "`");
+            "member function `" + pair.first.string(context) + "::" +
+            qair.first + "` in context registered as namespace conflicts with "
+            "existing member of `" + pair.first.string(*this) + "`");
       }
     }
   }

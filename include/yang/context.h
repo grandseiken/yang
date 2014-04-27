@@ -157,6 +157,7 @@ private:
   internal::GenericFunction make_generic(const Function<R(Args...)>& f);
 
   friend class Program;
+  friend class Type;
   std::shared_ptr<internal::ContextInternals> _internals;
 
 };
@@ -193,7 +194,7 @@ void Context::register_member_function(
   Type t = Type::user_t<T>(false);
   if (_internals->members[t].find(name) != _internals->members[t].end()) {
     throw runtime_error(
-        "duplicate member function `" + internal::type_uidstr<T>() + "::" +
+        "duplicate member function `" + t.string(*this) + "::" +
         name + "` registered in context");
   }
   copy_internals();
@@ -208,7 +209,7 @@ void Context::register_member_function(
   Type t = Type::user_t<T>(true);
   if (_internals->members[t].find(name) != _internals->members[t].end()) {
     throw runtime_error(
-        "duplicate member function `" + internal::type_uidstr<T>() + "::" +
+        "duplicate member function `" + t.string(*this) + "::" +
         name + "` registered in context");
   }
   copy_internals();

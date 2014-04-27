@@ -69,8 +69,8 @@ const T& Value::as() const
 {
   Type type = type_of<T>();
   if (_type != type) {
-    throw runtime_error(
-        "accessed " + _type.string() + " value as " + type.string());
+    throw runtime_error("accessed " + _type.string(Context()) +
+                        " value as " + type.string(Context()));
   }
   return *(T*)_data;
 }

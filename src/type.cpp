@@ -3,36 +3,14 @@
 // MIT License. See LICENSE file for details.
 //============================================================================//
 #include <yang/type.h>
+#include <yang/context.h>
 #include <yang/error.h>
 
 namespace yang {
 
-std::string Type::string() const
+std::string Type::string(const Context& context) const
 {
-  std::string s;
-  if (_base == USER_TYPE) {
-    s = user_type_name() + (_managed_user_type ? "&" : "*");
-  }
-  else if (_base == FUNCTION) {
-    s += _elements[0].string() + "(";
-    for (std::size_t i = 1; i < _elements.size(); ++i) {
-      if (i > 1) {
-        s += ", ";
-      }
-      s += _elements[i].string();
-    }
-    s += ")";
-  }
-  else {
-    s += _base == VOID ? "void" :
-         _base == INT ? "int" :
-         _base == FLOAT ? "float" : "error";
-
-    if (_count > 1) {
-      s += std::to_string(_count);
-    }
-  }
-  return (_exported ? "export " : "") + s + (_const ? " const" : "");
+  return string(*context._internals);
 }
 
 bool Type::is_exported() const
@@ -108,11 +86,6 @@ bool Type::is_user_type() const
 bool Type::is_managed_user_type() const
 {
   return _managed_user_type;
-}
-
-std::string Type::user_type_name() const
-{
-  return internal::type_uidstr(_user_type_uid);
 }
 
 bool Type::operator==(const Type& t) const
@@ -219,6 +192,36 @@ Type::Type()
   , _user_type_uid(nullptr)
   , _managed_user_type(false)
 {
+}
+
+std::string Type::string(const internal::ContextInternals& context) const
+{
+  std::string s;
+  if (_base == USER_TYPE) {
+    // TODO: look up type names in the context instead of bailing out.
+    s = "anon." + std::to_string((std::intptr_t)_user_type_uid) +
+        (_managed_user_type ? "&" : "*");
+  }
+  else if (_base == FUNCTION) {
+    s += _elements[0].string(context) + "(";
+    for (std::size_t i = 1; i < _elements.size(); ++i) {
+      if (i > 1) {
+        s += ", ";
+      }
+      s += _elements[i].string(context);
+    }
+    s += ")";
+  }
+  else {
+    s += _base == VOID ? "void" :
+         _base == INT ? "int" :
+         _base == FLOAT ? "float" : "error";
+
+    if (_count > 1) {
+      s += std::to_string(_count);
+    }
+  }
+  return (_exported ? "export " : "") + s + (_const ? " const" : "");
 }
 
 Type Type::void_type;

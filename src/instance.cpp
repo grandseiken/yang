@@ -92,15 +92,16 @@ void Instance::check_global(const std::string& name, const Type& type,
   }
   if (type != it->second) {
     throw runtime_error(
-        _internals->program->name +
-        ": global `" + it->second.string() + " " + name +
-        "` accessed via incompatible type `" + type.string() + "`");
+        _internals->program->name + ": global `" +
+        it->second.string(*_internals->program->context) + " " + name +
+        "` accessed via incompatible type `" +
+        type.string(*_internals->program->context) + "`");
   }
   if (for_modification &&
       (it->second.is_const() || !it->second.is_exported())) {
     throw runtime_error(
-        _internals->program->name +
-        ": global `" + it->second.string() + " " + name +
+        _internals->program->name + ": global `" +
+        it->second.string(*_internals->program->context) + " " + name +
         "` cannot be modified externally");
   }
 }
@@ -115,9 +116,10 @@ void Instance::check_function(const std::string& name, const Type& type) const
   }
   if (type != it->second) {
     throw runtime_error(
-        _internals->program->name + ": function `" + it->second.string() +
+        _internals->program->name + ": function `" +
+        it->second.string(*_internals->program->context) +
         " " + name + "` accessed via incompatible type `" +
-        type.string() + "`");
+        type.string(*_internals->program->context) + "`");
   }
 }
 

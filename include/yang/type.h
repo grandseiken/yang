@@ -10,7 +10,10 @@
 #include <vector>
 
 namespace yang {
+class Context;
+
 namespace internal {
+class ContextInternals;
 class Type;
 
 // Static member is guaranteed to have a different address per template
@@ -28,18 +31,6 @@ const void* type_uid()
 {
   return &NativeTypeId<T>::id;
 }
-// TODO: this function existing at all is a super big temporary hack and should
-// be got rid of. Printing out random pointers needs to be replaced with proper
-// typedef lookup.
-inline std::string type_uidstr(const void* uid)
-{
-  return std::to_string((std::intptr_t)uid);
-}
-template<typename T>
-std::string type_uidstr()
-{
-  return type_uidstr(type_uid<T>());
-}
 
 // End namespace internal.
 }
@@ -48,7 +39,7 @@ class Type {
 public:
 
   // Return a string representation of the type.
-  std::string string() const;
+  std::string string(const Context& context) const;
 
   // Type qualifiers.
   bool is_exported() const;
@@ -74,7 +65,6 @@ public:
   // User types.
   bool is_user_type() const;
   bool is_managed_user_type() const;
-  std::string user_type_name() const;
 
   bool operator==(const Type& t) const;
   bool operator!=(const Type& t) const;
@@ -102,7 +92,12 @@ public:
 private:
 
   friend struct std::hash<Type>;
+  // For ContextInternals& string function.
+  friend class Instance;
+  friend class internal::Type;
+
   Type();
+  std::string string(const internal::ContextInternals& context) const;
 
   enum type_base {
     VOID,

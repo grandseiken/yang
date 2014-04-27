@@ -139,7 +139,8 @@ void StaticChecker::infix(const Node& node, const result_list& results)
       Type t = results[0].make_const(true);
       if (!t.function()) {
         // Grammar no longer allows this, but leave it in for future-proofing.
-        error(node, "function defined with non-function type " + t.string());
+        error(node, "function defined with non-function type " +
+                    t.string(_context));
         t = Type(true);
       }
 
@@ -244,7 +245,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
   std::string s = "`" + node_op_string(node.type) + "`";
   std::vector<std::string> rs;
   for (const Type& t : results) {
-    rs.push_back(t.string());
+    rs.push_back(t.string(_context));
   }
 
   // Pop the correct tables before returning an error. Make sure to do this
@@ -401,8 +402,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       if (!t.is(current_return)) {
         const auto& n = node.type == Node::RETURN_STMT ?
             *node.children[0] : node;
-        error(n, "returning " + t.string() + " from " +
-                 current_return.string() + " function");
+        error(n, "returning " + t.string(_context) + " from " +
+                 current_return.string(_context) + " function");
       }
       return t;
     }
@@ -455,9 +456,9 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       const auto& m =
           _context.member_lookup(results[0].external(), node.string_value);
       if (m.type.is_void()) {
-        error(node,
-              "undeclared member function `" + results[0].external().string() +
-              "::" + node.string_value + "`");
+        error(
+            node, "undeclared member function `" + results[0].string(_context) +
+                  "::" + node.string_value + "`");
         return Type(true);
       }
       // Omit the first argument (self). Unfortunately, the indirection here
@@ -747,11 +748,13 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         }
         Type t = it->symbol_table[s].type;
         if (!t.is(results[1])) {
-          error(node, rs[1] + " assigned to `" + s + "` of type " + t.string());
+          error(node, rs[1] + " assigned to `" + s + "` of type " +
+                      t.string(_context));
           return Type(true);
         }
         else if (t.external().is_const()) {
-          error(node, "assignment to `" + s + "` of type " + t.string());
+          error(node, "assignment to `" + s + "` of type " +
+                      t.string(_context));
         }
         return results[1];
       }
