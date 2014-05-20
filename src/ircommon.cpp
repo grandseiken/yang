@@ -17,8 +17,9 @@
 namespace yang {
 namespace internal {
 
-IrCommon::IrCommon(llvm::Module& module, llvm::ExecutionEngine& engine)
-  : _b{llvm::IRBuilder<>(module.getContext()), module, engine}
+IrCommon::IrCommon(llvm::Module& module, llvm::ExecutionEngine& engine,
+                   StaticData& static_data)
+  : _b{llvm::IRBuilder<>(module.getContext()), module, engine, static_data, {}}
 {
 }
 
@@ -442,7 +443,7 @@ yang::void_fp YangTrampolineGlobals::get_trampoline_function(
 YangTrampolineGlobals::YangTrampolineGlobals()
   : _module(create_module())
   , _engine(llvm::EngineBuilder(_module).setErrorStr(&_error).create())
-  , _common(*_module, *_engine)
+  , _common(*_module, *_engine, _static_data)
 {
   if (!_engine) {
     delete _module;

@@ -6,6 +6,7 @@
 
 #include <yang/internals.h>
 #include <yang/native.h>
+#include "irval.h"
 
 // All of this is first draft and very naive.
 // TODO: use "modern" reference counting instead. That is:
@@ -51,17 +52,17 @@ void cleanup_cyclic_structures()
   // First, for each structure potentially involved in a cycle, call its
   // reference query function to determine what references it holds.
   for (Prefix* v : copy) {
-    if (!v->refouts) {
+    if (!v->vtable->refout_count) {
       continue;
     }
     // Query function takes a pointer to block of memory with space for the
     // pointers.
-    Prefix** output = new Prefix*[v->refouts];
-    v->query(v, output);
+    Prefix** output = new Prefix*[v->vtable->refout_count];
+    v->vtable->refout_query(v, output);
 
     // Update the data structure. The query function returns parent pointer as
     // well as function value environment pointers.
-    for (yang::int_t i = 0; i < v->refouts; ++i) {
+    for (std::size_t i = 0; i < v->vtable->refout_count; ++i) {
       ++data[output[i]].count;
       data[output[i]].dependents.insert(v);
     }
@@ -185,7 +186,7 @@ void cleanup_structures()
       already_freed.insert(v);
 
       // Call destructor.
-      v->free(v);
+      v->vtable->destructor(v);
       free(v);
     }
 

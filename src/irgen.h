@@ -31,12 +31,16 @@ class IrGenerator : public IrCommon, public ConstAstWalker<Value> {
 public:
 
   IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
-              symbol_frame& globals, const ContextInternals& context);
+              StaticData& static_data, symbol_frame& globals,
+              const ContextInternals& context);
 
   // Emit functions for allocating, freeing, reading and writing to instances
   // of the global structure. This should be called after the tree has been
   // walked!
   void emit_global_functions();
+  // Obtain function pointers for generated functions and store them in vtables.
+  // This must be called after optimisation (if any) has taken place.
+  void obtain_function_pointers();
 
 protected:
 

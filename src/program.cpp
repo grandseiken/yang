@@ -23,14 +23,27 @@
 int yang_parse(yyscan_t scan);
 
 namespace yang {
+namespace internal {
+
+ProgramInternals::ProgramInternals(
+    const std::shared_ptr<ContextInternals>& context,
+    const std::string& name)
+  : context(context)
+  , name(name)
+  , ast(nullptr)
+  , llvm_context(new llvm::LLVMContext)
+  , engine(nullptr)
+  , module(nullptr)
+{
+}
+
+// End namespace internal.
+}
 
 Program::Program(const Context& context, const std::string& name,
                  const std::string& contents, bool optimise,
                  std::string* diagnostic_output)
-  : _internals(new internal::ProgramInternals{
-      context._internals, name, {}, {}, {}, {}, nullptr,
-      std::unique_ptr<llvm::LLVMContext>(new llvm::LLVMContext),
-      nullptr, nullptr})
+  : _internals(new internal::ProgramInternals(context._internals, name))
 {
   internal::ParseData data(name, contents);
   yyscan_t scan = nullptr;
@@ -172,7 +185,7 @@ void Program::generate_ir(bool optimise)
   _internals->engine->DisableSymbolSearching();
 
   internal::IrGenerator irgen(
-      *_internals->module, *_internals->engine,
+      *_internals->module, *_internals->engine, _internals->static_data,
       _internals->globals, *_internals->context);
   irgen.walk(*_internals->ast);
   irgen.emit_global_functions();
@@ -187,6 +200,7 @@ void Program::generate_ir(bool optimise)
   if (optimise) {
     irgen.optimise_ir();
   }
+  irgen.obtain_function_pointers();
 }
 
 // End namespace yang.

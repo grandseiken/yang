@@ -36,18 +36,16 @@ template<typename, typename...>
 struct ReverseTrampolineCallReturn;
 
 // Prefix structure of all global data and closure structures.
+struct Vtable;
 struct Prefix {
   Prefix* parent;
 
   // Current reference count.
   int_t refcount;
-  // Pointer to destructor.
-  void (*free)(Prefix*);
 
-  // Number of outbound references.
-  int_t refouts;
-  // Pointer to outbound reference query function.
-  void (*query)(Prefix*, Prefix**);
+  // Pointer to vtable containing (in order) destructor, outgoing reference
+  // count and refcount query function.
+  Vtable* vtable;
 
   // Start of the actual fields.
   void* data;

@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <unordered_map>
+#include <vector>
 #include "error.h"
 #include "type.h"
 
@@ -21,13 +22,23 @@ namespace internal {
 struct Node;
 struct ContextInternals;
 
+struct StaticDataEntry {
+  virtual ~StaticDataEntry() {}
+};
+typedef std::vector<std::unique_ptr<StaticDataEntry>> StaticData;
+
 // Data for a Program that is preserved as long as an Instance or some closure
 // structure needs it.
 struct ProgramInternals {
+  ProgramInternals(const std::shared_ptr<ContextInternals>& context,
+                   const std::string& name);
+
   // As well as looking up things in the Context, programs need to ensure that
   // RefCountedNativeFunctions they depend on are kept alive.
   std::shared_ptr<const ContextInternals> context;
   std::string name;
+
+  StaticData static_data;
   symbol_table functions;
   symbol_table globals;
 

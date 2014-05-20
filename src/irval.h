@@ -5,6 +5,7 @@
 #ifndef YANG_SRC_IRVAL_H
 #define YANG_SRC_IRVAL_H
 
+#include <yang/internals.h>
 #include <yang/typedefs.h>
 #include <yang/type.h>
 #include <llvm/IR/LLVMContext.h>
@@ -18,10 +19,33 @@ namespace llvm {
 namespace yang {
 namespace internal {
 
+struct Prefix;
 struct GenericFunction;
 typedef std::unordered_map<std::string, yang::Type> symbol_frame;
 
+struct Vtable : StaticDataEntry {
+  Vtable();
+  ~Vtable() override {}
+
+  typedef void (*destructor_t)(Prefix*);
+  typedef void (*refout_query_t)(Prefix*, Prefix**);
+
+  // Destructor pointer.
+  destructor_t destructor;
+
+  // Outgoing reference count and query function.
+  std::size_t refout_count;
+  refout_query_t refout_query;
+};
+
 struct Structure {
+  enum slots {
+    PARENT_PTR = 0,
+    REF_COUNT = 1,
+    VTABLE_PTR = 2,
+    DATA_START = 3,
+  };
+
   struct entry {
     entry(const yang::Type& type = yang::Type::void_t(), std::size_t index = 0);
 
@@ -33,11 +57,13 @@ struct Structure {
   Structure();
   llvm::Type* type;
   table_t table;
+  Vtable* vtable;
 
-  llvm::Function* custom_destructor;
+  // Kind of a hack just for user-type structures.
   llvm::Function* destructor;
   llvm::Function* refout_query;
-  std::size_t refout_count;
+  // Kind of a hack just for correct destruction of global data.
+  llvm::Function* custom_destructor;
 };
 
 // A Yang value wraps an LLVM IR value and associates it with a Yang type,
@@ -90,10 +116,20 @@ struct Builder {
       const std::string& name, yang::void_fp native_fp,
       llvm::FunctionType* type) const;
 
-  // Builder functions.
+  // Create a vtable.
+  Vtable* create_vtable(
+      llvm::Function* destructor,
+      std::size_t refout_count, llvm::Function* refout_query);
+
+  // Builder data.
   llvm::IRBuilder<> b;
   llvm::Module& module;
   llvm::ExecutionEngine& engine;
+  StaticData& static_data;
+
+  // List of generated code function pointers to be obtained once optimisation
+  // has taken place.
+  std::vector<std::pair<void**, llvm::Function*>> generated_function_pointers;
 };
 
 class LexScope {
@@ -133,10 +169,8 @@ public:
   // Structure functions.
   void init_structure_type(
       const std::string& name, const symbol_frame& symbols, bool global_data);
-  llvm::Type* structure_type() const;
-  const Structure::table_t structure_table() const;
-  llvm::Function* structure_destructor() const;
-  llvm::Function* structure_custom_destructor() const;
+
+  const Structure& structure() const;
   llvm::Value* allocate_structure_value();
   llvm::Value* allocate_closure_struct(llvm::Value* parent_ptr);
   llvm::Value* structure_ptr(llvm::Value* ptr, std::size_t index);

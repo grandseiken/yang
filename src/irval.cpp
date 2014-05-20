@@ -21,6 +21,13 @@ namespace std {
 namespace yang {
 namespace internal {
 
+Vtable::Vtable()
+  : destructor(nullptr)
+  , refout_count(0)
+  , refout_query(nullptr)
+{
+}
+
 Structure::entry::entry(const yang::Type& type, std::size_t index)
   : type(type)
   , index(index)
@@ -29,10 +36,10 @@ Structure::entry::entry(const yang::Type& type, std::size_t index)
 
 Structure::Structure()
   : type(nullptr)
-  , custom_destructor(nullptr)
+  , vtable(nullptr)
   , destructor(nullptr)
   , refout_query(nullptr)
-  , refout_count(0)
+  , custom_destructor(nullptr)
 {
 }
 
@@ -242,6 +249,22 @@ llvm::Function* Builder::get_native_function(
   return llvm_function;
 }
 
+// Create a vtable.
+Vtable* Builder::create_vtable(
+    llvm::Function* destructor,
+    std::size_t refout_count, llvm::Function* refout_query)
+{
+  Vtable* vtable = new Vtable;
+  static_data.emplace_back(vtable);
+
+  vtable->refout_count = refout_count;
+  generated_function_pointers.emplace_back(
+      (void**)&vtable->destructor, destructor);
+  generated_function_pointers.emplace_back(
+      (void**)&vtable->refout_query, refout_query);
+  return vtable;
+}
+
 LexScope::LexScope(Builder& builder, bool create_functions)
   : symbol_table(Value())
   , metadata(nullptr)
@@ -349,30 +372,18 @@ void LexScope::init_structure_type(
   auto struct_type =
       llvm::StructType::create(_b.b.getContext(), name);
   _structure.type = llvm::PointerType::get(struct_type, 0);
-  auto free_type =
-      llvm::FunctionType::get(_b.void_type(), _structure.type, false);
-  std::vector<llvm::Type*> query_args{
-      _structure.type, llvm::PointerType::get(_b.void_ptr_type(), 0)};
-  auto query_type = llvm::FunctionType::get(_b.void_type(), query_args, false);
   std::vector<llvm::Type*> type_list;
 
-  // TODO: most of these should really be in a vtable somewhere rather than
-  // explicitly stored in every object.
   // The first element in closure structures is a pointer to the parent
   // structure.
   type_list.push_back(_b.void_ptr_type());
-  // The second element is a pointer to the reference counter.
+  // The second element is the reference counter.
   type_list.push_back(_b.int_type());
-  // The third is a pointer to the destructor.
-  type_list.push_back(llvm::PointerType::get(free_type, 0));
-  // The fourth is the number of outgoing references this structure has.
-  type_list.push_back(_b.int_type());
-  // The fifth is the pointer to the reference query function.
-  type_list.push_back(llvm::PointerType::get(query_type, 0));
-  // The destructor and refcount information could totally be factored out into
-  // some static "vtable" block if we wanted.
+  // The third is a pointer to the vtable containing (in order) the destructor,
+  // the outgoing reference count, and the reference count query function.
+  type_list.push_back(_b.void_ptr_type());
 
-  std::size_t number = 5;
+  std::size_t number = Structure::DATA_START;
   for (const auto& pair : symbols) {
     // Type-calculation must be kept up-to-date with new types.
     type_list.push_back(_b.get_llvm_type(pair.second));
@@ -380,10 +391,16 @@ void LexScope::init_structure_type(
   }
   struct_type->setBody(type_list, false);
 
+  auto free_type =
+      llvm::FunctionType::get(_b.void_type(), _structure.type, false);
+  std::vector<llvm::Type*> query_args{
+      _structure.type, llvm::PointerType::get(_b.void_ptr_type(), 0)};
+  auto query_type = llvm::FunctionType::get(_b.void_type(), query_args, false);
+
   // Create the destruction function.
   auto prev_block = _b.b.GetInsertBlock();
   _structure.destructor = llvm::Function::Create(
-      free_type, llvm::Function::InternalLinkage, "!free_" + name, &_b.module);
+      free_type, llvm::Function::ExternalLinkage, "!free_" + name, &_b.module);
   auto free_block = llvm::BasicBlock::Create(
       _b.b.getContext(), "entry", _structure.destructor);
   _b.b.SetInsertPoint(free_block);
@@ -412,7 +429,7 @@ void LexScope::init_structure_type(
 
   // Create the reference query function.
   _structure.refout_query = llvm::Function::Create(
-      query_type, llvm::Function::InternalLinkage,
+      query_type, llvm::Function::ExternalLinkage,
       "!query_" + name, &_b.module);
   auto query_block = llvm::BasicBlock::Create(
       _b.b.getContext(), "entry", _structure.refout_query);
@@ -423,11 +440,12 @@ void LexScope::init_structure_type(
   jt->setName("output");
 
   // Output pointers for each function value environment and parent pointer.
+  std::size_t refout_count = 0;
   _b.b.SetInsertPoint(query_block);
   auto refout = [&](llvm::Value* v)
   {
     std::vector<llvm::Value*> indices{
-        _b.constant_int(_structure.refout_count++)};
+        _b.constant_int(refout_count++)};
     _b.b.CreateAlignedStore(v, _b.b.CreateGEP(jt, indices), 1);
   };
 
@@ -446,26 +464,15 @@ void LexScope::init_structure_type(
   _b.b.CreateRetVoid();
 
   _b.b.SetInsertPoint(prev_block);
+
+  // Finally, create the vtable.
+  _structure.vtable = _b.create_vtable(
+      _structure.destructor, refout_count, _structure.refout_query);
 }
 
-llvm::Type* LexScope::structure_type() const
+const Structure& LexScope::structure() const
 {
-  return _structure.type;
-}
-
-const Structure::table_t LexScope::structure_table() const
-{
-  return _structure.table;
-}
-
-llvm::Function* LexScope::structure_destructor() const
-{
-  return _structure.destructor;
-}
-
-llvm::Function* LexScope::structure_custom_destructor() const
-{
-  return _structure.custom_destructor;
+  return _structure;
 }
 
 llvm::Value* LexScope::allocate_structure_value()
@@ -488,15 +495,11 @@ llvm::Value* LexScope::allocate_structure_value()
   // pointer.
   llvm::Value* v = _b.b.CreateCall(malloc_ptr, size_of);
   memory_store(Value(yang::Type::void_t(), _b.constant_ptr(nullptr)),
-               structure_ptr(v, 0));
+               structure_ptr(v, Structure::PARENT_PTR));
+  memory_store(_b.constant_int(0), structure_ptr(v, Structure::REF_COUNT));
+  memory_store(Value(yang::Type::void_t(), _b.constant_ptr(_structure.vtable)),
+               structure_ptr(v, Structure::VTABLE_PTR));
 
-  memory_store(_b.constant_int(0), structure_ptr(v, 1));
-  memory_store(Value(yang::Type::void_t(), _structure.destructor),
-               structure_ptr(v, 2));
-
-  memory_store(_b.constant_int(_structure.refout_count), structure_ptr(v, 3));
-  memory_store(Value(yang::Type::void_t(), _structure.refout_query),
-               structure_ptr(v, 4));
   for (const auto& pair : _structure.table) {
     memory_init(_b.b, structure_ptr(v, pair.first));
   }

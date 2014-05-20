@@ -21,7 +21,8 @@ namespace internal {
 class IrCommon {
 public:
 
-  IrCommon(llvm::Module& module, llvm::ExecutionEngine& engine);
+  IrCommon(llvm::Module& module, llvm::ExecutionEngine& engine,
+           StaticData& static_data);
   // Optimise the IR code. If function is null, does interprocedural
   // optimisation on the whole module.
   void optimise_ir(llvm::Function* function = nullptr) const;
@@ -91,6 +92,8 @@ private:
   llvm::LLVMContext _context;
   llvm::Module* _module;
   std::unique_ptr<llvm::ExecutionEngine> _engine;
+
+  StaticData _static_data;
   IrCommon _common;
   IrCommon::trampoline_map _trampoline_map;
 
