@@ -473,6 +473,7 @@ export exhaustive_refcount = int()
   a -= fn()();
   a *= fn()();
   a /= fn()();
+  a;
 
   fn();
   const f = fn();

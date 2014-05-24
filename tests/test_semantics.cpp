@@ -138,6 +138,18 @@ export odd_ops = int()
          $+((1, 2, 3) ** 2) + $+(2 ** (1, 2, 3));
 }
 
+export ordering = int()
+{
+  var r = const a = (const b = 1) + b;
+  for (var b = a; const a = b < 4; (const b = ++b) + b) {
+    r += a + b;
+  }
+
+  var c = (1, 2);
+  c *= 2;
+  return r + $+c;
+}
+
 export edit = int()()
 {
   closed var ff = int() {return 0;};
@@ -206,6 +218,7 @@ TEST_F(YangTest, SemanticsTest)
 
     EXPECT_EQ(inst.call<int_t>("knuth_man_or_boy_test", 10), -67);
     EXPECT_EQ(inst.call<int_t>("odd_ops"), 48);
+    EXPECT_EQ(inst.call<int_t>("ordering"), 15);
 
     typedef Function<int_t()> intf_t;
     {

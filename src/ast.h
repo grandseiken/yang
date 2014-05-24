@@ -51,6 +51,7 @@ struct Node {
     RETURN_STMT,
     IF_STMT,
     FOR_STMT,
+    WHILE_STMT,
     DO_WHILE_STMT,
     BREAK_STMT,
     CONTINUE_STMT,
@@ -100,6 +101,19 @@ struct Node {
     FOLD_LE,
     FOLD_GT,
     FOLD_LT,
+    ASSIGN_LOGICAL_OR,
+    ASSIGN_LOGICAL_AND,
+    ASSIGN_BITWISE_OR,
+    ASSIGN_BITWISE_AND,
+    ASSIGN_BITWISE_XOR,
+    ASSIGN_BITWISE_LSHIFT,
+    ASSIGN_BITWISE_RSHIFT,
+    ASSIGN_POW,
+    ASSIGN_MOD,
+    ASSIGN_ADD,
+    ASSIGN_SUB,
+    ASSIGN_MUL,
+    ASSIGN_DIV,
     LOGICAL_NEGATION,
     BITWISE_NEGATION,
     ARITHMETIC_NEGATION,
@@ -131,8 +145,6 @@ struct Node {
   Node(scan_t scan, node_type type, const std::string& value);
 
   ~Node();
-  // Clone an entire tree.
-  Node* clone(bool clone_children = true) const;
 
   void add_front(Node* node);
   void add(Node* node);

@@ -145,13 +145,6 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
 %%
 
   /* Language grammar. */
-  /* TODO: for better error-reporting, some nodes (e.g. WHILE and
-     shortcut-assigns should really be nodes in their own right rather than
-     specialisations of other nodes.
-     Conversely, it would be nice if we could unify the codegen for top-level
-     functions and globals. It may be possible to achieve all of this in a nice
-     way by introducing another treewalk between static and irgen that expands
-     certain nodes. */
 
 program
   : elem_list T_EOF
@@ -228,16 +221,12 @@ stmt
 {$$ = new Node(scan, $1, Node::IF_STMT, $3, $5);}
   | T_IF '(' expr ')' stmt T_ELSE stmt
 {$$ = new Node(scan, $1, Node::IF_STMT, $3, $5, $7);}
-  | T_WHILE '(' expr ')' stmt
-{$$ = new Node(
-     scan, $1, Node::FOR_STMT,
-     new Node(scan, Node::INT_LITERAL, 1), $3,
-     new Node(scan, Node::INT_LITERAL, 1));
- $$->add($5);}
   | T_FOR '(' opt_expr ';' opt_expr ';' opt_expr ')' stmt
 {$$ = new Node(scan, $1, Node::FOR_STMT,
                $3, $5, new Node(scan, $7, Node::BLOCK, $7));
  $$->add($9);}
+  | T_WHILE '(' expr ')' stmt
+{$$ = new Node(scan, $1, Node::WHILE_STMT, $3, $5);}
   | T_DO stmt T_WHILE '(' expr ')' ';'
 {$$ = new Node(scan, $1, Node::DO_WHILE_STMT, $2, $5);
  $$->extend_bounds($7);}
@@ -436,44 +425,31 @@ expr
   | expr T_ASSIGN expr
 {$$ = new Node(scan, $2, Node::ASSIGN, $1, $3);}
   | expr T_ASSIGN_LOGICAL_OR expr
-{$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
-               new Node(scan, $2, Node::LOGICAL_OR, $1, $3));}
+{$$ = new Node(scan, $2, Node::ASSIGN_LOGICAL_OR, $1, $3);}
   | expr T_ASSIGN_LOGICAL_AND expr
-{$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
-               new Node(scan, $2, Node::LOGICAL_AND, $1, $3));}
+{$$ = new Node(scan, $2, Node::ASSIGN_LOGICAL_AND, $1, $3);}
   | expr T_ASSIGN_BITWISE_OR expr
-{$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
-               new Node(scan, $2, Node::BITWISE_OR, $1, $3));}
+{$$ = new Node(scan, $2, Node::ASSIGN_BITWISE_OR, $1, $3);}
   | expr T_ASSIGN_BITWISE_AND expr
-{$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
-               new Node(scan, $2, Node::BITWISE_AND, $1, $3));}
+{$$ = new Node(scan, $2, Node::ASSIGN_BITWISE_AND, $1, $3);}
   | expr T_ASSIGN_BITWISE_XOR expr
-{$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
-               new Node(scan, $2, Node::BITWISE_XOR, $1, $3));}
+{$$ = new Node(scan, $2, Node::ASSIGN_BITWISE_XOR, $1, $3);}
   | expr T_ASSIGN_BITWISE_LSHIFT expr
-{$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
-               new Node(scan, $2, Node::BITWISE_LSHIFT, $1, $3));}
+{$$ = new Node(scan, $2, Node::ASSIGN_BITWISE_LSHIFT, $1, $3);}
   | expr T_ASSIGN_BITWISE_RSHIFT expr
-{$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
-               new Node(scan, $2, Node::BITWISE_RSHIFT, $1, $3));}
+{$$ = new Node(scan, $2, Node::ASSIGN_BITWISE_RSHIFT, $1, $3);}
   | expr T_ASSIGN_POW expr
-{$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
-               new Node(scan, $2, Node::POW, $1, $3));}
+{$$ = new Node(scan, $2, Node::ASSIGN_POW, $1, $3);}
   | expr T_ASSIGN_MOD expr
-{$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
-               new Node(scan, $2, Node::MOD, $1, $3));}
+{$$ = new Node(scan, $2, Node::ASSIGN_MOD, $1, $3);}
   | expr T_ASSIGN_ADD expr
-{$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
-               new Node(scan, $2, Node::ADD, $1, $3));}
+{$$ = new Node(scan, $2, Node::ASSIGN_ADD, $1, $3);}
   | expr T_ASSIGN_SUB expr
-{$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
-               new Node(scan, $2, Node::SUB, $1, $3));}
+{$$ = new Node(scan, $2, Node::ASSIGN_SUB, $1, $3);}
   | expr T_ASSIGN_MUL expr
-{$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
-               new Node(scan, $2, Node::MUL, $1, $3));}
+{$$ = new Node(scan, $2, Node::ASSIGN_MUL, $1, $3);}
   | expr T_ASSIGN_DIV expr
-{$$ = new Node(scan, $2, Node::ASSIGN, $1->clone(),
-               new Node(scan, $2, Node::DIV, $1, $3));}
+{$$ = new Node(scan, $2, Node::ASSIGN_DIV, $1, $3);}
   | T_INCREMENT expr %prec P_UNARY_L
 {$$ = new Node(scan, $1, Node::INCREMENT, $2);}
   | T_DECREMENT expr %prec P_UNARY_L

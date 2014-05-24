@@ -104,6 +104,9 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
       return indent() +
           "for (" + results[0] + "; " + results[1] + "; " + results[2] + ")\n" +
           results[3] + "\n";
+    case Node::WHILE_STMT:
+      return indent() +
+          "while (" + results[0] + ")\n" + results[1] + "\n";
     case Node::DO_WHILE_STMT:
       return indent() + "do\n" + results[0] + "\n" +
           indent() + "while (" + results[1] + ");\n";
@@ -154,6 +157,19 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
     case Node::LE:
     case Node::GT:
     case Node::LT:
+    case Node::ASSIGN_LOGICAL_OR:
+    case Node::ASSIGN_LOGICAL_AND:
+    case Node::ASSIGN_BITWISE_OR:
+    case Node::ASSIGN_BITWISE_AND:
+    case Node::ASSIGN_BITWISE_XOR:
+    case Node::ASSIGN_BITWISE_LSHIFT:
+    case Node::ASSIGN_BITWISE_RSHIFT:
+    case Node::ASSIGN_POW:
+    case Node::ASSIGN_MOD:
+    case Node::ASSIGN_ADD:
+    case Node::ASSIGN_SUB:
+    case Node::ASSIGN_MUL:
+    case Node::ASSIGN_DIV:
       return "(" + results[0] + " " + s + " " + results[1] + ")";
 
     case Node::FOLD_LOGICAL_OR:

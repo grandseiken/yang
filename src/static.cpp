@@ -58,7 +58,12 @@ void StaticChecker::preorder(const Node& node)
     _scopes.back().metadata.push();
     _scopes.back().metadata.add(ERR_EXPR_CONTEXT, {});
   }
+  bool tree_root = _scopes.back().metadata.has(
+      TREE_ROOT_CONTEXT, _scopes.back().metadata.size() - 1);
 
+  // Only so we know whether the parent node was a TREE_ROOT_CONTEXT.
+  // TODO: warn about expressions with no effect at the tree root.
+  _scopes.back().metadata.push();
   switch (node.type) {
     case Node::GLOBAL:
       if (node.int_value & Node::MODIFIER_NEGATION) {
@@ -77,6 +82,10 @@ void StaticChecker::preorder(const Node& node)
           _scopes.back().metadata.add(EXPORT_GLOBAL, {});
         }
       }
+      break;
+    case Node::EXPR_STMT:
+      _scopes.back().metadata.push();
+      _scopes.back().metadata.add(TREE_ROOT_CONTEXT, {});
       break;
     case Node::GLOBAL_ASSIGN:
     case Node::ASSIGN_VAR:
@@ -102,6 +111,19 @@ void StaticChecker::preorder(const Node& node)
       }
       break;
     case Node::ASSIGN:
+    case Node::ASSIGN_LOGICAL_OR:
+    case Node::ASSIGN_LOGICAL_AND:
+    case Node::ASSIGN_BITWISE_OR:
+    case Node::ASSIGN_BITWISE_AND:
+    case Node::ASSIGN_BITWISE_XOR:
+    case Node::ASSIGN_BITWISE_LSHIFT:
+    case Node::ASSIGN_BITWISE_RSHIFT:
+    case Node::ASSIGN_POW:
+    case Node::ASSIGN_MOD:
+    case Node::ASSIGN_ADD:
+    case Node::ASSIGN_SUB:
+    case Node::ASSIGN_MUL:
+    case Node::ASSIGN_DIV:
       // Change which warning references affect.
       _scopes.back().metadata.push();
       _scopes.back().metadata.add(ASSIGN_LHS_CONTEXT, {});
@@ -111,16 +133,26 @@ void StaticChecker::preorder(const Node& node)
       _scopes.back().metadata.add(TYPE_EXPR_CONTEXT, {});
       break;
     case Node::BLOCK:
+      push_symbol_tables();
+      if (tree_root) {
+        _scopes.back().metadata.add(TREE_ROOT_CONTEXT, {});
+      }
+      break;
     case Node::IF_STMT:
       push_symbol_tables();
       break;
-    case Node::DO_WHILE_STMT:
     case Node::FOR_STMT:
+    case Node::WHILE_STMT:
+    case Node::DO_WHILE_STMT:
       push_symbol_tables();
       _scopes.back().metadata.push();
       // Insert a marker into the symbol table that break and continue
       // statements can check for.
       _scopes.back().metadata.add(LOOP_BODY, {});
+      if (node.type == Node::FOR_STMT) {
+        _scopes.back().metadata.push();
+        _scopes.back().metadata.add(TREE_ROOT_CONTEXT, {});
+      }
       break;
 
     default: {}
@@ -192,6 +224,16 @@ void StaticChecker::infix(const Node& node, const result_list& results)
       break;
     }
 
+    case Node::FOR_STMT:
+      if (results.size() == 1 || results.size() == 3) {
+        _scopes.back().metadata.pop();
+      }
+      if (results.size() == 2) {
+        _scopes.back().metadata.push();
+        _scopes.back().metadata.add(TREE_ROOT_CONTEXT, {});
+      }
+      break;
+
     case Node::GLOBAL_ASSIGN:
     case Node::ASSIGN_VAR:
     case Node::ASSIGN_CONST:
@@ -199,6 +241,19 @@ void StaticChecker::infix(const Node& node, const result_list& results)
       pop_symbol_tables();
       break;
     case Node::ASSIGN:
+    case Node::ASSIGN_LOGICAL_OR:
+    case Node::ASSIGN_LOGICAL_AND:
+    case Node::ASSIGN_BITWISE_OR:
+    case Node::ASSIGN_BITWISE_AND:
+    case Node::ASSIGN_BITWISE_XOR:
+    case Node::ASSIGN_BITWISE_LSHIFT:
+    case Node::ASSIGN_BITWISE_RSHIFT:
+    case Node::ASSIGN_POW:
+    case Node::ASSIGN_MOD:
+    case Node::ASSIGN_ADD:
+    case Node::ASSIGN_SUB:
+    case Node::ASSIGN_MUL:
+    case Node::ASSIGN_DIV:
       _scopes.back().metadata.pop();
       break;
 
@@ -250,12 +305,14 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
 
   // Pop the correct tables before returning an error. Make sure to do this
   // before checking for context error; otherwise we might still think we're
-  // in a type-context when we aren't.
+  // in a type-context when we aren't. Maybe this could nonsense could be
+  // replaced with some RAII.
   if (node.type == Node::GLOBAL) {
     pop_symbol_tables();
     _scopes.pop_back();
   }
-  else if (node.type == Node::DO_WHILE_STMT || node.type == Node::FOR_STMT) {
+  else if (node.type == Node::FOR_STMT || node.type == Node::WHILE_STMT ||
+           node.type == Node::DO_WHILE_STMT) {
     _scopes.back().metadata.pop();
     pop_symbol_tables();
   }
@@ -280,6 +337,10 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
   else if (node.type == Node::BLOCK || node.type == Node::IF_STMT) {
     pop_symbol_tables();
   }
+  else if (node.type == Node::EXPR_STMT) {
+    _scopes.back().metadata.pop();
+  }
+  _scopes.back().metadata.pop();
 
   // See preorder for error.
   bool context_err = !valid_all_contexts(node) &&
@@ -410,15 +471,15 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     case Node::IF_STMT:
     {
       if (!results[0].is(yang::Type::int_t())) {
-        error(*node.children[0], "branching on " + rs[0]);
+        error(*node.children[0], s + " branching on " + rs[0]);
       }
       if (results.size() > 2) {
         if (node.children[2]->type == Node::EMPTY_STMT) {
-          error(*node.children[2], "empty statement in `else`", false);
+          error(*node.children[2], "empty statement in " + s, false);
         }
       }
       else if (node.children[1]->type == Node::EMPTY_STMT) {
-        error(*node.children[1], "empty statement in `if`", false);
+        error(*node.children[1], "empty statement in " + s, false);
       }
       // An IF_STMT definitely returns a value only if both branches definitely
       // return a value.
@@ -426,20 +487,20 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       Type right = results.size() > 2 ? results[2] : Type(true);
       return !left.is_error() && !right.is_error() ? left : Type(true);
     }
-    case Node::DO_WHILE_STMT:
     case Node::FOR_STMT:
-      if (!results[1].is(yang::Type::int_t())) {
-        error(*node.children[1], "branching on " + rs[1]);
+    case Node::WHILE_STMT:
+    case Node::DO_WHILE_STMT:
+    {
+      std::size_t cond = node.type != Node::WHILE_STMT;
+      if (!results[cond].is(yang::Type::int_t())) {
+        error(*node.children[cond], s + " branching on " + rs[cond]);
       }
       return Type(true);
+    }
     case Node::BREAK_STMT:
-      if (!_scopes.back().metadata.has(LOOP_BODY)) {
-        error(node, "`break` outside of loop body");
-      }
-      return Type(true);
     case Node::CONTINUE_STMT:
       if (!_scopes.back().metadata.has(LOOP_BODY)) {
-        error(node, "`continue` outside of loop body");
+        error(node, s + " outside of loop body");
       }
       return Type(true);
 
@@ -735,6 +796,19 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     }
 
     case Node::ASSIGN:
+    case Node::ASSIGN_LOGICAL_OR:
+    case Node::ASSIGN_LOGICAL_AND:
+    case Node::ASSIGN_BITWISE_OR:
+    case Node::ASSIGN_BITWISE_AND:
+    case Node::ASSIGN_BITWISE_XOR:
+    case Node::ASSIGN_BITWISE_LSHIFT:
+    case Node::ASSIGN_BITWISE_RSHIFT:
+    case Node::ASSIGN_POW:
+    case Node::ASSIGN_MOD:
+    case Node::ASSIGN_ADD:
+    case Node::ASSIGN_SUB:
+    case Node::ASSIGN_MUL:
+    case Node::ASSIGN_DIV:
     {
       if (node.children[0]->type != Node::IDENTIFIER) {
         if (!results[0].is_error()) {
@@ -742,22 +816,52 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         }
         return results[1];
       }
-      const std::string& s = node.children[0]->string_value;
+
+      const std::string& ident = node.children[0]->string_value;
       for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it) {
-        if (!it->symbol_table.has(s)) {
+        if (!it->symbol_table.has(ident)) {
           continue;
         }
-        Type t = it->symbol_table[s].type;
-        if (!t.is(results[1])) {
+        Type t = it->symbol_table[ident].type;
+
+        if (!_scopes.back().metadata.has(TREE_ROOT_CONTEXT,
+                                         _scopes.back().metadata.size() - 1)) {
+          it->symbol_table[ident].warn_reads = false;
+        }
+
+        if (node.type != Node::ASSIGN) {
+          bool math =
+              node.type == Node::ASSIGN_POW || node.type == Node::ASSIGN_MOD ||
+              node.type == Node::ASSIGN_ADD || node.type == Node::ASSIGN_SUB ||
+              node.type == Node::ASSIGN_MUL || node.type == Node::ASSIGN_DIV;
+
+          if (!t.is_assign_binary_match(results[1])) {
+            error(node, s + " applied to " +
+                        t.string(_context) + " and " + rs[1]);
+            return Type(true);
+          }
+          if (!math && (!t.is_int() || !results[1].is_int())) {
+            error(node, s + " applied to " +
+                        t.string(_context) + " and " + rs[1]);
+            return binary_type(t, results[1], true);
+          }
+          if (math && !(t.is_int() && results[1].is_int()) &&
+              !(t.is_float() && results[1].is_float())) {
+            error(node, s + " applied to " +
+                        t.string(_context) + " and " + rs[1]);
+            return binary_type(t, results[1], false);
+          }
+        }
+        if (node.type == Node::ASSIGN && !t.is(results[1])) {
           error(node, rs[1] + " assigned to `" + s + "` of type " +
                       t.string(_context));
           return Type(true);
         }
-        else if (t.external().is_const()) {
+        if (t.external().is_const()) {
           error(node, "assignment to `" + s + "` of type " +
                       t.string(_context));
         }
-        return results[1];
+        return t;
       }
 
       if (!_context.function_lookup(s).type.is_void()) {

@@ -230,6 +230,21 @@ void IrGenerator::preorder(const Node& node)
       break;
     }
 
+    case Node::WHILE_STMT:
+    {
+      fback.push_scope();
+      auto cond_block = fback.create_block(LexScope::LOOP_COND_BLOCK, "cond");
+      auto merge_block = fback.create_block(LexScope::MERGE_BLOCK, "merge");
+      fback.create_block(LexScope::LOOP_BODY_BLOCK, "loop");
+      fback.metadata.add(LexScope::LOOP_BREAK_LABEL, merge_block);
+      fback.metadata.add(LexScope::LOOP_CONTINUE_LABEL, cond_block);
+
+      _b.b.CreateBr(cond_block);
+      _b.b.SetInsertPoint(cond_block);
+      fback.push_scope(true);
+      break;
+    }
+
     case Node::DO_WHILE_STMT:
     {
       fback.push_scope(true);
@@ -305,6 +320,22 @@ void IrGenerator::infix(const Node& node, const result_list& results)
         _b.b.CreateBr(cond_block);
         _b.b.SetInsertPoint(loop_block);
       }
+      break;
+    }
+
+    case Node::WHILE_STMT:
+    {
+      auto loop_block = fback.get_block(LexScope::LOOP_BODY_BLOCK);
+      auto merge_block = fback.get_block(LexScope::MERGE_BLOCK);
+
+      auto parent = _b.b.GetInsertBlock()->getParent();
+      auto clean_block =
+          llvm::BasicBlock::Create(_b.b.getContext(), "clean", parent);
+      _b.b.CreateCondBr(i2b(results[0]), loop_block, clean_block);
+      _b.b.SetInsertPoint(clean_block);
+      fback.dereference_scoped_locals();
+      _b.b.CreateBr(merge_block);
+      _b.b.SetInsertPoint(loop_block);
       break;
     }
 
@@ -508,6 +539,17 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       fback.pop_scope();
       return results[0];
     }
+    case Node::WHILE_STMT:
+    {
+      auto cond_block = fback.get_block(LexScope::LOOP_COND_BLOCK);
+      auto merge_block = fback.get_block(LexScope::MERGE_BLOCK);
+      fback.pop_scope(true);
+
+      _b.b.CreateBr(cond_block);
+      _b.b.SetInsertPoint(merge_block);
+      fback.pop_scope();
+      return results[0];
+    }
     case Node::DO_WHILE_STMT:
     {
       auto loop_block = fback.get_block(LexScope::LOOP_BODY_BLOCK);
@@ -671,8 +713,6 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     case Node::BITWISE_XOR:
     case Node::BITWISE_LSHIFT:
     case Node::BITWISE_RSHIFT:
-      return binary(node, results[0], results[1]);
-
     case Node::POW:
     case Node::MOD:
     case Node::ADD:
@@ -751,10 +791,25 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     }
 
     case Node::ASSIGN:
+    case Node::ASSIGN_LOGICAL_OR:
+    case Node::ASSIGN_LOGICAL_AND:
+    case Node::ASSIGN_BITWISE_OR:
+    case Node::ASSIGN_BITWISE_AND:
+    case Node::ASSIGN_BITWISE_XOR:
+    case Node::ASSIGN_BITWISE_LSHIFT:
+    case Node::ASSIGN_BITWISE_RSHIFT:
+    case Node::ASSIGN_POW:
+    case Node::ASSIGN_MOD:
+    case Node::ASSIGN_ADD:
+    case Node::ASSIGN_SUB:
+    case Node::ASSIGN_MUL:
+    case Node::ASSIGN_DIV:
     {
       const std::string& s = node.children[0]->string_value;
-      fback.memory_store(results[1], get_variable_ptr(s));
-      return results[1];
+      Value v = node.type == Node::ASSIGN ?
+          results[1] : binary(node, results[0], results[1]);
+      fback.memory_store(v, get_variable_ptr(s));
+      return v;
     }
 
     case Node::ASSIGN_VAR:
@@ -1262,6 +1317,19 @@ Value IrGenerator::raw_binary(const Node& node, const Value& v, const Value& u)
       node.type == Node::FOLD_LE ? Node::LE :
       node.type == Node::FOLD_GT ? Node::GT :
       node.type == Node::FOLD_LT ? Node::LT :
+      node.type == Node::ASSIGN_LOGICAL_OR ? Node::LOGICAL_OR :
+      node.type == Node::ASSIGN_LOGICAL_AND ? Node::LOGICAL_AND :
+      node.type == Node::ASSIGN_BITWISE_OR ? Node::BITWISE_OR :
+      node.type == Node::ASSIGN_BITWISE_AND ? Node::BITWISE_AND :
+      node.type == Node::ASSIGN_BITWISE_XOR ? Node::BITWISE_XOR :
+      node.type == Node::ASSIGN_BITWISE_LSHIFT ? Node::BITWISE_LSHIFT :
+      node.type == Node::ASSIGN_BITWISE_RSHIFT ? Node::BITWISE_RSHIFT :
+      node.type == Node::ASSIGN_POW ? Node::POW :
+      node.type == Node::ASSIGN_MOD ? Node::MOD :
+      node.type == Node::ASSIGN_ADD ? Node::ADD :
+      node.type == Node::ASSIGN_SUB ? Node::SUB :
+      node.type == Node::ASSIGN_MUL ? Node::MUL :
+      node.type == Node::ASSIGN_DIV ? Node::DIV :
       node.type;
 
   if (v.type.is_int() or v.type.is_ivec()) {

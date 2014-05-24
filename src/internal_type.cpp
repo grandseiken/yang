@@ -101,6 +101,13 @@ bool Type::is_binary_match(const Type& t) const
       _wrap.vector_size() == 1 || t._wrap.vector_size() == 1;
 }
 
+bool Type::is_assign_binary_match(const Type& t) const
+{
+  return is_error() || t.is_error() ||
+      _wrap.vector_size() == t._wrap.vector_size() ||
+      t._wrap.vector_size() == 1;
+}
+
 bool Type::is(const Type& t) const
 {
   return *this == t || is_error() || t.is_error();

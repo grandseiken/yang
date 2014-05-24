@@ -125,37 +125,6 @@ Node::~Node()
   }
 }
 
-Node* Node::clone(bool clone_children) const
-{
-  Node* node = new Node(scan, type);
-  node->left_index = left_index;
-  node->right_index = right_index;
-  node->left_tree_index = left_tree_index;
-  node->right_tree_index = right_tree_index;
-  node->int_value = int_value;
-  node->float_value = float_value;
-  node->string_value = string_value;
-  node->static_info = static_info;
-  if (!clone_children) {
-    return node;
-  }
-
-  // Paranoid: avoid blowing the stack on deep AST trees.
-  std::vector<std::pair<const Node*, Node*>> stack;
-  stack.emplace_back(this, node);
-  while (!stack.empty()) {
-    auto pair = stack.back();
-    stack.pop_back();
-
-    for (const auto& child : pair.first->children) {
-      Node* n = child->clone(false);
-      pair.second->add(n);
-      stack.emplace_back(child, n);
-    }
-  }
-  return node;
-}
-
 void Node::add_front(Node* node)
 {
   ((ParseData*)yang_get_extra(scan))->orphans.erase(node);
@@ -197,6 +166,15 @@ void Node::extend_bounds(const Node* node)
 std::string node_op_string(Node::node_type t)
 {
   return
+      t == Node::RETURN_VOID_STMT ? "return" :
+      t == Node::RETURN_STMT ? "return" :
+      t == Node::IF_STMT ? "if" :
+      t == Node::FOR_STMT ? "for" :
+      t == Node::WHILE_STMT ? "while" :
+      t == Node::DO_WHILE_STMT ? "do-while" :
+      t == Node::BREAK_STMT ? "break" :
+      t == Node::CONTINUE_STMT ? "continue" :
+      t == Node::MEMBER_SELECTION ? "." :
       t == Node::TERNARY ? "?:" :
       t == Node::CALL ? "()" :
       t == Node::LOGICAL_OR ? "||" :
@@ -237,6 +215,19 @@ std::string node_op_string(Node::node_type t)
       t == Node::FOLD_LE ? "<=" :
       t == Node::FOLD_GT ? ">" :
       t == Node::FOLD_LT ? "<" :
+      t == Node::ASSIGN_LOGICAL_OR ? "||=" :
+      t == Node::ASSIGN_LOGICAL_AND ? "&&=" :
+      t == Node::ASSIGN_BITWISE_OR ? "|=" :
+      t == Node::ASSIGN_BITWISE_AND ? "&=" :
+      t == Node::ASSIGN_BITWISE_XOR ? "^=" :
+      t == Node::ASSIGN_BITWISE_LSHIFT ? "<<=" :
+      t == Node::ASSIGN_BITWISE_RSHIFT ? ">>=" :
+      t == Node::ASSIGN_POW ? "**=" :
+      t == Node::ASSIGN_MOD ? "%=" :
+      t == Node::ASSIGN_ADD ? "+=" :
+      t == Node::ASSIGN_SUB ? "-=" :
+      t == Node::ASSIGN_MUL ? "*=" :
+      t == Node::ASSIGN_DIV ? "/=" :
       t == Node::LOGICAL_NEGATION ? "!" :
       t == Node::BITWISE_NEGATION ? "~" :
       t == Node::ARITHMETIC_NEGATION ? "-" :

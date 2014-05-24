@@ -54,6 +54,7 @@ public:
   // point-wise), or either element-count is 1 (and the value can be implicitly
   // vectorised).
   bool is_binary_match(const Type& t) const;
+  bool is_assign_binary_match(const Type& t) const;
   // Unify returns t if is(t), and otherwise an error type.
   bool is(const Type& t) const;
   Type unify(const Type& t) const;

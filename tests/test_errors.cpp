@@ -249,6 +249,8 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {++x;}", "++");
   err("x = void() {var x = 0.; x += 1;}", "+=");
   err("x = void() {y += 1;}", "y");
+  err("x = void() {var x = 1; x *= (1, 1);}", "*=");
+  err("x = void() {var x = 1; x *= 1.;}", "*=");
 
   // Variable declaration and assignment errors.
   err("x = void() {var a;}", ";");
@@ -272,7 +274,10 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {const a = 0; ++a;}", "++");
   err("x = void() {var a = 0; ++a = 1;}", "=");
   err("x = void() {const a = 0; void() {a;};}", "a");
+  err("x = void() {var a = 0; void() {a += 1;};}", "a");
   err("x = void() {closed const a = 0; void() {--a;};}", "--");
+  err("x = void() {a + var a = 1;}", "a");
+  err("x = void() {var a = a;}", "a");
 
   // Name resolution / scope errors.
   err("x = void() {y;}", "y");
@@ -343,10 +348,14 @@ TEST_F(YangTest, WarningTest)
   no_warn("export global {var f = void() {};}");
   no_warn("global {const f = void() {f;};}");
   no_warn("global {const f = void() {}; f;}");
+  no_warn("export x = void() {var a = 0; while (a *= 1);}");
+  no_warn("export x = void() {var a = 0; for (; a = 1;);}");
 
   // Warnings.
   warn("export x = void() {const a = 0;}", "=");
   warn("export x = void() {var a = 0; a = 1;}", "=");
+  warn("export x = void() {var a = 0; a *= 1;}", "=");
+  warn("export x = void() {var a = 0; for (a *= 1;; a *= 1);}", "=");
   warn("export x = void(int a) {}", "int a");
   warn("x = void() {}", "=");
   warn("global {const a = 0;}", "=");

@@ -65,6 +65,7 @@ private:
     TYPE_EXPR_CONTEXT,
     ERR_EXPR_CONTEXT,
     ASSIGN_LHS_CONTEXT,
+    TREE_ROOT_CONTEXT,
   };
   friend std::hash<metadata_t>;
   
