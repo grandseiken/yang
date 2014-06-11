@@ -472,13 +472,11 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       return Type(true);
     }
 
-    case Node::EMPTY_STMT:
     case Node::EXPR_STMT:
       return Type(true);
-    case Node::RETURN_VOID_STMT:
     case Node::RETURN_STMT:
     {
-      Type t = node.type == Node::RETURN_STMT ? results[0] : Type();
+      Type t = node.children.empty() ? Type() : results[0];
       // If we're not in a function, we must be in a global block.
       if (!inside_function()) {
         error(node, "return statement inside `global`");
@@ -486,8 +484,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
       const Type& current_return = current_return_type();
       if (!t.is(current_return)) {
-        const auto& n = node.type == Node::RETURN_STMT ?
-            *node.children[0] : node;
+        const auto& n = node.children.empty() ? node : *node.children[0];
         error(n, "returning " + t.string(_context) + " from " +
                  current_return.string(_context) + " function");
       }
@@ -498,13 +495,10 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       if (!results[0].is(yang::Type::int_t())) {
         error(*node.children[0], s + " branching on " + rs[0]);
       }
-      if (results.size() > 2) {
-        if (node.children[2]->type == Node::EMPTY_STMT) {
-          error(*node.children[2], "empty statement in " + s, false);
-        }
-      }
-      else if (node.children[1]->type == Node::EMPTY_STMT) {
-        error(*node.children[1], "empty statement in " + s, false);
+      auto& body = results.size() > 2 ? node.children[2] : node.children[1];
+      if (body->type == Node::EXPR_STMT &&
+          body->children[0]->type == Node::EMPTY_EXPR) {
+        error(*body, "empty statement in " + s, false);
       }
       // An IF_STMT definitely returns a value only if both branches definitely
       // return a value.

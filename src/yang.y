@@ -156,7 +156,10 @@ elem_list
   :
 {$$ = new Node(scan, Node::ERROR);}
   | elem_list elem
-{$$ = $1; $$->add($2);}
+{$$ = $1;
+ if ($2) {
+   $$->add($2);
+ }}
   ;
 
 elem
@@ -174,7 +177,7 @@ elem
  $$->int_value |= $1->int_value;
  $$->extend_bounds($1);}
   | ';'
-{$$ = new Node(scan, $1, Node::EMPTY_STMT);}
+{$$ = nullptr;}
   ;
 
 opt_export
@@ -206,16 +209,14 @@ stmt_list
   ;
 
 stmt
-  : ';'
-{$$ = new Node(scan, $1, Node::EMPTY_STMT);}
-  | expr ';'
+  : opt_expr ';'
 {$$ = new Node(scan, $1, Node::EXPR_STMT, $1);
  $$->extend_inner_bounds($2);}
-  | T_RETURN ';'
-{$$ = new Node(scan, $1, Node::RETURN_VOID_STMT);
- $$->extend_inner_bounds($2);}
-  | T_RETURN expr ';'
-{$$ = new Node(scan, $1, Node::RETURN_STMT, $2);
+  | T_RETURN opt_expr ';'
+{$$ = new Node(scan, $1, Node::RETURN_STMT);
+ if ($2->type != Node::EMPTY_EXPR) {
+   $$->add($2);
+ }
  $$->extend_inner_bounds($3);}
   | T_IF '(' expr ')' stmt %prec T_IF
 {$$ = new Node(scan, $1, Node::IF_STMT, $3, $5);}

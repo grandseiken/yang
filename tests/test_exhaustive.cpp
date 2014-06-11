@@ -561,7 +561,7 @@ export exhaustive_refcount = int()
   }
 
   return fn()();
-};
+}
 )";
 
 TEST_F(YangTest, ExhaustiveRefcount)

@@ -85,14 +85,11 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
     }
     case Node::LOOP_AFTER_BLOCK:
       return results[0];
-    case Node::EMPTY_STMT:
-      return indent() + ";\n";
     case Node::EXPR_STMT:
       return indent() + results[0] + ";\n";
-    case Node::RETURN_VOID_STMT:
-      return indent() + "return;\n";
     case Node::RETURN_STMT:
-      return indent() + "return " + results[0] + ";\n";
+      return indent() +
+          (results.empty() ? "return" : "return " + results[0]) + ";\n";
     case Node::IF_STMT:
     {
       std::string s =

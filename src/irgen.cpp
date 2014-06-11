@@ -506,20 +506,16 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       fback.pop_scope();
       return Value();
     }
-    case Node::EMPTY_STMT:
-      return _b.constant_int(0);
     case Node::EXPR_STMT:
       return results[0];
-    case Node::RETURN_VOID_STMT:
     case Node::RETURN_STMT:
     {
       auto dead_block =
           llvm::BasicBlock::Create(_b.b.getContext(), "dead", parent);
       fback.dereference_scoped_locals(0);
-      node.type == Node::RETURN_STMT ?
-          _b.b.CreateRet(results[0]) : _b.b.CreateRetVoid();
+      node.children.empty() ? _b.b.CreateRetVoid() : _b.b.CreateRet(results[0]);
       _b.b.SetInsertPoint(dead_block);
-      return node.type == Node::RETURN_STMT ? results[0] : Value();
+      return node.children.empty() ? Value() : results[0];
     }
     case Node::IF_STMT:
     {

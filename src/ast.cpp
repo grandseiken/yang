@@ -166,7 +166,6 @@ void Node::extend_bounds(const Node* node)
 std::string node_op_string(Node::node_type t)
 {
   return
-      t == Node::RETURN_VOID_STMT ? "return" :
       t == Node::RETURN_STMT ? "return" :
       t == Node::IF_STMT ? "if" :
       t == Node::FOR_STMT ? "for" :
