@@ -83,6 +83,8 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
       }
       return indent() + "{\n" + s + indent() + "}";
     }
+    case Node::LOOP_AFTER_BLOCK:
+      return results[0];
     case Node::EMPTY_STMT:
       return indent() + ";\n";
     case Node::EXPR_STMT:
@@ -115,6 +117,8 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
     case Node::CONTINUE_STMT:
       return indent() + "continue;\n";
 
+    case Node::EMPTY_EXPR:
+      return "";
     case Node::MEMBER_SELECTION:
       return "(" + results[0] + "." + node.string_value + ")";
     case Node::IDENTIFIER:

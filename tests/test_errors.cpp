@@ -311,6 +311,7 @@ TEST_F(YangTest, WarningTest)
   }
 
   auto ctxt = context();
+  ctxt.register_function("noop", make_fn([]{}));
   auto warc = [&](const std::string& str,
                   const std::string& text, std::size_t count)
   {
@@ -365,8 +366,8 @@ TEST_F(YangTest, WarningTest)
   warn("global {var f = void() {f;}; f;}", "=");
   warn("global {const f = void() {};}", "=");
   warn("export x = void() {closed const a = 0;}", "=");
-  warn("export x = void() {closed var a = 0; void() {a;};}", "=");
-  warn("global {closed const a = 0; void() {a;};}", "=");
+  warn("export x = void() {closed var a = 0; void() {a;}();}", "=");
+  warn("global {closed const a = 0; void() {a;}();}", "=");
 
   // Whitespace warnings.
   warn("\texport x = void() {}", "\t");
@@ -377,12 +378,12 @@ TEST_F(YangTest, WarningTest)
 
   // Empty if-statements.
   warn("export x = void() {if (1);}", ";");
-  warn("export x = void() {if (1) 0; else;}", ";");
+  warn("export x = void() {if (1) noop(); else;}", ";");
   warn("export x = void() {if (1); else;}", ";");
-  no_warn("export x = void() {if (1); else 0;}");
+  no_warn("export x = void() {if (1); else noop();}");
 
   // Dead code.
-  warn("export x = void() {return; 0;}", "0;");
+  warn("export x = void() {return; noop();}", "noop();");
   warn("export x = int() {return 0; return 0;}", "return 0;");
   warn("export x = void() {if (1) {return; return;}}", "return;");
   warn("export x = void() {if (1) return; else return; return;}", "return;");
@@ -393,6 +394,21 @@ TEST_F(YangTest, WarningTest)
       "export x = void() {if (1) return; else {return; return;} return;}",
       "return;", 2);
   no_warn("export x = void() {if (1) return; return;}");
+
+  // Operations with no effect.
+  warn("export x = void() {1;}", "1");
+  warn("export x = void() {true;}", "true");
+  warn("export x = void() {1.;}", ".");
+  warn("export x = void() {1 + 1;}", "+");
+  warn("export x = void() {1 == 1;}", "==");
+  warn("export x = void() {$+(1, 1);}", "$");
+  warn("export x = void() {!1;}", "!");
+  warn("export x = void() {(1, 1);}", "(");
+  warn("export x = void() {for(1; 0;);}", "1");
+  warn("export x = void() {for(; 0; 1);}", "1");
+  warn("export x = void() {do 1; while(0);}", "1");
+  warn("export x = void() {void() {};}", "void()");
+  no_warn("export x = void() {void() {}();}");
 }
 
 // End namespace yang.

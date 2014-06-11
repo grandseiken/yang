@@ -45,6 +45,8 @@ struct Node {
 
     // Statements.
     BLOCK,
+    LOOP_AFTER_BLOCK,
+    // TODO: merge EMPTY_STMT into EXPR_STMT + EMPTY_EXPR.
     EMPTY_STMT,
     EXPR_STMT,
     RETURN_VOID_STMT,
@@ -57,6 +59,7 @@ struct Node {
     CONTINUE_STMT,
 
     // Expressions.
+    EMPTY_EXPR,
     MEMBER_SELECTION,
     IDENTIFIER,
     INT_LITERAL,

@@ -223,7 +223,7 @@ stmt
 {$$ = new Node(scan, $1, Node::IF_STMT, $3, $5, $7);}
   | T_FOR '(' opt_expr ';' opt_expr ';' opt_expr ')' stmt
 {$$ = new Node(scan, $1, Node::FOR_STMT,
-               $3, $5, new Node(scan, $7, Node::BLOCK, $7));
+               $3, $5, new Node(scan, $7, Node::LOOP_AFTER_BLOCK, $7));
  $$->add($9);}
   | T_WHILE '(' expr ')' stmt
 {$$ = new Node(scan, $1, Node::WHILE_STMT, $3, $5);}
@@ -246,7 +246,7 @@ opt_expr
   : expr
 {$$ = $1;}
   |
-{$$ = new Node(scan, Node::INT_LITERAL, 1);}
+{$$ = new Node(scan, Node::EMPTY_EXPR);}
   ;
 
 opt_identifier

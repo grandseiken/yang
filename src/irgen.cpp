@@ -203,6 +203,7 @@ void IrGenerator::preorder(const Node& node)
       break;
 
     case Node::BLOCK:
+    case Node::LOOP_AFTER_BLOCK:
       fback.push_scope();
       break;
 
@@ -496,6 +497,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       break;
 
     case Node::BLOCK:
+    case Node::LOOP_AFTER_BLOCK:
     {
       auto after_block =
           llvm::BasicBlock::Create(_b.b.getContext(), "after", parent);
@@ -624,6 +626,8 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       return Value();
     }
 
+    case Node::EMPTY_EXPR:
+      return _b.constant_int(1);
     case Node::INT_LITERAL:
       return _b.constant_int(node.int_value);
     case Node::FLOAT_LITERAL:

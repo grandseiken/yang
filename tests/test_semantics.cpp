@@ -140,8 +140,9 @@ export odd_ops = int()
 
 export ordering = int()
 {
+  const ignore = void(int) {};
   var r = const a = (const b = 1) + b;
-  for (var b = a; const a = b < 4; (const b = ++b) + b) {
+  for (var b = a; const a = b < 4; ignore((const b = ++b) + b)) {
     r += a + b;
   }
 

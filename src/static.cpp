@@ -60,9 +60,34 @@ void StaticChecker::preorder(const Node& node)
   }
   bool tree_root = _scopes.back().metadata.has(
       TREE_ROOT_CONTEXT, _scopes.back().metadata.size() - 1);
+  if (tree_root &&
+      node.type != Node::EMPTY_EXPR && node.type != Node::CALL &&
+      node.type != Node::ASSIGN_VAR && node.type != Node::ASSIGN_CONST &&
+      node.type != Node::INCREMENT && node.type != Node::DECREMENT &&
+      node.type != Node::ASSIGN &&
+      node.type != Node::ASSIGN_LOGICAL_OR &&
+      node.type != Node::ASSIGN_LOGICAL_AND &&
+      node.type != Node::ASSIGN_BITWISE_OR &&
+      node.type != Node::ASSIGN_BITWISE_AND &&
+      node.type != Node::ASSIGN_BITWISE_XOR &&
+      node.type != Node::ASSIGN_BITWISE_LSHIFT &&
+      node.type != Node::ASSIGN_BITWISE_RSHIFT &&
+      node.type != Node::ASSIGN_POW &&
+      node.type != Node::ASSIGN_MOD &&
+      node.type != Node::ASSIGN_ADD &&
+      node.type != Node::ASSIGN_SUB &&
+      node.type != Node::ASSIGN_MUL &&
+      node.type != Node::ASSIGN_DIV &&
+      // TODO: these should check arguments.
+      node.type != Node::TERNARY &&
+      node.type != Node::LOGICAL_OR && node.type != Node::LOGICAL_AND &&
+      // Identifier doesn't actually have any effect, but we want probably want
+      // to allow its use to disable "unused" warnings.
+      node.type != Node::IDENTIFIER) {
+    error(node, "operation has no effect", false);
+  }
 
   // Only so we know whether the parent node was a TREE_ROOT_CONTEXT.
-  // TODO: warn about expressions with no effect at the tree root.
   _scopes.back().metadata.push();
   switch (node.type) {
     case Node::GLOBAL:
@@ -132,12 +157,11 @@ void StaticChecker::preorder(const Node& node)
       _scopes.back().metadata.push();
       _scopes.back().metadata.add(TYPE_EXPR_CONTEXT, {});
       break;
-    case Node::BLOCK:
+    case Node::LOOP_AFTER_BLOCK:
       push_symbol_tables();
-      if (tree_root) {
-        _scopes.back().metadata.add(TREE_ROOT_CONTEXT, {});
-      }
+      _scopes.back().metadata.add(TREE_ROOT_CONTEXT, {});
       break;
+    case Node::BLOCK:
     case Node::IF_STMT:
       push_symbol_tables();
       break;
@@ -230,7 +254,6 @@ void StaticChecker::infix(const Node& node, const result_list& results)
       }
       if (results.size() == 2) {
         _scopes.back().metadata.push();
-        _scopes.back().metadata.add(TREE_ROOT_CONTEXT, {});
       }
       break;
 
@@ -334,7 +357,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
     }
     _scopes.pop_back();
   }
-  else if (node.type == Node::BLOCK || node.type == Node::IF_STMT) {
+  else if (node.type == Node::IF_STMT || node.type == Node::BLOCK ||
+           node.type == Node::LOOP_AFTER_BLOCK) {
     pop_symbol_tables();
   }
   else if (node.type == Node::EXPR_STMT) {
@@ -426,6 +450,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       return results[0];
 
     case Node::BLOCK:
+    case Node::LOOP_AFTER_BLOCK:
     {
       // Check for dead code.
       bool dead = false;
@@ -595,6 +620,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
            symbol.warn_writes : symbol.warn_reads) = false;
       return symbol.type;
     }
+    case Node::EMPTY_EXPR:
     case Node::INT_LITERAL:
       return yang::Type::int_t();
     case Node::FLOAT_LITERAL:
@@ -853,27 +879,27 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
           }
         }
         if (node.type == Node::ASSIGN && !t.is(results[1])) {
-          error(node, rs[1] + " assigned to `" + s + "` of type " +
+          error(node, rs[1] + " assigned to `" + ident + "` of type " +
                       t.string(_context));
           return Type(true);
         }
         if (t.external().is_const()) {
-          error(node, "assignment to `" + s + "` of type " +
+          error(node, "assignment to `" + ident + "` of type " +
                       t.string(_context));
         }
         return t;
       }
 
-      if (!_context.function_lookup(s).type.is_void()) {
-        error(node, "cannot assign to context function `" + s + "`");
+      if (!_context.function_lookup(ident).type.is_void()) {
+        error(node, "cannot assign to context function `" + ident + "`");
       }
-      else if (!_context.type_lookup(s).type.is_void()) {
-        error(node, "cannot assign to context type `" + s + "`");
+      else if (!_context.type_lookup(ident).type.is_void()) {
+        error(node, "cannot assign to context type `" + ident + "`");
       }
       else {
-        error(node, "undeclared identifier `" + s + "`");
+        error(node, "undeclared identifier `" + ident + "`");
       }
-      add_symbol(node, s, results[1], false, false);
+      add_symbol(node, ident, results[1], false, false);
       return results[1];
     }
 
