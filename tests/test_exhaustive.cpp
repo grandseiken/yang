@@ -374,10 +374,10 @@ export exhaustive_refcount = int()
   fn()() ? fn() : fn()() ? fn() : fn();
 
   fn()() || fn()();
-  (fn()(), fn()()) || (1, 1);
+  ignore2((fn()(), fn()()) || (1, 1));
   (1, 1) || (fn()(), fn()());
   fn()() && fn()();
-  (fn()(), fn()()) && (1, 1);
+  ignore2((fn()(), fn()()) && (1, 1));
   (1, 1) && (fn()(), fn()());
 
   ignore(fn()() | fn()());

@@ -4,6 +4,7 @@
 //============================================================================//
 #include "tests.h"
 
+// TODO: reverse the order arguments to all EQ macros so that they are correct.
 namespace yang {
 
 // Fixture implementation.

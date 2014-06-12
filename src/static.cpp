@@ -21,6 +21,12 @@ namespace std {
 namespace yang {
 namespace internal {
 
+// TODO: many things would be a lot easier if AST nodes only had parent pointers
+// and child indices. Another idea to make things cleaner is to use RAII for
+// removing contexts and symbol tables and so on when we go back up the tree. Or
+// put more things in the result types. Or use more self-contained recursive
+// functions where possible like get_no_effect_node(). Or turn those into
+// separate walkers.
 StaticChecker::StaticChecker(
     const ContextInternals& context, ParseData& data,
     symbol_frame& functions_output, symbol_frame& globals_output)
@@ -60,31 +66,9 @@ void StaticChecker::preorder(const Node& node)
   }
   bool tree_root = _scopes.back().metadata.has(
       TREE_ROOT_CONTEXT, _scopes.back().metadata.size() - 1);
-  if (tree_root &&
-      node.type != Node::EMPTY_EXPR && node.type != Node::CALL &&
-      node.type != Node::ASSIGN_VAR && node.type != Node::ASSIGN_CONST &&
-      node.type != Node::INCREMENT && node.type != Node::DECREMENT &&
-      node.type != Node::ASSIGN &&
-      node.type != Node::ASSIGN_LOGICAL_OR &&
-      node.type != Node::ASSIGN_LOGICAL_AND &&
-      node.type != Node::ASSIGN_BITWISE_OR &&
-      node.type != Node::ASSIGN_BITWISE_AND &&
-      node.type != Node::ASSIGN_BITWISE_XOR &&
-      node.type != Node::ASSIGN_BITWISE_LSHIFT &&
-      node.type != Node::ASSIGN_BITWISE_RSHIFT &&
-      node.type != Node::ASSIGN_POW &&
-      node.type != Node::ASSIGN_MOD &&
-      node.type != Node::ASSIGN_ADD &&
-      node.type != Node::ASSIGN_SUB &&
-      node.type != Node::ASSIGN_MUL &&
-      node.type != Node::ASSIGN_DIV &&
-      // TODO: these should check arguments.
-      node.type != Node::TERNARY &&
-      node.type != Node::LOGICAL_OR && node.type != Node::LOGICAL_AND &&
-      // Identifier doesn't actually have any effect, but we want probably want
-      // to allow its use to disable "unused" warnings.
-      node.type != Node::IDENTIFIER) {
-    error(node, "operation has no effect", false);
+  const Node* no_effect_node = get_no_effect_node(node);
+  if (tree_root && no_effect_node) {
+    error(*no_effect_node, "operation has no effect", false);
   }
 
   // Only so we know whether the parent node was a TREE_ROOT_CONTEXT.
@@ -237,7 +221,7 @@ void StaticChecker::infix(const Node& node, const result_list& results)
                            t.external().function_return()).make_const(true);
           add_symbol(*ptr, name, u, false);
           // TODO: arguments are implicitly closed so far, since it's a bit
-          // tricky to allow closed on arglists in the parser. Fix that.
+          // tricky to allow closed on arglists in the parser. Fix that maybe.
           _scopes.back().symbol_table[name].closed = true;
           arg_names.insert(name);
           ++elem;
@@ -286,6 +270,10 @@ void StaticChecker::infix(const Node& node, const result_list& results)
       if (!results[0].is_vector() && results.size() == 2) {
         pop_symbol_tables();
       }
+      if (!results[0].is_vector()) {
+        push_symbol_tables();
+      }
+      break;
     case Node::LOGICAL_OR:
     case Node::LOGICAL_AND:
       if (!results[0].is_vector()) {
@@ -1027,6 +1015,53 @@ const Type& StaticChecker::current_return_type() const
 bool StaticChecker::inside_function() const
 {
   return _scopes.back().metadata.has(RETURN_TYPE);
+}
+
+const Node* StaticChecker::get_no_effect_node(const Node& node) const
+{
+  if (node.type == Node::EMPTY_EXPR || node.type == Node::CALL ||
+      node.type == Node::ASSIGN_VAR || node.type == Node::ASSIGN_CONST ||
+      node.type == Node::INCREMENT || node.type == Node::DECREMENT ||
+      node.type == Node::ASSIGN ||
+      node.type == Node::ASSIGN_LOGICAL_OR ||
+      node.type == Node::ASSIGN_LOGICAL_AND ||
+      node.type == Node::ASSIGN_BITWISE_OR ||
+      node.type == Node::ASSIGN_BITWISE_AND ||
+      node.type == Node::ASSIGN_BITWISE_XOR ||
+      node.type == Node::ASSIGN_BITWISE_LSHIFT ||
+      node.type == Node::ASSIGN_BITWISE_RSHIFT ||
+      node.type == Node::ASSIGN_POW ||
+      node.type == Node::ASSIGN_MOD ||
+      node.type == Node::ASSIGN_ADD ||
+      node.type == Node::ASSIGN_SUB ||
+      node.type == Node::ASSIGN_MUL ||
+      node.type == Node::ASSIGN_DIV ||
+      // Identifier doesn't actually have any effect, but we want probably want
+      // to allow its use to disable "unused" warnings. This does mean that e.g.
+      // "0 || a;" or "(a, a);" don't warn either, though. Maybe it shouldn't be
+      // allowed?
+      node.type == Node::IDENTIFIER) {
+    return nullptr;
+  }
+  if (node.type == Node::LOGICAL_OR || node.type == Node::LOGICAL_AND) {
+    return get_no_effect_node(*node.children[1]);
+  }
+  if (node.type == Node::VECTOR_CONSTRUCT) {
+    // Without a genuine comma operator, (a(), b()) really does have an
+    // effect...
+    for (const auto& n : node.children) {
+      const Node* m = get_no_effect_node(*n);
+      if (m) {
+        return m;
+      }
+    }
+    return nullptr;
+  }
+  if (node.type == Node::TERNARY && (!get_no_effect_node(*node.children[1]) ||
+                                     !get_no_effect_node(*node.children[2]))) {
+    return nullptr;
+  }
+  return &node;
 }
 
 bool StaticChecker::is_type_expression(const Node& node) const

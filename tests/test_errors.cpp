@@ -403,12 +403,21 @@ TEST_F(YangTest, WarningTest)
   warn("export x = void() {1 == 1;}", "==");
   warn("export x = void() {$+(1, 1);}", "$");
   warn("export x = void() {!1;}", "!");
-  warn("export x = void() {(1, 1);}", "(");
   warn("export x = void() {for(1; 0;);}", "1");
   warn("export x = void() {for(; 0; 1);}", "1");
   warn("export x = void() {do 1; while(0);}", "1");
   warn("export x = void() {void() {};}", "void()");
   no_warn("export x = void() {void() {}();}");
+  warn("export x = void() {0 && 1;}", "1");
+  warn("export x = void() {0 && 0 && 1;}", "1");
+  no_warn("export x = int() {0 && x(); return 0;}");
+  warn("export x = int() {(x(), 1, x()); return 0;}", "1");
+  no_warn("export x = int() {(x(), x()); return 0;}");
+  warn("export x = void() {0 ? 0 : 0;}", "?");
+  warn("export x = void() {0 ? 0 : 0 ? 0 : 0;}", "?");
+  warn("export x = void() {0 ? 0 ? 0 : 0 : 0;}", "?");
+  no_warn("export x = int() {0 ? 0 : x(); return 0;}");
+  no_warn("export x = int() {0 ? 0 : 0 ? 0 : x(); return 0;}");
 }
 
 // End namespace yang.

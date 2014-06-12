@@ -39,6 +39,7 @@ private:
   const Type& current_return_type() const;
   bool inside_function() const;
 
+  const Node* get_no_effect_node(const Node& node) const;
   bool is_type_expression(const Node& node) const;
   bool valid_all_contexts(const Node& node) const;
   bool inside_type_context() const;
