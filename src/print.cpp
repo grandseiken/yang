@@ -124,6 +124,8 @@ std::string AstPrinter::visit(const Node& node, const result_list& results)
       return std::to_string(node.int_value);
     case Node::FLOAT_LITERAL:
       return std::to_string(node.float_value);
+    case Node::STRING_LITERAL:
+      return "\"\"\"" + node.string_value + "\"\"\"";
 
     case Node::TERNARY:
       return "(" + results[0] + " ? " + results[1] + " : " + results[2] + ")";

@@ -28,6 +28,11 @@ Vtable::Vtable()
 {
 }
 
+StaticString::StaticString(const std::string& value)
+  : value(value)
+{
+}
+
 Structure::entry::entry(const yang::Type& type, std::size_t index)
   : type(type)
   , index(index)
@@ -117,7 +122,7 @@ llvm::StructType* Builder::gen_function_type() const
   return llvm::StructType::get(b.getContext(), types);
 }
 
-llvm::Constant* Builder::constant_ptr(void* ptr) const
+llvm::Constant* Builder::constant_ptr(const void* ptr) const
 {
   // To construct a constant pointer, we need to do a bit of machine-dependent
   // stuff.
@@ -515,7 +520,7 @@ llvm::Value* LexScope::allocate_closure_struct(llvm::Value* parent_ptr)
   auto parent_void_ptr =
       _b.b.CreateBitCast(parent_ptr, _b.void_ptr_type());
   memory_store(Value(yang::Type::void_t(), parent_void_ptr),
-               structure_ptr(closure_value, 0));
+               structure_ptr(closure_value, Structure::PARENT_PTR));
   update_reference_count(nullptr, parent_void_ptr, 1);
   // Set up the symbol-table for all the rest. If a closed variable "v"
   // appears in scope #1, for instance, we store "v/1" in the symbol table

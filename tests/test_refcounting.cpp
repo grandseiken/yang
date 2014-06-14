@@ -351,5 +351,27 @@ TEST_F(YangTest, ApiRefCounting)
   EXPECT_EQ(17, Instance(jnst).call<int_t>("g"));
 }
 
+const std::string TestStringRefCountingStr = R"(
+export test = string()
+{
+  return "str";
+}
+)";
+
+TEST_F(YangTest, StringRefCounting)
+{
+  auto ctxt = context();
+  // TODO: should be possible to register managed types without constructors.
+  ctxt.register_type<const char>(
+      "string", make_fn([]{return "";}), make_fn([](const char* t){}));
+
+  const char* str;
+  {
+    auto inst = instance(ctxt, TestStringRefCountingStr);
+    str = inst.call<Ref<const char>>("test").get();
+  }
+  EXPECT_EQ(std::string(str), std::string("str"));
+}
+
 // End namespace yang.
 }

@@ -47,6 +47,43 @@ yang::float_t parse_float(const char* str, scan_t scan)
   }
 }
 
+std::string parse_string(bool raw, const char* str, scan_t scan)
+{
+  std::string temp = str;
+  temp = raw ? temp.substr(3, temp.length() - 6) :
+               temp.substr(1, temp.length() - 2);
+  if (raw) {
+    return temp;
+  }
+
+  std::string out;
+  for (std::size_t i = 0; i < temp.length(); ++i) {
+    if (temp[i] == '\n') {
+      yang_error(scan, "newline in non-raw string literal");
+      return "";
+    }
+    if (temp[i] != '\\') {
+      out += temp[i];
+      continue;
+    }
+
+    ++i;
+    out +=
+        temp[i] == '"' ? '"' :
+        temp[i] == '0' ? '\0' :
+        temp[i] == 'a' ? '\a' :
+        temp[i] == 'b' ? '\b' :
+        temp[i] == 'f' ? '\f' :
+        temp[i] == 'n' ? '\n' :
+        temp[i] == 'r' ? '\r' :
+        temp[i] == 't' ? '\t' :
+        temp[i] == 'v' ? '\v' :
+        temp[i] == '\\' ? '\\' :
+        yang_error(scan, "unknown escape sequence"), "";
+  }
+  return out;
+}
+
 // End anonymous namespace.
 }
 
@@ -84,11 +121,13 @@ identifier {alpha}({alpha}|{digit})*
 num_literal {digit}+
 int_literal {num_literal}|0x[A-Fa-f0-9]+
   /* Float literals carefully avoid matching "{num_literal}.", since that's an
-     operator anyway (and leads to nicer parsing). */
+     operator anyway (and this leads to nicer parsing). */
 exponent [eE][+-]?{num_literal}
 decimal_literal ({num_literal}?\.{num_literal})
 float_literal {decimal_literal}{exponent}?|{num_literal}(\.)?{exponent}
 vector_size [1-9]{digit}*
+string_literal \"(\\.|[^"\\])*\"
+raw_string_literal \"\"\"([^"]|\"[^"]|\"\"[^"])*\"\"\"
 
 %%
 
@@ -228,6 +267,16 @@ false {
 {float_literal} {
   LVAL = new Node(yyscanner, Node::FLOAT_LITERAL, parse_float(TEXT, yyscanner));
   return T_FLOAT_LITERAL;
+}
+{string_literal} {
+  LVAL = new Node(
+      yyscanner, Node::STRING_LITERAL, parse_string(false, TEXT, yyscanner));
+  return T_STRING_LITERAL;
+}
+{raw_string_literal} {
+  LVAL = new Node(
+      yyscanner, Node::STRING_LITERAL, parse_string(true, TEXT, yyscanner));
+  return T_STRING_LITERAL;
 }
 
   /* Default. */

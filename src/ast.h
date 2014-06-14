@@ -61,6 +61,7 @@ struct Node {
     IDENTIFIER,
     INT_LITERAL,
     FLOAT_LITERAL,
+    STRING_LITERAL,
     TERNARY,
     CALL,
     LOGICAL_OR,

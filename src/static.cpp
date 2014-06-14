@@ -603,6 +603,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       return yang::Type::int_t();
     case Node::FLOAT_LITERAL:
       return yang::Type::float_t();
+    case Node::STRING_LITERAL:
+      return type_of<Ref<const char>>();
 
     case Node::TERNARY:
     {

@@ -162,6 +162,12 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {0xH;}", "xH");
   err("x = void() {0y0;}", "y0");
   err("x = void() {0x100000000;}", "0x100000000");
+  err("x = void() {\"a\na\";}", "\"a\na\"");
+  err("x = void() {\"\\'\";}", "\"\\'\"");
+  err("x = void() {\"\\1\";}", "\"\\1\"");
+  err("x = void() {\";}", "\"");
+  err("x = void() {\"\\\";}", "\"");
+  err("x = void() {\"\"\";}", "\"");
 
   // Type / expression mismatches.
   err("x = 0() {}", "0");
@@ -251,6 +257,8 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {y += 1;}", "y");
   err("x = void() {var x = 1; x *= (1, 1);}", "*=");
   err("x = void() {var x = 1; x *= 1.;}", "*=");
+  err("x = void() {\"foo\" + 2;}", "+");
+  err("x = void() {var x = \"foo\"; ++foo;}", "foo");
 
   // Variable declaration and assignment errors.
   err("x = void() {var a;}", ";");

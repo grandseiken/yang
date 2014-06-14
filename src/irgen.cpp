@@ -628,6 +628,20 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       return _b.constant_int(node.int_value);
     case Node::FLOAT_LITERAL:
       return _b.constant_float(node.float_value);
+    case Node::STRING_LITERAL:
+    {
+      // TODO: string literals could be uniqued per-program.
+      StaticString* s = new StaticString(node.string_value);
+      _b.static_data.emplace_back(s);
+
+      // TODO: string literal keep-alives the instance it was spawned from
+      // (get_global_struct()), when it really only needs to keep-alive the
+      // program.
+      llvm::Value* chunk = _chunk.allocate_closure_struct(get_global_struct());
+      _chunk.memory_store(_b.constant_ptr(s->value.c_str()), chunk, "object");
+      return Value(type_of<Ref<const char>>(),
+                   _b.b.CreateBitCast(chunk, _b.void_ptr_type()));
+    }
 
     case Node::TERNARY:
     {

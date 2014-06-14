@@ -30,8 +30,6 @@
 //
 // Mostly, these can only be passed from C++; perhaps a special "self" keyword
 // can exist as well to get the current program instance as an interface value.
-// TODO: string literals. Store them in the static data area and implicitly
-// convert them to user-type of const char*. But managed or unmanaged?
 //
 // Misc stuff:
 // TODO: better assignment with lvalues. E.g. a[i] and ++i should both be

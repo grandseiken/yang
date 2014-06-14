@@ -25,8 +25,6 @@ typedef std::unordered_map<std::string, yang::Type> symbol_frame;
 
 struct Vtable : StaticDataEntry {
   Vtable();
-  ~Vtable() override {}
-
   typedef void (*destructor_t)(Prefix*);
   typedef void (*refout_query_t)(Prefix*, Prefix**);
 
@@ -36,6 +34,11 @@ struct Vtable : StaticDataEntry {
   // Outgoing reference count and query function.
   std::size_t refout_count;
   refout_query_t refout_query;
+};
+
+struct StaticString : StaticDataEntry {
+  StaticString(const std::string& value);
+  const std::string value;
 };
 
 struct Structure {
@@ -93,7 +96,7 @@ struct Builder {
   llvm::StructType* gen_function_type() const;
 
   // Value construction.
-  llvm::Constant* constant_ptr(void* ptr) const;
+  llvm::Constant* constant_ptr(const void* ptr) const;
   Value constant_int(yang::int_t value) const;
   Value constant_float(yang::float_t value) const;
   Value constant_ivec(yang::int_t value, std::size_t n) const;

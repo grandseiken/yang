@@ -94,6 +94,7 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
 %token <node> T_IDENTIFIER
 %token <node> T_INT_LITERAL
 %token <node> T_FLOAT_LITERAL
+%token <node> T_STRING_LITERAL
 %token <node> T_TYPE_LITERAL
 
   /* Operator precedence. */
@@ -317,6 +318,9 @@ expr
   | T_INT_LITERAL
 {$$ = $1;}
   | T_FLOAT_LITERAL
+{$$ = $1;}
+  // TODO: automatic joining of adjacent string literals.
+  | T_STRING_LITERAL
 {$$ = $1;}
 
   /* Binary operators. */
