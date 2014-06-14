@@ -101,12 +101,12 @@ TEST_F(YangTest, UserTypes)
   qrog.call<user_type*>("returns_user_type");
   qrog.call<user_type*>("returns_user_type");
   user_type* u = qrog.call<user_type*>("returns_user_type");
-  EXPECT_EQ(u->id, 3);
+  EXPECT_EQ(3, u->id);
   qrog.call<void>("takes_user_type", u);
-  EXPECT_EQ(u->id, 99);
-  EXPECT_EQ(prog.call<int_t>("takes_user_type", u), 99);
-  EXPECT_EQ(qrog.get_global<user_type*>("u")->id, 99);
-  EXPECT_EQ(qrog.get_global<user_type*>("v")->id, 0);
+  EXPECT_EQ(99, u->id);
+  EXPECT_EQ(99, prog.call<int_t>("takes_user_type", u));
+  EXPECT_EQ(99, qrog.get_global<user_type*>("u")->id);
+  EXPECT_EQ(0, qrog.get_global<user_type*>("v")->id);
 
   // Do some things with other_t.
   auto takes_other_type =
@@ -114,7 +114,7 @@ TEST_F(YangTest, UserTypes)
   other_t other;
   other.value = 49;
   takes_other_type(&other);
-  EXPECT_EQ(extract_value, 49);
+  EXPECT_EQ(49, extract_value);
 
   // Pass incorrect type to a program that knows about it.
   EXPECT_THROW(prog.call<int_t>("takes_user_type", &other), runtime_error);
@@ -129,12 +129,12 @@ TEST_F(YangTest, UserTypes)
   other.value = 64;
   auto extract_oo = prog.get_function<Function<void()>>("extract_oo");
   qrog.call<void>("call_void", extract_oo);
-  EXPECT_EQ(extract_value, 64);
+  EXPECT_EQ(64, extract_value);
 
   typedef Function<int_t()> intf_t;
-  EXPECT_EQ(qrog.get_global<intf_t>("f")(), -1);
+  EXPECT_EQ(-1, qrog.get_global<intf_t>("f")());
   qrog.call<void>("steal_function", u);
-  EXPECT_EQ(qrog.get_global<intf_t>("f")(), 99);
+  EXPECT_EQ(99, qrog.get_global<intf_t>("f")());
 }
 
 const std::string TestManagedUserTypesStr = R"(
@@ -198,27 +198,27 @@ TEST_F(YangTest, ManagedUserTypes)
     {
       auto ref = inst.call<Ref<Managed>>("make_user_type");
       auto sef = inst.call<Ref<Managed>>("make_user_type");
-      EXPECT_EQ(ref->count, 1);
-      EXPECT_EQ(sef->count, 2);
-      EXPECT_EQ(ref->data, 17);
-      EXPECT_EQ(count, 3);
+      EXPECT_EQ(1, ref->count);
+      EXPECT_EQ(2, sef->count);
+      EXPECT_EQ(17, ref->data);
+      EXPECT_EQ(3, count);
 
       auto con = inst.get_global<Function<Ref<Managed>(int_t)>>("con");
-      EXPECT_EQ(con(0)->count, 3);
-      EXPECT_EQ(count, 4);
+      EXPECT_EQ(3, con(0)->count);
+      EXPECT_EQ(4, count);
     }
     instance("");
-    EXPECT_EQ(count, 1);
-    EXPECT_EQ(inst.call<int_t>("get_some_count"), 0);
-    EXPECT_EQ(inst.call<int_t>("get_some_count"), 0);
-    EXPECT_EQ(inst.call<int_t>("get_some_count"), 1);
-    EXPECT_EQ(inst.call<int_t>("get_some_count"), 2);
+    EXPECT_EQ(1, count);
+    EXPECT_EQ(0, inst.call<int_t>("get_some_count"));
+    EXPECT_EQ(0, inst.call<int_t>("get_some_count"));
+    EXPECT_EQ(1, inst.call<int_t>("get_some_count"));
+    EXPECT_EQ(2, inst.call<int_t>("get_some_count"));
 
     auto get_count_closure = inst.call<Function<int_t()>>("get_count_closure");
-    EXPECT_EQ(get_count_closure(), 2);
+    EXPECT_EQ(2, get_count_closure());
   }
   instance("");
-  EXPECT_EQ(count, 0);
+  EXPECT_EQ(0, count);
 }
 
 const std::string TestUserTypedefsStrA = R"(
@@ -271,7 +271,7 @@ TEST_F(YangTest, UserTypedefs)
   ctxt.register_function("get_a", make_fn([&]{return &the_a;}));
 
   auto inst = instance(ctxt, TestUserTypedefsStrA);
-  EXPECT_EQ(inst.call<int_t>("do_it"), 16);
+  EXPECT_EQ(16, inst.call<int_t>("do_it"));
 
   auto ma_ctor = [](type_a* a)
   {
@@ -284,13 +284,13 @@ TEST_F(YangTest, UserTypedefs)
   };
   ctxt.register_type("ma", make_fn(ma_ctor), make_fn(ma_dtor));
   {
-    ASSERT_EQ(the_a.count, 0);
+    ASSERT_EQ(0, the_a.count);
     auto jnst = instance(ctxt, TestUserTypedefsStrB);
     auto ref = jnst.call<Ref<type_a>>("bar");
-    EXPECT_EQ(the_a.count, 1);
+    EXPECT_EQ(1, the_a.count);
   }
   instance("");
-  EXPECT_EQ(the_a.count, 0);
+  EXPECT_EQ(0, the_a.count);
 }
 
 // End namespace yang.

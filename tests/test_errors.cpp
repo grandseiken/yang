@@ -34,36 +34,36 @@ TEST_F(YangTest, FailureTest)
   const auto& errors = prog.get_errors();
   const auto& warnings = prog.get_warnings();
 
-  ASSERT_EQ(errors.size(), 1);
-  ASSERT_EQ(warnings.size(), 1);
+  ASSERT_EQ(1, errors.size());
+  ASSERT_EQ(1, warnings.size());
 
   const auto& error = errors[0];
   const auto& warning = warnings[0];
 
-  EXPECT_EQ(error.node.start_line, 4);
-  EXPECT_EQ(error.node.end_line, 4);
-  EXPECT_EQ(error.node.start_column, 8);
-  EXPECT_EQ(error.node.end_column, 8);
-  EXPECT_EQ(error.node.start_index, 37);
-  EXPECT_EQ(error.node.end_index, 37);
-  EXPECT_EQ(error.node.text, "+");
+  EXPECT_EQ(4, error.node.start_line);
+  EXPECT_EQ(4, error.node.end_line);
+  EXPECT_EQ(8, error.node.start_column);
+  EXPECT_EQ(8, error.node.end_column);
+  EXPECT_EQ(37, error.node.start_index);
+  EXPECT_EQ(37, error.node.end_index);
+  EXPECT_EQ("+", error.node.text);
 
-  EXPECT_EQ(error.tree.start_line, 4);
-  EXPECT_EQ(error.tree.end_line, 5);
-  EXPECT_EQ(error.tree.start_column, 4);
-  EXPECT_EQ(error.tree.end_column, 4);
-  EXPECT_EQ(error.tree.start_index, 33);
-  EXPECT_EQ(error.tree.end_index, 43);
-  EXPECT_EQ(error.tree.text, "1.0 +\n    1");
+  EXPECT_EQ(4, error.tree.start_line);
+  EXPECT_EQ(5, error.tree.end_line);
+  EXPECT_EQ(4, error.tree.start_column);
+  EXPECT_EQ(4, error.tree.end_column);
+  EXPECT_EQ(33, error.tree.start_index);
+  EXPECT_EQ(43, error.tree.end_index);
+  EXPECT_EQ("1.0 +\n    1", error.tree.text);
 
-  EXPECT_EQ(warning.node.start_line, 7);
-  EXPECT_EQ(warning.node.end_line, 7);
-  EXPECT_EQ(warning.node.start_column, 2);
-  EXPECT_EQ(warning.node.end_column, 5);
-  EXPECT_EQ(warning.node.start_index, 73);
-  EXPECT_EQ(warning.node.end_index, 76);
-  EXPECT_EQ(warning.node.text, "x();");
-  EXPECT_EQ(warning.node.text, warning.tree.text);
+  EXPECT_EQ(7, warning.node.start_line);
+  EXPECT_EQ(7, warning.node.end_line);
+  EXPECT_EQ(2, warning.node.start_column);
+  EXPECT_EQ(5, warning.node.end_column);
+  EXPECT_EQ(73, warning.node.start_index);
+  EXPECT_EQ(76, warning.node.end_index);
+  EXPECT_EQ("x();", warning.node.text);
+  EXPECT_EQ("x();", warning.tree.text);
 }
 
 const std::string TestMultilineErrorStrA = R"(
@@ -107,10 +107,10 @@ TEST_F(YangTest, ErrorTest)
     EXPECT_FALSE(prog.success()) <<
         "Should fail to compile:\n" << str << std::endl;
     const auto& errors = prog.get_errors();
-    EXPECT_EQ(errors.size(), count) <<
+    EXPECT_EQ(count, errors.size()) <<
         "Should have " << count << " error(s):\n" << str << std::endl;
     if (errors.size() >= 1) {
-      EXPECT_EQ(errors[0].node.text, text) <<
+      EXPECT_EQ(text, errors[0].node.text) <<
           "Error should reference given text:\n" << str << std::endl;
     }
   };
@@ -323,10 +323,10 @@ TEST_F(YangTest, WarningTest)
     EXPECT_TRUE(prog.success()) <<
         "Should compile successfully:\n" << str << std::endl;
     const auto& warnings = prog.get_warnings();
-    EXPECT_EQ(warnings.size(), count) <<
+    EXPECT_EQ(count, warnings.size()) <<
         "Should have " << count << " warning(s):\n" << str << std::endl;
     if (warnings.size() >= 1) {
-      EXPECT_EQ(warnings[0].node.text, text) <<
+      EXPECT_EQ(text, warnings[0].node.text) <<
           "Warning should reference given text:\n" << str << std::endl;
     }
   };

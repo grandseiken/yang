@@ -187,7 +187,7 @@ TEST_F(YangTest, FunctionRefCounting)
 
   auto inst = instance(ctxt, TestFunctionRefCountingStr);
   typedef Function<int_t()> intf_t;
-  EXPECT_EQ(inst.get_global<intf_t>("stored")(), 0);
+  EXPECT_EQ(0, inst.get_global<intf_t>("stored")());
 
   // No refcounting necessary.
   auto f = make_fn([]
@@ -195,8 +195,8 @@ TEST_F(YangTest, FunctionRefCounting)
     return 13;
   });
   inst.call<void>("store", f);
-  EXPECT_EQ(inst.call<int_t>("call"), 13);
-  EXPECT_EQ(inst.call<intf_t>("get")(), 13);
+  EXPECT_EQ(13, inst.call<int_t>("call"));
+  EXPECT_EQ(13, inst.call<intf_t>("get")());
 
   {
     // Goes out of scope before we use it.
@@ -206,8 +206,8 @@ TEST_F(YangTest, FunctionRefCounting)
     });
     inst.call<void>("store", g);
   }
-  EXPECT_EQ(inst.call<int_t>("call"), 42);
-  EXPECT_EQ(inst.call<intf_t>("get")(), 42);
+  EXPECT_EQ(42, inst.call<int_t>("call"));
+  EXPECT_EQ(42, inst.call<intf_t>("get")());
 
   {
     // The same thing but via set_global.
@@ -217,8 +217,8 @@ TEST_F(YangTest, FunctionRefCounting)
     });
     inst.set_global<intf_t>("stored", g);
   }
-  EXPECT_EQ(inst.call<int_t>("call"), 43);
-  EXPECT_EQ(inst.call<intf_t>("get")(), 43);
+  EXPECT_EQ(43, inst.call<int_t>("call"));
+  EXPECT_EQ(43, inst.call<intf_t>("get")());
 
   // Goes out of scope before we even return to Yang.
   int_t h_contents = 99;
@@ -232,11 +232,11 @@ TEST_F(YangTest, FunctionRefCounting)
     return make_fn(t);
   });
   auto h_prime = inst.call<intf_t>("pass_through", h);
-  EXPECT_EQ(h_prime(), 100);
+  EXPECT_EQ(100, h_prime());
 
   // Stored only in Yang locals for a while.
   inst.call<void>("store_in_local");
-  EXPECT_EQ(inst.get_global<intf_t>("stored")(), 106);
+  EXPECT_EQ(106, inst.get_global<intf_t>("stored")());
 
   // Stored only in local while constructing new functions in C++.
   auto callout = make_fn([]
@@ -244,11 +244,11 @@ TEST_F(YangTest, FunctionRefCounting)
     return make_fn([]{});
   });
   inst.call<void>("store_in_local_callout", callout);
-  EXPECT_EQ(inst.get_global<intf_t>("stored")(), 110);
+  EXPECT_EQ(110, inst.get_global<intf_t>("stored")());
 
-  EXPECT_EQ(inst.call<intf_t>("overwrite_and_return")(), 111);
-  EXPECT_EQ(inst.call<int_t>("temporaries"), 13);
-  EXPECT_EQ(inst.call<int_t>("loops"), 18);
+  EXPECT_EQ(111, inst.call<intf_t>("overwrite_and_return")());
+  EXPECT_EQ(13, inst.call<int_t>("temporaries"));
+  EXPECT_EQ(18, inst.call<int_t>("loops"));
 
   // It'd be nice to test memory usage and that everything is actually getting
   // destroyed at the end, but it's not clear how to do that unintrusively.
@@ -314,11 +314,11 @@ TEST_F(YangTest, StructureRefCounting)
   auto inst = instance(ctxt, TestStructureRefCountingStr);
   typedef Function<int_t()> intf_t;
   auto cycles = inst.call<intf_t>("cycles");
-  EXPECT_EQ(cycles(), 3);
+  EXPECT_EQ(3, cycles());
 
   typedef Function<int_t(int_t)> intf2_t;
-  EXPECT_EQ(inst.get_global<intf2_t>("f")(4), 0);
-  EXPECT_EQ(inst.get_global<intf2_t>("g")(4), 8);
+  EXPECT_EQ(0, inst.get_global<intf2_t>("f")(4));
+  EXPECT_EQ(8, inst.get_global<intf2_t>("g")(4));
 }
 
 TEST_F(YangTest, ApiRefCounting)
@@ -348,7 +348,7 @@ TEST_F(YangTest, ApiRefCounting)
     auto knst = jnst;
     knst = instance("");
   }
-  EXPECT_EQ(Instance(jnst).call<int_t>("g"), 17);
+  EXPECT_EQ(17, Instance(jnst).call<int_t>("g"));
 }
 
 // End namespace yang.

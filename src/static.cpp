@@ -270,10 +270,6 @@ void StaticChecker::infix(const Node& node, const result_list& results)
       if (!results[0].is_vector() && results.size() == 2) {
         pop_symbol_tables();
       }
-      if (!results[0].is_vector()) {
-        push_symbol_tables();
-      }
-      break;
     case Node::LOGICAL_OR:
     case Node::LOGICAL_AND:
       if (!results[0].is_vector()) {

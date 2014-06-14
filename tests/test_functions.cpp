@@ -61,17 +61,17 @@ TEST_F(YangTest, CppFunctions)
   auto inst = instance(ctxt, TestCppFunctionsStr);
 
   // C++ function called from C++.
-  EXPECT_EQ(cpp(3), 33);
+  EXPECT_EQ(33, cpp(3));
   // C++ function called from Yang via context.
-  EXPECT_EQ(inst.call<int_t>("via_context", 2), 22);
+  EXPECT_EQ(22, inst.call<int_t>("via_context", 2));
   // C++ function called from Yang via scope-resolved member function.
-  EXPECT_EQ(inst.call<int_t>("via_scope_resolve"), 11);
+  EXPECT_EQ(11, inst.call<int_t>("via_scope_resolve"));
   // The same for an explicitly-registered function.
-  EXPECT_EQ(inst.call<int_t>("via_explicit_scope_resolve"), 22);
+  EXPECT_EQ(22, inst.call<int_t>("via_explicit_scope_resolve"));
   // C++ function called from Yang via member function.
-  EXPECT_EQ(inst.call<int_t>("via_member_function"), 33);
+  EXPECT_EQ(33, inst.call<int_t>("via_member_function"));
   // C++ function passed to Yang.
-  EXPECT_EQ(inst.call<int_t>("via_argument", cpp), 55);
+  EXPECT_EQ(55, inst.call<int_t>("via_argument", cpp));
   // C++ function returned to Yang.
   EXPECT_EQ(inst.call<int_t>("via_return"), 66);
 }
@@ -123,25 +123,25 @@ TEST_F(YangTest, YangFunctions)
   auto jnst_add = jnst.get_function<intf_t>("add");
   auto inst_add5 = inst.get_function<Function<int_t()>>("add5");
 
-  EXPECT_EQ(inst.get_global<int_t>("value"), 1);
-  EXPECT_EQ(jnst.get_global<int_t>("value"), 1);
+  EXPECT_EQ(1, inst.get_global<int_t>("value"));
+  EXPECT_EQ(1, jnst.get_global<int_t>("value"));
 
   // Call Yang function from C++.
-  EXPECT_EQ(inst_add(3), 4);
-  EXPECT_EQ(inst.get_global<int_t>("value"), 4);
+  EXPECT_EQ(4, inst_add(3));
+  EXPECT_EQ(4, inst.get_global<int_t>("value"));
   // Call Yang function from Yang.
-  EXPECT_EQ(inst_add5(), 9);
-  EXPECT_EQ(inst.get_global<int_t>("value"), 9);
+  EXPECT_EQ(9, inst_add5());
+  EXPECT_EQ(9, inst.get_global<int_t>("value"));
   // Pass Yang function to C++.
-  EXPECT_EQ(inst.call<int_t>("add_via_context"), 7);
-  EXPECT_EQ(inst.get_global<int_t>("value"), 7);
+  EXPECT_EQ(7, inst.call<int_t>("add_via_context"));
+  EXPECT_EQ(7, inst.get_global<int_t>("value"));
   // Return Yang function to C++.
-  EXPECT_EQ(inst.call<Function<int_t()>>("get_add")(), 12);
-  EXPECT_EQ(inst.get_global<int_t>("value"), 12);
+  EXPECT_EQ(12, inst.call<Function<int_t()>>("get_add")());
+  EXPECT_EQ(12, inst.get_global<int_t>("value"));
   // Call Yang function from a different Yang instance.
-  EXPECT_EQ(inst.call<int_t>("call_add", jnst_add), 14);
-  EXPECT_EQ(inst.get_global<int_t>("value"), 12);
-  EXPECT_EQ(jnst.get_global<int_t>("value"), 14);
+  EXPECT_EQ(14, inst.call<int_t>("call_add", jnst_add));
+  EXPECT_EQ(12, inst.get_global<int_t>("value"));
+  EXPECT_EQ(14, jnst.get_global<int_t>("value"));
 }
 
 const std::string TestHighOrderFunctionsStr = R"(
@@ -183,15 +183,15 @@ TEST_F(YangTest, HighOrderFunctions)
   typedef Function<intf2_t()> intf3_t;
   auto out = inst.get_function<intf3_t>("out");
   auto out_in = inst.get_function<Function<int_t(intf3_t)>>("out_in");
-  EXPECT_EQ(out()()(), 1);
-  EXPECT_EQ(out_in(out), 1);
+  EXPECT_EQ(1, out()()());
+  EXPECT_EQ(1, out_in(out));
 
   typedef Function<int_t(int_t)> int2f_t;
   typedef Function<int_t(int2f_t)> int3f_t;
   typedef Function<int_t(int3f_t)> int4f_t;
   auto in_in = inst.get_function<int3f_t>("in_in");
   auto in = inst.get_function<int4f_t>("in");
-  EXPECT_EQ(in(in_in), 2);
+  EXPECT_EQ(2, in(in_in));
 }
 
 const std::string TestFunctionClosuresStr = R"(
@@ -298,25 +298,25 @@ TEST_F(YangTest, FunctionClosures)
   }
 
   auto inst = instance(TestFunctionClosuresStr);
-  EXPECT_EQ(inst.call<int_t>("internal", 3), 89);
+  EXPECT_EQ(89, inst.call<int_t>("internal", 3));
 
   typedef Function<int_t()> intf_t;
   auto external = inst.call<intf_t>("external", 4);
-  EXPECT_EQ(external(), 6);
-  EXPECT_EQ(external(), 12);
-  EXPECT_EQ(external(), 19);
-  EXPECT_EQ(inst.call<intf_t>("external", 4)(), 9);
-  EXPECT_EQ(external(), 28);
-  EXPECT_EQ(inst.call<intf_t>("external", 3)(), 10);
+  EXPECT_EQ(6, external());
+  EXPECT_EQ(12, external());
+  EXPECT_EQ(19, external());
+  EXPECT_EQ(9, inst.call<intf_t>("external", 4)());
+  EXPECT_EQ(28, external());
+  EXPECT_EQ(10, inst.call<intf_t>("external", 3)());
 
   inst.call<void>("store");
-  EXPECT_EQ(inst.get_global<intf_t>("stored")(), 33);
+  EXPECT_EQ(33, inst.get_global<intf_t>("stored")());
   inst.call<void>("store");
-  EXPECT_EQ(inst.get_global<intf_t>("stored")(), 74);
+  EXPECT_EQ(74, inst.get_global<intf_t>("stored")());
   inst.call<void>("store");
-  EXPECT_EQ(inst.get_global<intf_t>("stored")(), 157);
+  EXPECT_EQ(157, inst.get_global<intf_t>("stored")());
 
-  EXPECT_EQ(inst.call<int_t>("double", 5), 120);
+  EXPECT_EQ(120, inst.call<int_t>("double", 5));
 }
 
 // End namespace yang.

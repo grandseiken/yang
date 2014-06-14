@@ -197,49 +197,49 @@ TEST_F(YangTest, SemanticsTest)
     }));
 
     auto inst = instance(ctxt, TestSemanticsStr);
-    EXPECT_EQ(inst.call<int_t>("daft_fib", 10), 89);
+    EXPECT_EQ(89, inst.call<int_t>("daft_fib", 10));
 
-    EXPECT_EQ(inst.get_global<int_t>("global_inner"), 42);
-    EXPECT_EQ(inst.call<int_t>("count_to_ten"), 10);
-    EXPECT_EQ(inst.call<int_t>("ternary_fun"), 17);
-    EXPECT_EQ(inst.call<int_t>("crazy_combine"), 67);
-    EXPECT_EQ(inst.call<int_t>("shadowing", 2), 15);
+    EXPECT_EQ(42, inst.get_global<int_t>("global_inner"));
+    EXPECT_EQ(10, inst.call<int_t>("count_to_ten"));
+    EXPECT_EQ(17, inst.call<int_t>("ternary_fun"));
+    EXPECT_EQ(67, inst.call<int_t>("crazy_combine"));
+    EXPECT_EQ(15, inst.call<int_t>("shadowing", 2));
 
-    EXPECT_EQ(inst.get_global<int_t>("ten"), 10);
-    EXPECT_EQ(inst.get_global<int_t>("again"), 10);
+    EXPECT_EQ(10, inst.get_global<int_t>("ten"));
+    EXPECT_EQ(10, inst.get_global<int_t>("again"));
     inst.call<void>("again_mod", 0);
-    EXPECT_EQ(inst.get_global<int_t>("again"), 12);
+    EXPECT_EQ(12, inst.get_global<int_t>("again"));
     inst.call<void>("again_mod", 1);
-    EXPECT_EQ(inst.get_global<int_t>("again"), 13);
+    EXPECT_EQ(13, inst.get_global<int_t>("again"));
 
-    EXPECT_EQ(inst.call<float_t>("float_literals"), 25.41);
-    EXPECT_EQ(inst.call<int_t>("int_literals"), 654);
-    EXPECT_EQ(inst.call<int_t>("big_int_literals"), 0xffffffff);
-    EXPECT_EQ(inst.call<int_t>("big_int_literals"), -1);
+    EXPECT_EQ(25.41, inst.call<float_t>("float_literals"));
+    EXPECT_EQ(654, inst.call<int_t>("int_literals"));
+    EXPECT_EQ(0xffffffff, inst.call<int_t>("big_int_literals"));
+    EXPECT_EQ(-1, inst.call<int_t>("big_int_literals"));
 
-    EXPECT_EQ(inst.call<int_t>("knuth_man_or_boy_test", 10), -67);
-    EXPECT_EQ(inst.call<int_t>("odd_ops"), 48);
-    EXPECT_EQ(inst.call<int_t>("ordering"), 15);
+    EXPECT_EQ(-67, inst.call<int_t>("knuth_man_or_boy_test", 10));
+    EXPECT_EQ(48, inst.call<int_t>("odd_ops"));
+    EXPECT_EQ(15, inst.call<int_t>("ordering"));
 
     typedef Function<int_t()> intf_t;
     {
       auto edit = inst.call<intf_t>("edit");
-      EXPECT_EQ(edit(), 0);
-      EXPECT_EQ(edit(), 1);
-      EXPECT_EQ(edit(), 2);
-      EXPECT_EQ(edit(), 0);
-      EXPECT_EQ(edit(), 1);
-      EXPECT_EQ(edit(), 2);
+      EXPECT_EQ(0, edit());
+      EXPECT_EQ(1, edit());
+      EXPECT_EQ(2, edit());
+      EXPECT_EQ(0, edit());
+      EXPECT_EQ(1, edit());
+      EXPECT_EQ(2, edit());
     }
 
     // Check destructors work. Current guarantee is that destructor will be
     // called before any new structure (instance, closure, etc) is allocated.
     // Is that good enough?
-    EXPECT_EQ(temp_int, 0);
+    EXPECT_EQ(0, temp_int);
   }
   // Force a collection so that destructor is called.
   instance("");
-  EXPECT_EQ(temp_int, 25);
+  EXPECT_EQ(25, temp_int);
 }
 
 const std::string TestTcoStr = R"(
@@ -281,8 +281,8 @@ TEST_F(YangTest, TestTco)
   //   like LLVM should help with this, but no luck so far).
   //
   // For now, TCO is broken.
-  EXPECT_EQ(inst.call<int_t>("rec_fac", 6), 720);
-  EXPECT_EQ(inst.call<int_t>("tco_fac", 6), 720);
+  EXPECT_EQ(720, inst.call<int_t>("rec_fac", 6));
+  EXPECT_EQ(720, inst.call<int_t>("tco_fac", 6));
   // TODO: EXPECT_NO_THROW(inst.call<int_t>("tco_fac", 1000000)).
 }
 
@@ -359,7 +359,7 @@ TEST_F(YangTest, ContextNamespacesTest)
   ctxt.register_type<type>("Type");
 
   auto inst = instance(ctxt, TestContextNamespacesStr);
-  EXPECT_EQ(inst.call<int_t>("fn"), 47);
+  EXPECT_EQ(47, inst.call<int_t>("fn"));
 }
 
 const std::string TestInstanceNamespacesStrA = R"(
@@ -398,10 +398,10 @@ TEST_F(YangTest, InstanceNamespacesTest)
   ctxt.register_namespace("inst", inst);
   ctxt.register_type<user_type>("Ut");
   auto jnst = instance(ctxt, TestInstanceNamespacesStrB);
-  EXPECT_EQ(jnst.get_global<user_type*>("u")->id, 0);
+  EXPECT_EQ(0, jnst.get_global<user_type*>("u")->id);
   jnst.call<void>("g");
-  EXPECT_EQ(jnst.get_global<user_type*>("u")->id, 1);
-  EXPECT_EQ(jnst.call<user_type*>("get")->id, 2);
+  EXPECT_EQ(1, jnst.get_global<user_type*>("u")->id);
+  EXPECT_EQ(2, jnst.call<user_type*>("get")->id);
 
   auto prog = program_suppress_errors(ctxt, "x = void() {inst::g();}");
   EXPECT_FALSE(prog.success());

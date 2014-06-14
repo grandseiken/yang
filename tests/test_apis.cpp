@@ -15,11 +15,11 @@ TEST_F(YangTest, TypeOfTest)
   EXPECT_TRUE(type_of<int_t>().is_int());
   EXPECT_FALSE(type_of<int_t>().is_ivec());
   EXPECT_TRUE(type_of<fvec_t<3>>().is_fvec());
-  EXPECT_EQ(type_of<fvec_t<3>>().vector_size(), 3);
+  EXPECT_EQ(3, type_of<fvec_t<3>>().vector_size());
 
   typedef Function<user_type*(int_t)> ft;
   EXPECT_TRUE(type_of<ft>().is_function());
-  EXPECT_EQ(type_of<ft>().function_num_args(), 1);
+  EXPECT_EQ(1, type_of<ft>().function_num_args());
   EXPECT_TRUE(type_of<ft>().function_return().is_user_type());
   EXPECT_FALSE(type_of<ft>().function_return().is_managed_user_type());
 
@@ -43,8 +43,8 @@ TEST_F(YangTest, FunctionApiTest)
   auto unused = [](int_t, int_t, int_t){return 1;};
   typedef Function<int_t(int_t, int_t, int_t)> uf_t;
   ASSERT_NO_THROW((uf_t(unused)));
-  EXPECT_EQ(uf_t(unused)(1, 2, 3), 1);
-  EXPECT_EQ(make_fn(unused)(1, 2, 3), 1);
+  EXPECT_EQ(1, uf_t(unused)(1, 2, 3));
+  EXPECT_EQ(1, make_fn(unused)(1, 2, 3));
 }
 
 TEST_F(YangTest, ContextApiTest)
@@ -164,25 +164,25 @@ TEST_F(YangTest, ProgramApiTest)
   // General program API.
   auto ctxt = context();
   auto prog = program(ctxt, TestApisStr);
-  EXPECT_EQ(prog.get_name(), "test0");
+  EXPECT_EQ("test0", prog.get_name());
   ASSERT_TRUE(prog.success());
   EXPECT_NO_THROW(prog.print_ast());
   EXPECT_NO_THROW(prog.print_ir());
 
   // Function access.
-  ASSERT_EQ(prog.get_functions().size(), 1);
+  ASSERT_EQ(1, prog.get_functions().size());
   auto it = prog.get_functions().begin();
-  EXPECT_EQ(it->first, "f");
+  EXPECT_EQ("f", it->first);
   auto type = it->second;
   EXPECT_TRUE(type.is_const());
   EXPECT_TRUE(type.is_exported());
   ASSERT_TRUE(type.is_function());
-  ASSERT_EQ(type.function_num_args(), 1);
+  ASSERT_EQ(1, type.function_num_args());
   EXPECT_TRUE(type.function_arg(0).is_int());
   EXPECT_TRUE(type.function_return().is_int());
 
   // Global access.
-  ASSERT_EQ(prog.get_globals().size(), 4);
+  ASSERT_EQ(4, prog.get_globals().size());
   ASSERT_NE(prog.get_globals().find("a"), prog.get_globals().end());
   ASSERT_NE(prog.get_globals().find("b"), prog.get_globals().end());
   ASSERT_NE(prog.get_globals().find("c"), prog.get_globals().end());
@@ -196,14 +196,14 @@ TEST_F(YangTest, ProgramApiTest)
   EXPECT_TRUE(at->second.is_vector());
   EXPECT_TRUE(at->second.is_ivec());
   EXPECT_FALSE(at->second.is_int());
-  EXPECT_EQ(at->second.vector_size(), 3);
+  EXPECT_EQ(3, at->second.vector_size());
   EXPECT_TRUE(at->second.is_exported());
   EXPECT_FALSE(at->second.is_const());
 
   EXPECT_TRUE(bt->second.is_vector());
   EXPECT_TRUE(bt->second.is_fvec());
   EXPECT_FALSE(bt->second.is_float());
-  EXPECT_EQ(bt->second.vector_size(), 3);
+  EXPECT_EQ(3, bt->second.vector_size());
   EXPECT_TRUE(bt->second.is_exported());
   EXPECT_TRUE(bt->second.is_const());
 
@@ -248,7 +248,7 @@ TEST_F(YangTest, InstanceApiTest)
   EXPECT_THROW(inst.call<int_t>("f", 0.), runtime_error);
   // Correct function access.
   EXPECT_NO_THROW(inst.get_function<intf_t>("f"));
-  EXPECT_EQ(inst.call<int_t>("f", 1), 2);
+  EXPECT_EQ(2, inst.call<int_t>("f", 1));
 
   // Non-existent name.
   EXPECT_THROW(inst.get_global<int_t>("nonexistent"), runtime_error);
@@ -262,17 +262,17 @@ TEST_F(YangTest, InstanceApiTest)
   EXPECT_THROW(inst.set_global("a", 0), runtime_error);
 
   // Export var.
-  EXPECT_EQ(inst.get_global<ivec_t<3>>("a"), ivec_t<3>(0, 1, 2));
+  EXPECT_EQ(ivec_t<3>(0, 1, 2), inst.get_global<ivec_t<3>>("a"));
   EXPECT_NO_THROW(inst.set_global("a", ivec_t<3>{0, -1, -2}));
-  EXPECT_EQ(inst.get_global<ivec_t<3>>("a"), ivec_t<3>(0, -1, -2));
+  EXPECT_EQ(ivec_t<3>(0, -1, -2), inst.get_global<ivec_t<3>>("a"));
   // Export const.
-  EXPECT_EQ(inst.get_global<fvec_t<3>>("b"), fvec_t<3>(0., 1., 2.));
+  EXPECT_EQ(fvec_t<3>(0., 1., 2.), inst.get_global<fvec_t<3>>("b"));
   EXPECT_THROW(inst.set_global("b", fvec_t<3>(0., 1., 2.)), runtime_error);
   // Internal var.
-  EXPECT_EQ(inst.get_global<int_t>("c"), 3);
+  EXPECT_EQ(3, inst.get_global<int_t>("c"));
   EXPECT_THROW(inst.set_global("c", 4), runtime_error);
   // Internal const.
-  EXPECT_EQ(inst.get_global<int_t>("d"), 18);
+  EXPECT_EQ(18, inst.get_global<int_t>("d"));
   EXPECT_THROW(inst.set_global("d", 1), runtime_error);
 }
 

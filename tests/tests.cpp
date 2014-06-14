@@ -4,7 +4,6 @@
 //============================================================================//
 #include "tests.h"
 
-// TODO: reverse the order arguments to all EQ macros so that they are correct.
 namespace yang {
 
 // Fixture implementation.
@@ -80,9 +79,9 @@ Program YangTest::program(const Context& context, const std::string& contents,
 {
   Program program(context, "test" + std::to_string(_program_id++), contents);
   if (!allow_errors) {
-    EXPECT_EQ(program.get_errors().size(), 0) <<
+    EXPECT_EQ(0, program.get_errors().size()) <<
         "Should compile successfully:\n" << contents << std::endl;
-    EXPECT_EQ(program.get_warnings().size(), 0) <<
+    EXPECT_EQ(0, program.get_warnings().size()) <<
         "Should compile without warnings:\n" << contents << std::endl;
   }
   return program;

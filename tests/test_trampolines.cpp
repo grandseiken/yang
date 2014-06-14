@@ -48,25 +48,25 @@ TEST_F(YangTest, Trampolines)
   }
 
   auto inst = instance(TestTrampolinesStr);
-  EXPECT_EQ(inst.call<int_t>("test_int", 5), 10);
-  EXPECT_EQ(inst.call<float_t>("test_float", 1.0 / 8), 1.0 / 4);
+  EXPECT_EQ(10, inst.call<int_t>("test_int", 5));
+  EXPECT_EQ(1.0 / 4, inst.call<float_t>("test_float", 1.0 / 8));
 
   ivec_t<4> ivec{1, 2, 3, 4};
-  EXPECT_EQ(inst.call<ivec_t<4>>("test_int4", ivec), 2 * ivec);
+  EXPECT_EQ(2 * ivec, inst.call<ivec_t<4>>("test_int4", ivec));
 
   fvec_t<4> fvec{1.0 / 8, 1.0 / 4, 1.0 / 2, 1.0};
-  EXPECT_EQ(inst.call<fvec_t<4>>("test_float4", fvec), 2. * fvec);
+  EXPECT_EQ(2. * fvec, inst.call<fvec_t<4>>("test_float4", fvec));
 
   typedef Function<int_t(int_t)> intf_t;
   auto test_int = inst.get_function<intf_t>("test_int");
   auto r = inst.call<intf_t>("test_function", test_int);
-  EXPECT_EQ(test_int(1), r(1));
+  EXPECT_EQ(r(1), test_int(1));
 
   user_type u;
-  EXPECT_EQ(inst.call<user_type*>("test_user_type", &u), &u);
+  EXPECT_EQ(&u, inst.call<user_type*>("test_user_type", &u));
 
   auto m = inst.call<Ref<muser_type>>("get_muser_type");
-  EXPECT_EQ(inst.call<Ref<muser_type>>("test_muser_type", m)->id, m->id);
+  EXPECT_EQ(m->id, inst.call<Ref<muser_type>>("test_muser_type", m)->id);
 }
 
 const std::string TestReverseTrampolinesStr = R"(
@@ -146,14 +146,14 @@ TEST_F(YangTest, ReverseTrampolines)
   ctxt.register_function("context_muser_type", make_fn(context_muser_type));
 
   auto inst = instance(ctxt, TestReverseTrampolinesStr);
-  EXPECT_EQ(inst.call<int_t>("test_int"), 5);
-  EXPECT_EQ(inst.call<float_t>("test_float"), 5.);
-  EXPECT_EQ(inst.call<ivec_t<4>>("test_int4"), ivec_t<4>(0, -1, -2, -3));
-  EXPECT_EQ(
-      inst.call<fvec_t<4>>("test_float4"), fvec_t<4>(-.5, -1., -1.5, -2.));
-  EXPECT_EQ(inst.call<intf_t>("test_function")(16), 32);
-  EXPECT_EQ(inst.call<user_type*>("test_user_type")->id, 0);
-  EXPECT_EQ(inst.call<Ref<muser_type>>("test_muser_type")->id, 0);
+  EXPECT_EQ(5, inst.call<int_t>("test_int"));
+  EXPECT_EQ(5., inst.call<float_t>("test_float"));
+  EXPECT_EQ(ivec_t<4>(0, -1, -2, -3), inst.call<ivec_t<4>>("test_int4"));
+  EXPECT_EQ(fvec_t<4>(-.5, -1., -1.5, -2.),
+            inst.call<fvec_t<4>>("test_float4"));
+  EXPECT_EQ(32, inst.call<intf_t>("test_function")(16));
+  EXPECT_EQ(0, inst.call<user_type*>("test_user_type")->id);
+  EXPECT_EQ(0, inst.call<Ref<muser_type>>("test_muser_type")->id);
 }
 
 const std::string TestMultiArgTrampolinesStr = R"(
@@ -187,7 +187,7 @@ TEST_F(YangTest, MultiArgTrampolines)
   int_t result = instance(ctxt, TestMultiArgTrampolinesStr).call<int_t>(
       "test",
       2, ivec_t<4>{1, 2, 3, 4}, 3.5, make_fn(d), fvec_t<2>{7.1, 6.9}, &u);
-  EXPECT_EQ(result, 42);
+  EXPECT_EQ(42, result);
 }
 
 // End namespace yang.
