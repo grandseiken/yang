@@ -220,7 +220,6 @@ TEST_F(YangTest, SemanticsTest)
     EXPECT_EQ(-67, inst.call<int_t>("knuth_man_or_boy_test", 10));
     EXPECT_EQ(48, inst.call<int_t>("odd_ops"));
     EXPECT_EQ(15, inst.call<int_t>("ordering"));
-    // TODO: string semantics.
 
     typedef Function<int_t()> intf_t;
     {

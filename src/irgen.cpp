@@ -630,9 +630,16 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       return _b.constant_float(node.float_value);
     case Node::STRING_LITERAL:
     {
-      // TODO: string literals could be uniqued per-program.
-      StaticString* s = new StaticString(node.string_value);
-      _b.static_data.emplace_back(s);
+      StaticString* s = nullptr;
+      auto it = _string_literals.find(node.string_value);
+      if (it == _string_literals.end()) {
+        s = new StaticString(node.string_value);
+        _string_literals.emplace(node.string_value, _b.static_data.size());
+        _b.static_data.emplace_back(s);
+      }
+      else {
+        s = (StaticString*)_b.static_data[it->second].get();
+      }
 
       // TODO: string literal keep-alives the instance it was spawned from
       // (get_global_struct()), when it really only needs to keep-alive the

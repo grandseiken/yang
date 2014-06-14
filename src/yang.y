@@ -99,6 +99,7 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
 
   /* Operator precedence. */
 
+%left P_ELEM
 %nonassoc T_IF
 %nonassoc T_ELSE
 %right T_TERNARY_L T_TERNARY_R
@@ -121,6 +122,7 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
 %right P_UNARY_L
 %right T_POW
 %left '.' '[' '('
+%left T_STRING_LITERAL
   /* Precedence of '.' and '::' for member selection. */
 %left T_IDENTIFIER T_SCOPE_RESOLUTION
 
@@ -140,6 +142,7 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
 %type <node> expr_list
 %type <node> expr_functional
 %type <node> expr
+%type <node> string_literal
 %type <node> identifier
 %start program
 
@@ -319,8 +322,9 @@ expr
 {$$ = $1;}
   | T_FLOAT_LITERAL
 {$$ = $1;}
-  // TODO: automatic joining of adjacent string literals.
-  | T_STRING_LITERAL
+  /* Precedence need to disambiguate the (incorrect regardless) ambiguous
+     program: x = "a" "b" = ... */
+  | string_literal %prec P_ELEM
 {$$ = $1;}
 
   /* Binary operators. */
@@ -477,6 +481,15 @@ expr
   | expr '[' expr ']'
 {$$ = new Node(scan, $2, Node::VECTOR_INDEX, $1, $3);
  $$->extend_bounds($4);}
+  ;
+
+string_literal
+  : T_STRING_LITERAL
+{$$ = $1;}
+  | string_literal T_STRING_LITERAL
+{$$ = $1;
+ $$->string_value += $2->string_value;
+ $$->extend_inner_bounds($2);}
   ;
 
 identifier

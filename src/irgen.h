@@ -94,6 +94,8 @@ private:
   std::unordered_map<yang::Type, value_map> _member_functions;
   value_map _constructors;
 
+  // String literal uniquing.
+  std::unordered_map<std::string, std::size_t> _string_literals;
   // Daft hack.
   std::string _immediate_left_assign;
 

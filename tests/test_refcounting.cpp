@@ -352,9 +352,9 @@ TEST_F(YangTest, ApiRefCounting)
 }
 
 const std::string TestStringRefCountingStr = R"(
-export test = string()
+export test = string(int a)
 {
-  return "str";
+  return a > 1 ? "str" : a ? """str""" : "st" "r";
 }
 )";
 
@@ -362,13 +362,18 @@ TEST_F(YangTest, StringRefCounting)
 {
   auto ctxt = context();
   // TODO: should be possible to register managed types without constructors.
+  // Needs some modification so that the static checker knows that can happen.
   ctxt.register_type<const char>(
       "string", make_fn([]{return "";}), make_fn([](const char* t){}));
 
-  const char* str;
+  const char* str = nullptr;
   {
     auto inst = instance(ctxt, TestStringRefCountingStr);
-    str = inst.call<Ref<const char>>("test").get();
+    str = inst.call<Ref<const char>>("test", 2).get();
+    EXPECT_EQ(std::string(str), std::string("str"));
+    str = inst.call<Ref<const char>>("test", 1).get();
+    EXPECT_EQ(std::string(str), std::string("str"));
+    str = inst.call<Ref<const char>>("test", 0).get();
   }
   EXPECT_EQ(std::string(str), std::string("str"));
 }
