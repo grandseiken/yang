@@ -87,6 +87,7 @@ TEST_F(YangTest, ContextApiTest)
   EXPECT_THROW(ctxt.register_member_function("~", voidaf), runtime_error);
   EXPECT_THROW(ctxt.register_type<type_c>("$c"), runtime_error);
   EXPECT_THROW(ctxt.register_type("a-b", ccon, voidcf), runtime_error);
+  EXPECT_THROW(ctxt.register_constructor("a::b", ccon, voidcf), runtime_error);
   EXPECT_THROW(ctxt.register_namespace(" ", context()), runtime_error);
 
   // Managed/unmanaged simultaeneously.
@@ -97,22 +98,25 @@ TEST_F(YangTest, ContextApiTest)
   EXPECT_NO_THROW(ctxt.register_member_function("umn", refaf));
   EXPECT_NO_THROW(ctxt.register_member_function("man2", refcf));
 
-  // Constructor conflicts.
+  // Namespace conflicts.
   auto dcon = make_fn([]{return (type_d*)nullptr;});
   auto voiddf = make_fn([](type_d*){});
   EXPECT_THROW(ctxt.register_function("TypeC", voidf), runtime_error);
   EXPECT_THROW(ctxt.register_type("bar", dcon, voiddf), runtime_error);
-
-  // Namespace conflicts.
+  EXPECT_THROW(ctxt.register_constructor("bar", dcon, voiddf), runtime_error);
+  EXPECT_THROW(ctxt.register_constructor("TypeC", dcon, voiddf), runtime_error);
   auto dtxt = context(false);
   EXPECT_THROW(dtxt.register_namespace("dtxt", dtxt), runtime_error);
-  EXPECT_THROW(ctxt.register_namespace("foo", dtxt), runtime_error);
   EXPECT_THROW(ctxt.register_namespace("TypeC", dtxt), runtime_error);
   ctxt.register_namespace("dtxt", dtxt);
   EXPECT_THROW(ctxt.register_namespace("dtxt", dtxt), runtime_error);
   EXPECT_THROW(ctxt.register_type<type_d>("dtxt"), runtime_error);
-  EXPECT_THROW(ctxt.register_function("dtxt", voidf), runtime_error);
   EXPECT_THROW(ctxt.register_type("dtxt", dcon, voiddf), runtime_error);
+
+  // Independent namespaces.
+  EXPECT_NO_THROW(ctxt.register_namespace("foo", dtxt));
+  EXPECT_NO_THROW(ctxt.register_function("dtxt", voidf));
+  EXPECT_NO_THROW(ctxt.register_type<type_d>("bar"));
 
   struct type_e {};
   struct type_f {};

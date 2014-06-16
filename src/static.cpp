@@ -460,6 +460,10 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       return Type(true);
     case Node::RETURN_STMT:
     {
+      // TODO: weird hacking of not-all-paths-return error means that
+      // int() {return 1.5 + 2;} will trigger it, since it's an error. Fix that.
+      // (Can we just consider error types to be returns and void types to be
+      // non-returns?)
       Type t = node.children.empty() ? Type() : results[0];
       // If we're not in a function, we must be in a global block.
       if (!inside_function()) {
@@ -540,8 +544,8 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       // Look up user types in a type-context.
       if (inside_type_context()) {
         const auto& t = _context.type_lookup(node.string_value);
-        if (!t.type.is_void()) {
-          return t.type;
+        if (!t.is_void()) {
+          return t;
         }
         error(node, "undeclared type `" + node.string_value + "`");
         return Type(true);
@@ -555,15 +559,15 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         }
         if (it == --_scopes.rend()) {
           // Check Context if symbol isn't present in the Program table.
-          const auto& t = _context.type_lookup(node.string_value);
-          if (t.type.is_managed_user_type()) {
+          const auto& t = _context.constructor_lookup(node.string_value);
+          if (!t.ctor.type.is_void()) {
             // Fix the constructor return type.
             std::vector<yang::Type> args;
-            for (std::size_t i = 0;
-                 i < t.constructor.type.function_num_args(); ++i) {
-              args.push_back(t.constructor.type.function_arg(i));
+            for (std::size_t i = 0; i < t.ctor.type.function_num_args(); ++i) {
+              args.push_back(t.ctor.type.function_arg(i));
             }
-            return yang::Type::function_t(t.type, args);
+            return yang::Type::function_t(
+                t.ctor.type.function_return().make_managed(true), args);
           }
 
           const auto& f = _context.function_lookup(node.string_value);
@@ -873,7 +877,10 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       if (!_context.function_lookup(ident).type.is_void()) {
         error(node, "cannot assign to context function `" + ident + "`");
       }
-      else if (!_context.type_lookup(ident).type.is_void()) {
+      else if (!_context.constructor_lookup(ident).ctor.type.is_void()) {
+        error(node, "cannot assign to context constructor `" + ident + "`");
+      }
+      else if (!_context.type_lookup(ident).is_void()) {
         error(node, "cannot assign to context type `" + ident + "`");
       }
       else {
@@ -1136,6 +1143,7 @@ void StaticChecker::add_symbol(
   sym.declaration = &node;
   // We don't care if there are no writes to a const symbol, so we just set
   // warn_writes to false.
+  unreferenced_warning = unreferenced_warning && !type.is_error();
   sym.warn_writes = unreferenced_warning && !type.external().is_const();
   sym.warn_reads = unreferenced_warning;
   (global ? _scopes[0] : _scopes.back()).symbol_table.add(name, sym);

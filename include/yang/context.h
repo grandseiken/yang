@@ -66,19 +66,16 @@ namespace internal {
 // Data preserved while it's needed (by Context objects or Programs that depend
 // on them).
 struct ContextInternals {
-  struct type_def {
-    type_def(const yang::Type& type);
-
-    yang::Type type;
-    // This is a little odd: constructor/destructor pairs are associated with
-    // with typedefs rather than native types themselves. It kind of makes
-    // sense, since it allows multiple constructors; function overloading
-    // would make it redundant.
-    GenericFunction constructor;
-    GenericFunction destructor;
+  struct constructor {
+    // This is a little odd: constructor/destructor pairs are named separately
+    // from the type concerned. It makes sense, since it allows multiple
+    // constructors; function overloading would make it unnecessary.
+    GenericFunction ctor;
+    GenericFunction dtor;
   };
 
-  const type_def& type_lookup(const std::string& name) const;
+  const yang::Type& type_lookup(const std::string& name) const;
+  const constructor& constructor_lookup(const std::string& name) const;
   const GenericFunction& function_lookup(const std::string& name) const;
   const GenericFunction& member_lookup(const std::string& name) const;
   const GenericFunction& member_lookup(const yang::Type& t,
@@ -87,12 +84,14 @@ struct ContextInternals {
   // Using some real heirarchical data structures for namespaces rather than
   // this still somewhat string-based mess might be a little bit nicer.
   typedef std::unordered_set<std::string> namespace_set;
-  typedef std::unordered_map<std::string, type_def> type_map;
+  typedef std::unordered_map<std::string, yang::Type> type_map;
+  typedef std::unordered_map<std::string, constructor> constructor_map;
   typedef std::unordered_map<std::string, GenericFunction> function_map;
   typedef std::unordered_map<yang::Type, function_map> member_map;
 
   namespace_set namespaces;
   type_map types;
+  constructor_map constructors;
   function_map functions;
   member_map members;
   mutable bool immutable;
@@ -118,13 +117,21 @@ public:
   // own Instance namespace and recompiling every time, or plain old textual
   // includes. Direct support might be nice.
 
-  // Add an (unmanaged) user type. Types must be registered before registering
-  // functions that make use of them. Note that register_type for unmanaged
-  // type T should be called with template parameter T (and not T*).
+  // Add a user type. Note that the template argument should be T rather than T*
+  // or Ref<T>.
+  // TODO: should that be changed? It's less error-prone to require explicit
+  // types, but then somewhat inconsistent with the other register_* template
+  // arguments.
   template<typename T>
-  void register_type(const std::string& name);
+  void register_type(const std::string& name, bool managed = false);
 
-  // Add a managed user type.
+  // Add a managed user type constructor/destructor pair.
+  template<typename T, typename... Args>
+  void register_constructor(const std::string& name,
+                            const Function<T*(Args...)>& constructor,
+                            const Function<void(T*)>& destructor);
+
+  // Shorthand for registering a managed type with constructor named the same.
   template<typename T, typename... Args>
   void register_type(const std::string& name,
                      const Function<T*(Args...)>& constructor,
@@ -139,16 +146,19 @@ public:
   void register_member_function(
       const std::string& name, const Function<R(Ref<T>, Args...)>& f);
 
-  // Add a globally-available function to the context.
+  // Add a free function to the context.
   template<typename R, typename... Args>
   void register_function(
       const std::string& name, const Function<R(Args...)>& f);
 
 private:
 
+  void check_namespace(const std::string& name) const;
   void check_type(const std::string& name) const;
   void check_function(const std::string& name) const;
-  void check_namespace(const std::string& name) const;
+  void check_constructor(const std::string& name) const;
+  void check_member_function(const yang::Type& type,
+                             const std::string& name) const;
   void check_identifier(const std::string& ident) const;
   void copy_internals();
 
@@ -162,11 +172,24 @@ private:
 };
 
 template<typename T>
-void Context::register_type(const std::string& name)
+void Context::register_type(const std::string& name, bool managed)
 {
   check_type(name);
   copy_internals();
-  _internals->types.emplace(name, Type::user_t<T>(false));
+  _internals->types.emplace(name, Type::user_t<T>(managed));
+}
+
+template<typename T, typename... Args>
+void Context::register_constructor(const std::string& name,
+                                   const Function<T*(Args...)>& constructor,
+                                   const Function<void(T*)>& destructor)
+{
+  check_constructor(name);
+  copy_internals();
+  auto it = _internals->constructors.insert(
+      std::make_pair(name, internal::ContextInternals::constructor()));
+  it.first->second.ctor = make_generic(constructor);
+  it.first->second.dtor = make_generic(destructor);
 }
 
 template<typename T, typename... Args>
@@ -175,23 +198,17 @@ void Context::register_type(const std::string& name,
                             const Function<void(T*)>& destructor)
 {
   check_type(name);
-  copy_internals();
-  auto it = _internals->types.emplace(name, Type::user_t<T>(true));
-  it.first->second.constructor = make_generic(constructor);
-  it.first->second.destructor = make_generic(destructor);
+  check_constructor(name);
+  register_type<T>(name, true);
+  register_constructor(name, constructor, destructor);
 }
 
 template<typename T, typename R, typename... Args>
 void Context::register_member_function(
     const std::string& name, const Function<R(T*, Args...)>& f)
 {
-  check_identifier(name);
   Type t = Type::user_t<T>(false);
-  if (_internals->members[t].find(name) != _internals->members[t].end()) {
-    throw runtime_error(
-        "duplicate member function `" + t.string(*this) + "::" +
-        name + "` registered in context");
-  }
+  check_member_function(t, name);
   copy_internals();
   _internals->members[t][name] = make_generic(f);
 }
@@ -200,13 +217,8 @@ template<typename T, typename R, typename... Args>
 void Context::register_member_function(
     const std::string& name, const Function<R(Ref<T>, Args...)>& f)
 {
-  check_identifier(name);
   Type t = Type::user_t<T>(true);
-  if (_internals->members[t].find(name) != _internals->members[t].end()) {
-    throw runtime_error(
-        "duplicate member function `" + t.string(*this) + "::" +
-        name + "` registered in context");
-  }
+  check_member_function(t, name);
   copy_internals();
   _internals->members[t][name] = make_generic(f);
 }

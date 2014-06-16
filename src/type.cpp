@@ -174,6 +174,13 @@ Type Type::make_const(bool is_const) const
   return t;
 }
 
+Type Type::make_managed(bool managed) const
+{
+  Type t = *this;
+  t._managed_user_type = t._base == USER_TYPE && managed;
+  return t;
+}
+
 Type Type::erase_user_types() const
 {
   Type t = *this;
@@ -203,7 +210,7 @@ std::string Type::string(const internal::ContextInternals& context) const
     std::size_t scope_min = 0;
     std::vector<std::string> names;
     for (const auto& pair : context.types) {
-      if (*this != pair.second.type) {
+      if (*this != pair.second) {
         continue;
       }
       std::size_t scope = 0;

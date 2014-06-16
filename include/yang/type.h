@@ -85,6 +85,8 @@ public:
   Type make_exported(bool exported = true) const;
   // Return a new type that's identical except const.
   Type make_const(bool is_const = true) const;
+  // Return a new type that's identical except managed/unmanaged.
+  Type make_managed(bool managed) const;
   // Return a new type with user types erased; that is, all user types replaced
   // by a single placeholder managed or unmanaged user type.
   Type erase_user_types() const;

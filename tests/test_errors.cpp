@@ -93,6 +93,7 @@ TEST_F(YangTest, ErrorTest)
   auto ctxt = context();
   struct other {};
   ctxt.register_type<other>("OtherType");
+  ctxt.register_function("get_other", make_fn([]{return (other*)nullptr;}));
   ctxt.register_type("MotherType", make_fn([]{return (other*)nullptr;}),
                                    make_fn([](other*){}));
 
@@ -211,6 +212,10 @@ TEST_F(YangTest, ErrorTest)
   err("x = MotherType() {return MuserType();}", "(");
   err("x = MuserType() {return get_user_type();}", "(");
   err("x = OtherType() {return MotherType();}", "(");
+  err("x = void() {var a = get_other(); a = get_user_type();}", "=");
+  err("x = void() {var a = MuserType(); a = MotherType();}", "=");
+  err("x = void() {var a = MuserType(); a = get_user_type();}", "=");
+  err("x = void() {var a = get_other(); a = MotherType();}", "=");
 
   // Ternary errors.
   err("x = void() {1. ? 0 : 0;}", "?");
@@ -268,6 +273,7 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {x = x;}", "=");
   err("x = void() {var a = 0; a = 0.;}", "=");
   err("x = void() {var a = 0; var a = 0;}", "=");
+  err("x = void() {const a = 0; const a = 0.;}", "=");
   err("x = void() {const a = 0; a = 0;}", "=");
   err("x = void() {UserType = get_user_type();}", "UserType");
   err("x = UserType() {get_user_type = x; return get_user_type();}", "=");

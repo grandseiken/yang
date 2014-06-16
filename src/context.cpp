@@ -8,17 +8,19 @@
 namespace yang {
 namespace internal {
 
-ContextInternals::type_def::type_def(const yang::Type& type)
-  : type(type)
+const yang::Type& ContextInternals::type_lookup(const std::string& name) const
 {
-}
-
-const ContextInternals::type_def& ContextInternals::type_lookup(
-    const std::string& name) const
-{
-  static type_def none(yang::Type::void_t());
+  static yang::Type none = yang::Type::void_t();
   auto it = types.find(name);
   return it == types.end() ? none : it->second;
+}
+
+const ContextInternals::constructor& ContextInternals::constructor_lookup(
+    const std::string& name) const
+{
+  static constructor none;
+  auto it = constructors.find(name);
+  return it == constructors.end() ? none : it->second;
 }
 
 const GenericFunction& ContextInternals::function_lookup(
@@ -39,7 +41,7 @@ const GenericFunction& ContextInternals::member_lookup(
   }
   std::string first = name.substr(0, index - 1);
   std::string last = name.substr(index + 1);
-  return member_lookup(type_lookup(first).type, last);
+  return member_lookup(type_lookup(first), last);
 }
 
 const GenericFunction& ContextInternals::member_lookup(
@@ -58,7 +60,7 @@ const GenericFunction& ContextInternals::member_lookup(
 }
 
 Context::Context()
-  : _internals{new internal::ContextInternals{{}, {}, {}, {}, false}}
+  : _internals{new internal::ContextInternals{{}, {}, {}, {}, {}, false}}
 {
 }
 
@@ -88,6 +90,9 @@ void Context::register_namespace(const std::string& name,
   _internals->namespaces.insert(name);
   for (const auto& pair : context._internals->types) {
     _internals->types.emplace(name + "::" + pair.first, pair.second);
+  }
+  for (const auto& pair : context._internals->constructors) {
+    _internals->constructors.emplace(name + "::" + pair.first, pair.second);
   }
   for (const auto& pair : context._internals->functions) {
     _internals->functions.emplace(name + "::" + pair.first, pair.second);
@@ -133,16 +138,25 @@ void Context::register_namespace(const std::string& name,
   register_namespace(name, context);
 }
 
-void Context::check_type(const std::string& name) const
+void Context::check_namespace(const std::string& name) const
 {
   check_identifier(name);
-  if (_internals->functions.find(name) != _internals->functions.end()) {
+  if (_internals->types.find(name) != _internals->types.end()) {
     throw runtime_error(
-        "typename `" + name + "` conflicts with registered function");
+        "namespace `" + name + "` conflicts with existing registered typename");
   }
   if (_internals->namespaces.find(name) != _internals->namespaces.end()) {
     throw runtime_error(
-        "typename `" + name + "` conflicts with registered namespace");
+        "duplicate namespace `" + name + "` registered in context");
+  }
+}
+
+void Context::check_type(const std::string& name) const
+{
+  check_identifier(name);
+  if (_internals->namespaces.find(name) != _internals->namespaces.end()) {
+    throw runtime_error(
+        "typename `" + name + "` conflicts with existing registered namespace");
   }
   if (_internals->types.find(name) != _internals->types.end()) {
     throw runtime_error(
@@ -153,13 +167,10 @@ void Context::check_type(const std::string& name) const
 void Context::check_function(const std::string& name) const
 {
   check_identifier(name);
-  if (_internals->types.find(name) != _internals->types.end()) {
+  if (_internals->constructors.find(name) != _internals->constructors.end()) {
     throw runtime_error(
-        "function `" + name + "` conflicts with registered type");
-  }
-  if (_internals->namespaces.find(name) != _internals->namespaces.end()) {
-    throw runtime_error(
-        "function `" + name + "` conflicts with registered namespace");
+        "function `" + name +
+        "` conflicts with existing registered constructor");
   }
   if (_internals->functions.find(name) != _internals->functions.end()) {
     throw runtime_error(
@@ -167,20 +178,29 @@ void Context::check_function(const std::string& name) const
   }
 }
 
-void Context::check_namespace(const std::string& name) const
+void Context::check_constructor(const std::string& name) const
 {
   check_identifier(name);
   if (_internals->functions.find(name) != _internals->functions.end()) {
     throw runtime_error(
-        "namespace `" + name + "` conflicts with registered function");
+        "constructor `" + name +
+        "` conflicts with existing registered function");
   }
-  if (_internals->types.find(name) != _internals->types.end()) {
+  if (_internals->constructors.find(name) != _internals->constructors.end()) {
     throw runtime_error(
-        "namespace `" + name + "` conflicts with registered type");
+        "duplicate constructor `" + name + "` registered in context");
   }
-  if (_internals->namespaces.find(name) != _internals->namespaces.end()) {
+}
+
+void Context::check_member_function(const yang::Type& type,
+                                    const std::string& name) const
+{
+  check_identifier(name);
+  if (_internals->members[type].find(name) !=
+      _internals->members[type].end()) {
     throw runtime_error(
-        "duplicate namespace `" + name + "` registered in context");
+        "duplicate member function `" + type.string(*this) + "::" +
+        name + "` registered in context");
   }
 }
 

@@ -595,7 +595,7 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
     {
       // In type-context, we just want to return a user type.
       if (fback.metadata.has(LexScope::TYPE_EXPR_CONTEXT)) {
-        return _context.type_lookup(node.string_value).type;
+        return _context.type_lookup(node.string_value);
       }
 
       // Load the variable, if it's there. We must be careful to only return
@@ -608,8 +608,8 @@ Value IrGenerator::visit(const Node& node, const result_list& results)
       }
 
       // It must be a context function.
-      const auto& t = _context.type_lookup(node.string_value);
-      if (t.type.is_managed_user_type()) {
+      const auto& t = _context.constructor_lookup(node.string_value);
+      if (!t.ctor.type.is_void()) {
         Value v = get_constructor(node.string_value);
         return _b.function_value(v.type, v, get_global_struct());
       }
@@ -1153,8 +1153,7 @@ Value IrGenerator::get_constructor(const std::string& type)
 
   // Create the destructor which calls the user-type destructor (and usual chunk
   // destructor).
-  const auto& ct = _context.type_lookup(type);
-  const auto& dtor = ct.destructor;
+  const auto& ct = _context.constructor_lookup(type);
   auto destructor_type = (llvm::FunctionType*)
       _chunk.structure().destructor->getType()->getPointerElementType();
   auto destructor = llvm::Function::Create(
@@ -1168,7 +1167,7 @@ Value IrGenerator::get_constructor(const std::string& type)
   closure->setName("boxed_object");
   closure = _b.b.CreateBitCast(closure, _chunk.structure().type);
   auto object = _chunk.memory_load(closure, "object");
-  create_call(_b.function_value(dtor), std::vector<Value>{object});
+  create_call(_b.function_value(ct.dtor), std::vector<Value>{object});
   _b.b.CreateCall(_chunk.structure().destructor, closure);
   _b.b.CreateRetVoid();
 
@@ -1178,8 +1177,7 @@ Value IrGenerator::get_constructor(const std::string& type)
       _chunk.structure().refout_query);
 
   // Create the constructor (which overwrites the usual vtable).
-  const auto& ctor = ct.constructor;
-  auto llvm_type = _b.raw_function_type(ctor.type);
+  auto llvm_type = _b.raw_function_type(ct.ctor.type);
   auto f = llvm::Function::Create(
       llvm_type, llvm::Function::InternalLinkage, type, &_b.module);
 
@@ -1189,9 +1187,9 @@ Value IrGenerator::get_constructor(const std::string& type)
   std::vector<Value> fargs;
   std::size_t i = 0;
   for (auto it = f->arg_begin(); it != --f->arg_end(); ++it) {
-    fargs.emplace_back(ctor.type.function_arg(++i), it);
+    fargs.emplace_back(ct.ctor.type.function_arg(++i), it);
   }
-  Value r = create_call(_b.function_value(ctor), fargs);
+  Value r = create_call(_b.function_value(ct.ctor), fargs);
   llvm::Value* global = --f->arg_end();
   llvm::Value* chunk = _chunk.allocate_closure_struct(global);
   _chunk.memory_store(r, chunk, "object");
@@ -1202,10 +1200,11 @@ Value IrGenerator::get_constructor(const std::string& type)
 
   // Convert signature to return managed type.
   std::vector<yang::Type> args;
-  for (std::size_t i = 0; i < ctor.type.function_num_args(); ++i) {
-    args.push_back(ctor.type.function_arg(i));
+  for (std::size_t i = 0; i < ct.ctor.type.function_num_args(); ++i) {
+    args.push_back(ct.ctor.type.function_arg(i));
   }
-  Value v(yang::Type::function_t(ct.type, args), f);
+  const auto& ref_type = ct.ctor.type.function_return();
+  Value v(yang::Type::function_t(ref_type.make_managed(true), args), f);
   _constructors.emplace(type, v);
   return v;
 }

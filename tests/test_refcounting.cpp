@@ -361,10 +361,7 @@ export test = string(int a)
 TEST_F(YangTest, StringRefCounting)
 {
   auto ctxt = context();
-  // TODO: should be possible to register managed types without constructors.
-  // Needs some modification so that the static checker knows that can happen.
-  ctxt.register_type<const char>(
-      "string", make_fn([]{return "";}), make_fn([](const char* t){}));
+  ctxt.register_type<const char>("string", true);
 
   const char* str = nullptr;
   {
