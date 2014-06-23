@@ -12,7 +12,7 @@ export x = int()
   return
     1.0 +
     1 + /******/ 2;
-  return 0;
+  /*******/
   x();
 }
 )";
@@ -188,7 +188,8 @@ TEST_F(YangTest, ErrorTest)
   err("x = void() {return 0;}", "0");
   err("x = int() {}", "int()");
   err("x = int() {return 1.;}", ".");
-  erc("x = int() {return;}", "return;", 2);
+  err("x = int() {return;}", "return;");
+  err("x = int() {const x = 1 + 1.; return x;}", "+");
 
   // Statement errors.
   err("x = void() {if (0.);}", ".");

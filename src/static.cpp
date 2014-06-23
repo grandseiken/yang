@@ -460,10 +460,6 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       return Type(true);
     case Node::RETURN_STMT:
     {
-      // TODO: weird hacking of not-all-paths-return error means that
-      // int() {return 1.5 + 2;} will trigger it, since it's an error. Fix that.
-      // (Can we just consider error types to be returns and void types to be
-      // non-returns?)
       Type t = node.children.empty() ? Type() : results[0];
       // If we're not in a function, we must be in a global block.
       if (!inside_function()) {
@@ -476,7 +472,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         error(n, "returning " + t.string(_context) + " from " +
                  current_return.string(_context) + " function");
       }
-      return t;
+      return current_return;
     }
     case Node::IF_STMT:
     {
