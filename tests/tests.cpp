@@ -14,16 +14,6 @@ YangTest::YangTest()
 {
 }
 
-void YangTest::add_filter(const std::string& filter)
-{
-  _filters.insert(filter);
-}
-
-bool YangTest::filter(const std::string& filter)
-{
-  return _filters.empty() || _filters.count(filter);
-}
-
 Context YangTest::context(bool with_types)
 {
   Context context;
@@ -103,59 +93,25 @@ Instance YangTest::instance(const Program& program)
   return Instance(program);
 }
 
-std::unordered_set<std::string> YangTest::_filters;
-
 // End namespace yang.
 }
 
-// Run all tests.
+// To run a subset of tests, use --gtest_filter. For example, for all tests,
+//   --gtest_filter=*.*
+// or negate some with
+//   --gtest_filter=-Foo.*:-*.Bar
+//
+// To run tests forever, use
+//   --gtest_repeat=-1
+// (and use top to check for memory leaks).
 int main(int argc, char** argv)
 {
-  auto is = [](const std::string& cmdline, const std::string& arg)
-  {
-    return cmdline == "-" + arg || cmdline == "--" + arg;
-  };
-  auto filter = [&](const std::string& cmdline, const std::string& arg)
-  {
-    if (is(cmdline, arg)) {
-      yang::YangTest::add_filter(arg);
-      return true;
-    }
-    return false;
-  };
-
   testing::InitGoogleTest(&argc, argv);
-  // Run with commandline argument --forever to run tests over and over, and use
-  // "top" or similar to check for memory leaks.
+  return RUN_ALL_TESTS();
   // TODO: in fact, this is leaking a very small amount of memory that
   // doesn't seem to be down to the test framework itself. A few kilobytes per
   // second. It's kind of weird though: seems to occur when on program
   // instantiation where the program has a few globals, but not if the program
   // is empty. That doesn't make too much sense. Does "top" report actual
   // memory usage or is it maybe just fragmentation overhead or something?
-  bool forever = false;
-  // Run with --<test_set> to run only those tests (e.g. --apis).
-  for (std::size_t i = 1; i < (std::size_t)argc; ++i) {
-    if (is(argv[i], "forever")) {
-      forever = true;
-      continue;
-    }
-    if (filter(argv[i], "apis") || filter(argv[i], "errors") ||
-        filter(argv[i], "exhaustive") || filter(argv[i], "functions") ||
-        filter(argv[i], "refcounting") || filter(argv[i], "semantics") ||
-        filter(argv[i], "trampolines") || filter(argv[i], "user_types")) {
-      continue;
-    }
-
-    std::cerr << "unrecognised argument " << argv[i] << std::endl;
-    return 1;
-  }
-
-  do {
-    if (RUN_ALL_TESTS()) {
-      return 1;
-    }
-  }
-  while (forever);
-  return 0;
 }

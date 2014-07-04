@@ -6,12 +6,10 @@
 
 namespace yang {
 
-TEST_F(YangTest, TypeOfTest)
-{
-  if (!filter("apis")) {
-    return;
-  }
+struct ApiTest : YangTest {};
 
+TEST_F(ApiTest, TypeOf)
+{
   EXPECT_TRUE(type_of<int_t>().is_int());
   EXPECT_FALSE(type_of<int_t>().is_ivec());
   EXPECT_TRUE(type_of<fvec_t<3>>().is_fvec());
@@ -32,12 +30,8 @@ TEST_F(YangTest, TypeOfTest)
   EXPECT_NE(type_of<a*>(), type_of<Ref<a>>());
 }
 
-TEST_F(YangTest, FunctionApiTest)
+TEST_F(ApiTest, Function)
 {
-  if (!filter("apis")) {
-    return;
-  }
-
   // A weird function type that's never used. Make sure the global trampoline
   // works anyway.
   auto unused = [](int_t, int_t, int_t){return 1;};
@@ -47,11 +41,8 @@ TEST_F(YangTest, FunctionApiTest)
   EXPECT_EQ(1, make_fn(unused)(1, 2, 3));
 }
 
-TEST_F(YangTest, ContextApiTest)
+TEST_F(ApiTest, Context)
 {
-  if (!filter("apis")) {
-    return;
-  }
   auto ctxt = context();
 
   struct type_a {};
@@ -159,12 +150,8 @@ global {
 }
 )";
 
-TEST_F(YangTest, ProgramApiTest)
+TEST_F(ApiTest, Program)
 {
-  if (!filter("apis")) {
-    return;
-  }
-
   // General program API.
   auto ctxt = context();
   auto prog = program(ctxt, TestApisStr);
@@ -226,12 +213,8 @@ TEST_F(YangTest, ProgramApiTest)
   EXPECT_FALSE(dt->second.is_exported());
 }
 
-TEST_F(YangTest, InstanceApiTest)
+TEST_F(ApiTest, Instance)
 {
-  if (!filter("apis")) {
-    return;
-  }
-
   typedef Function<int_t(int_t)> intf_t;
   typedef Function<void()> voidf_t;
   auto prog = program(TestApisStr);

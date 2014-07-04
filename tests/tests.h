@@ -17,9 +17,6 @@ public:
   YangTest();
   ~YangTest() override {}
 
-  static void add_filter(const std::string& filter);
-  static bool filter(const std::string& filter);
-
 protected:
 
   struct user_type {
@@ -47,7 +44,6 @@ private:
   std::size_t _program_id;
   std::size_t _user_value_id;
   std::size_t _muser_value_id;
-  static std::unordered_set<std::string> _filters; 
 
 };
 

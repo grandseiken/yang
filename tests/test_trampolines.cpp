@@ -6,6 +6,8 @@
 
 namespace yang {
 
+struct TrampolinesTest : YangTest {};
+
 const std::string TestTrampolinesStr = R"(
 export test_int = int(int x)
 {
@@ -41,12 +43,8 @@ export get_muser_type = MuserType()
 }
 )";
 
-TEST_F(YangTest, Trampolines)
+TEST_F(TrampolinesTest, Forward)
 {
-  if (!filter("trampolines")) {
-    return;
-  }
-
   auto inst = instance(TestTrampolinesStr);
   EXPECT_EQ(10, inst.call<int_t>("test_int", 5));
   EXPECT_EQ(1.0 / 4, inst.call<float_t>("test_float", 1.0 / 8));
@@ -100,12 +98,8 @@ export test_muser_type = MuserType()
 }
 )";
 
-TEST_F(YangTest, ReverseTrampolines)
+TEST_F(TrampolinesTest, Reverse)
 {
-  if (!filter("trampolines")) {
-    return;
-  }
-
   typedef Function<int_t(int_t)> intf_t;
   auto context_int = [](int_t x)
   {
@@ -163,12 +157,8 @@ export test = int(int a, int4 b, float c, int(int) d, float2 e, UserType f)
 }
 )";
 
-TEST_F(YangTest, MultiArgTrampolines)
+TEST_F(TrampolinesTest, MultiArg)
 {
-  if (!filter("trampolines")) {
-    return;
-  }
-
   auto ctxt = context();
   typedef Function<int_t(int_t)> intf_t;
   auto context_test = [](

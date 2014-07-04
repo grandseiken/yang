@@ -6,6 +6,8 @@
 
 namespace yang {
 
+struct UserTypesTest : YangTest {};
+
 const std::string TestUserTypesStrA = R"(
 global {
   var oo = null_other_type();
@@ -56,12 +58,8 @@ export steal_function = void(UserType u)
 }
 )";
 
-TEST_F(YangTest, UserTypes)
+TEST_F(UserTypesTest, Unmanaged)
 {
-  if (!filter("user_types")) {
-    return;
-  }
-
   struct other_t {
     int_t value;
   };
@@ -164,12 +162,8 @@ export get_count_closure = int()()
 }
 )";
 
-TEST_F(YangTest, ManagedUserTypes)
+TEST_F(UserTypesTest, Managed)
 {
-  if (!filter("user_types")) {
-    return;
-  }
-
   std::size_t count = 0;
   struct Managed {
     std::size_t count;
@@ -250,12 +244,8 @@ export bar = ma()
 }
 )";
 
-TEST_F(YangTest, UserTypedefs)
+TEST_F(UserTypesTest, Typedefs)
 {
-  if (!filter("user_types")) {
-    return;
-  }
-
   struct type_a {
     std::size_t count;
   };

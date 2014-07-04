@@ -6,6 +6,8 @@
 
 namespace yang {
 
+struct FunctionTest : YangTest {};
+
 const std::string TestCppFunctionsStr = R"(
 export via_context = int(int x)
 {
@@ -34,12 +36,8 @@ export via_return = int()
 }
 )";
 
-TEST_F(YangTest, CppFunctions)
+TEST_F(FunctionTest, Cpp)
 {
-  if (!filter("functions")) {
-    return;
-  }
-
   auto cpp = make_fn([](int_t a)
   {
     return a * 11;
@@ -102,12 +100,8 @@ export call_add = int(int(int) x)
 }
 )";
 
-TEST_F(YangTest, YangFunctions)
+TEST_F(FunctionTest, Yang)
 {
-  if (!filter("functions")) {
-    return;
-  }
-
   typedef Function<int_t(int_t)> intf_t;
   auto context_function = make_fn([](intf_t function)
   {
@@ -171,12 +165,8 @@ export in = int(int(int(int)) x)
 }
 )";
 
-TEST_F(YangTest, HighOrderFunctions)
+TEST_F(FunctionTest, HighOrder)
 {
-  if (!filter("functions")) {
-    return;
-  }
-
   auto inst = instance(TestHighOrderFunctionsStr);
   typedef Function<int_t()> intf_t;
   typedef Function<intf_t()> intf2_t;
@@ -291,12 +281,8 @@ export double = int(int n)
 }
 )";
 
-TEST_F(YangTest, FunctionClosures)
+TEST_F(FunctionTest, Closures)
 {
-  if (!filter("functions")) {
-    return;
-  }
-
   auto inst = instance(TestFunctionClosuresStr);
   EXPECT_EQ(89, inst.call<int_t>("internal", 3));
 

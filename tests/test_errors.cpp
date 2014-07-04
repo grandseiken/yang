@@ -6,6 +6,8 @@
 
 namespace yang {
 
+struct ErrorTest : YangTest {};
+
 const std::string TestStructuredErrorStr = R"(
 export x = int()
 {
@@ -17,12 +19,8 @@ export x = int()
 }
 )";
 
-TEST_F(YangTest, FailureTest)
+TEST_F(ErrorTest, ErrorApi)
 {
-  if (!filter("errors")) {
-    return;
-  }
-
   auto success_prog = program_suppress_errors("works = void() {}");
   EXPECT_TRUE(success_prog.success());
   EXPECT_NO_THROW(instance(success_prog));
@@ -84,12 +82,8 @@ x = void()
 }
 )";
 
-TEST_F(YangTest, ErrorTest)
+TEST_F(ErrorTest, Errors)
 {
-  if (!filter("errors")) {
-    return;
-  }
-
   auto ctxt = context();
   struct other {};
   ctxt.register_type<other>("OtherType");
@@ -319,12 +313,8 @@ TEST_F(YangTest, ErrorTest)
   err(TestMultilineErrorStrB, "+");
 }
 
-TEST_F(YangTest, WarningTest)
+TEST_F(ErrorTest, Warnings)
 {
-  if (!filter("errors")) {
-    return;
-  }
-
   auto ctxt = context();
   ctxt.register_function("noop", make_fn([]{}));
   auto warc = [&](const std::string& str,

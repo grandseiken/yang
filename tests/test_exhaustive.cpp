@@ -6,6 +6,8 @@
 
 namespace yang {
 
+struct ExhaustiveTest : YangTest {};
+
 const std::string TestExhaustiveStr = R"(
 global {
   const t = true;
@@ -330,12 +332,8 @@ export to_float0 = int() {return [u.];}
 export to_float1 = int() {return [uu.[0]];}
 )";
 
-TEST_F(YangTest, Exhaustive)
+TEST_F(ExhaustiveTest, Constructs)
 {
-  if (!filter("exhaustive")) {
-    return;
-  }
-
   auto prog = program(TestExhaustiveStr);
   auto inst = instance(TestExhaustiveStr);
   for (const auto& pair : prog.get_functions()) {
@@ -564,12 +562,8 @@ export exhaustive_refcount = int()
 }
 )";
 
-TEST_F(YangTest, ExhaustiveRefcount)
+TEST_F(ExhaustiveTest, Refcount)
 {
-  if (!filter("exhaustive")) {
-    return;
-  }
-
   instance(TestExhaustiveRefCountStr).call<int_t>("exhaustive_refcount");
 }
 

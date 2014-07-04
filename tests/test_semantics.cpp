@@ -6,6 +6,8 @@
 
 namespace yang {
 
+struct SemanticsTest : YangTest {};
+
 const std::string TestSemanticsStr = R"(
 export daft_fib = int(int n)
 {
@@ -181,12 +183,8 @@ global {
 }
 )";
 
-TEST_F(YangTest, SemanticsTest)
+TEST_F(SemanticsTest, Various)
 {
-  if (!filter("semantics")) {
-    return;
-  }
-
   // TODO: just getting started. Need way more semantic tests.
   int_t temp_int = 0;
   {
@@ -258,12 +256,8 @@ export tco_fac = int(int n)
 }
 )";
 
-TEST_F(YangTest, TestTco)
+TEST_F(SemanticsTest, DISABLED_Tco)
 {
-  if (!filter("semantics")) {
-    return;
-  }
-
   auto inst = instance(TestTcoStr);
   // This is a little tricky: some versions of GNU make contain a bug which sets
   // the stack size to unlimited, and forgets to ever set it back. This means
@@ -283,7 +277,7 @@ TEST_F(YangTest, TestTco)
   // For now, TCO is broken.
   EXPECT_EQ(720, inst.call<int_t>("rec_fac", 6));
   EXPECT_EQ(720, inst.call<int_t>("tco_fac", 6));
-  // TODO: EXPECT_NO_THROW(inst.call<int_t>("tco_fac", 1000000)).
+  EXPECT_NO_THROW(inst.call<int_t>("tco_fac", 1000000));
 }
 
 const std::string TestContextNamespacesStr = R"(
@@ -302,12 +296,8 @@ export fn = int()
 }
 )";
 
-TEST_F(YangTest, ContextNamespacesTest)
+TEST_F(SemanticsTest, ContextNamespaces)
 {
-  if (!filter("semantics")) {
-    return;
-  }
-
   struct type {};
   struct inner_type {};
   auto make_inner = make_fn([]
@@ -387,12 +377,8 @@ export get = Ut()
 }
 )";
 
-TEST_F(YangTest, InstanceNamespacesTest)
+TEST_F(SemanticsTest, InstanceNamespaces)
 {
-  if (!filter("semantics")) {
-    return;
-  }
-
   auto inst = instance(context(), TestInstanceNamespacesStrA);
   auto ctxt = context(false);
   ctxt.register_namespace("inst", inst);

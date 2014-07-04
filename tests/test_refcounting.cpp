@@ -6,6 +6,8 @@
 
 namespace yang {
 
+struct RefcountingTest : YangTest {};
+
 const std::string TestFunctionRefCountingStr = R"(
 export global {
   const noop = int()
@@ -172,12 +174,8 @@ export loops = int()
 }
 )";
 
-TEST_F(YangTest, FunctionRefCounting)
+TEST_F(RefcountingTest, Functions)
 {
-  if (!filter("refcounting")) {
-    return;
-  }
-
   auto ctxt = context();
   int_t n = 0;
   ctxt.register_function("get_fn", make_fn([&]
@@ -298,12 +296,8 @@ export global {
 }
 )";
 
-TEST_F(YangTest, StructureRefCounting)
+TEST_F(RefcountingTest, Structures)
 {
-  if (!filter("refcounting")) {
-    return;
-  }
-
   auto ctxt = context();
   auto member = make_fn([](user_type* t, int_t a)
   {
@@ -321,12 +315,8 @@ TEST_F(YangTest, StructureRefCounting)
   EXPECT_EQ(8, inst.get_global<intf2_t>("g")(4));
 }
 
-TEST_F(YangTest, ApiRefCounting)
+TEST_F(RefcountingTest, Objects)
 {
-  if (!filter("refcounting")) {
-    return;
-  }
-
   Instance inst = instance("");
   {
     Program prog = program("");
@@ -358,7 +348,7 @@ export test = string(int a)
 }
 )";
 
-TEST_F(YangTest, StringRefCounting)
+TEST_F(RefcountingTest, Strings)
 {
   auto ctxt = context();
   ctxt.register_type<const char>("string", true);
