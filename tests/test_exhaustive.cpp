@@ -5,7 +5,6 @@
 #include "tests.h"
 
 namespace yang {
-
 struct ExhaustiveTest : YangTest {};
 
 const std::string TestExhaustiveStr = R"(
@@ -335,7 +334,7 @@ export to_float1 = int() {return [uu.[0]];}
 TEST_F(ExhaustiveTest, Constructs)
 {
   auto prog = program(TestExhaustiveStr);
-  auto inst = instance(TestExhaustiveStr);
+  auto inst = instance(prog);
   for (const auto& pair : prog.get_functions()) {
     EXPECT_EQ(1, inst.call<int_t>(pair.first)) <<
         pair.first << " should return 1!";

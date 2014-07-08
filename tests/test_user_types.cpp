@@ -5,7 +5,6 @@
 #include "tests.h"
 
 namespace yang {
-
 struct UserTypesTest : YangTest {};
 
 const std::string TestUserTypesStrA = R"(

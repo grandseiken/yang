@@ -5,7 +5,6 @@
 #include "tests.h"
 
 namespace yang {
-
 struct FunctionTest : YangTest {};
 
 const std::string TestCppFunctionsStr = R"(

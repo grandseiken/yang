@@ -5,7 +5,6 @@
 #include "tests.h"
 
 namespace yang {
-
 struct RefcountingTest : YangTest {};
 
 const std::string TestFunctionRefCountingStr = R"(

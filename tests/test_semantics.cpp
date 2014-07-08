@@ -5,7 +5,6 @@
 #include "tests.h"
 
 namespace yang {
-
 struct SemanticsTest : YangTest {};
 
 const std::string TestSemanticsStr = R"(

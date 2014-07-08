@@ -5,7 +5,6 @@
 #include "tests.h"
 
 namespace yang {
-
 struct TrampolinesTest : YangTest {};
 
 TEST_F(TrampolinesTest, ForwardInt)

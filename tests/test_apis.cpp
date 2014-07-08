@@ -6,126 +6,10 @@
 
 namespace yang {
 
-struct ApiTest : YangTest {};
-
-TEST_F(ApiTest, TypeOf)
-{
-  EXPECT_TRUE(type_of<int_t>().is_int());
-  EXPECT_FALSE(type_of<int_t>().is_ivec());
-  EXPECT_TRUE(type_of<fvec_t<3>>().is_fvec());
-  EXPECT_EQ(3, type_of<fvec_t<3>>().vector_size());
-
-  typedef Function<user_type*(int_t)> ft;
-  EXPECT_TRUE(type_of<ft>().is_function());
-  EXPECT_EQ(1, type_of<ft>().function_num_args());
-  EXPECT_TRUE(type_of<ft>().function_return().is_user_type());
-  EXPECT_FALSE(type_of<ft>().function_return().is_managed_user_type());
-
-  struct a {};
-  struct b {};
-  EXPECT_EQ(type_of<a*>(), type_of<a*>());
-  EXPECT_EQ(type_of<Ref<a>>(), type_of<Ref<a>>());
-  EXPECT_NE(type_of<a*>(), type_of<b*>());
-  EXPECT_NE(type_of<Ref<a>>(), type_of<Ref<b>>());
-  EXPECT_NE(type_of<a*>(), type_of<Ref<a>>());
-}
-
-TEST_F(ApiTest, Function)
-{
-  // A weird function type that's never used. Make sure the global trampoline
-  // works anyway.
-  auto unused = [](int_t, int_t, int_t){return 1;};
-  typedef Function<int_t(int_t, int_t, int_t)> uf_t;
-  ASSERT_NO_THROW((uf_t(unused)));
-  EXPECT_EQ(1, uf_t(unused)(1, 2, 3));
-  EXPECT_EQ(1, make_fn(unused)(1, 2, 3));
-}
-
-TEST_F(ApiTest, Context)
-{
-  auto ctxt = context();
-
-  struct type_a {};
-  struct type_b {};
-  struct type_c {};
-  struct type_d {};
-
-  ASSERT_NO_THROW(ctxt.register_type<type_a>("TypeA"));
-  EXPECT_THROW(ctxt.register_type<type_a>("TypeA"), runtime_error);
-  EXPECT_THROW(ctxt.register_type<type_b>("TypeA"), runtime_error);
-  EXPECT_NO_THROW(ctxt.register_type<type_b>("TypeB"));
-  EXPECT_NO_THROW(ctxt.register_type<type_a>("TypeA2"));
-
-  auto voidf = make_fn([]{});
-  ASSERT_NO_THROW(ctxt.register_function("foo", voidf));
-  EXPECT_THROW(ctxt.register_function("foo", voidf), runtime_error);
-  EXPECT_NO_THROW(ctxt.register_function("bar", voidf));
-
-  auto voidaf = make_fn([](type_a*){});
-  ASSERT_NO_THROW(ctxt.register_member_function("foo", voidaf));
-  EXPECT_THROW(ctxt.register_member_function("foo", voidaf), runtime_error);
-  EXPECT_NO_THROW(ctxt.register_member_function("bar", voidaf));
-
-  // Conflicts between member and nonmember functions.
-  EXPECT_THROW(ctxt.register_function("TypeA::foo", voidf), runtime_error);
-  EXPECT_NO_THROW(ctxt.register_member_function("baz", voidaf));
-  EXPECT_THROW(ctxt.register_member_function("baz", voidaf), runtime_error);
-
-  // Bad names.
-  auto ccon = make_fn([]{return (type_c*)nullptr;});
-  auto voidcf = make_fn([](type_c*){});
-  EXPECT_THROW(ctxt.register_function("!", voidf), runtime_error);
-  EXPECT_THROW(ctxt.register_member_function("~", voidaf), runtime_error);
-  EXPECT_THROW(ctxt.register_type<type_c>("$c"), runtime_error);
-  EXPECT_THROW(ctxt.register_type("a-b", ccon, voidcf), runtime_error);
-  EXPECT_THROW(ctxt.register_constructor("a::b", ccon, voidcf), runtime_error);
-  EXPECT_THROW(ctxt.register_namespace(" ", context()), runtime_error);
-
-  // Managed/unmanaged simultaeneously.
-  auto refaf = make_fn([](Ref<type_a>){});
-  auto refcf = make_fn([](Ref<type_c>){});
-  ctxt.register_type("TypeC", ccon, voidcf);
-  EXPECT_NO_THROW(ctxt.register_member_function("man", voidcf));
-  EXPECT_NO_THROW(ctxt.register_member_function("umn", refaf));
-  EXPECT_NO_THROW(ctxt.register_member_function("man2", refcf));
-
-  // Namespace conflicts.
-  auto dcon = make_fn([]{return (type_d*)nullptr;});
-  auto voiddf = make_fn([](type_d*){});
-  EXPECT_THROW(ctxt.register_function("TypeC", voidf), runtime_error);
-  EXPECT_THROW(ctxt.register_type("bar", dcon, voiddf), runtime_error);
-  EXPECT_THROW(ctxt.register_constructor("bar", dcon, voiddf), runtime_error);
-  EXPECT_THROW(ctxt.register_constructor("TypeC", dcon, voiddf), runtime_error);
-  auto dtxt = context(false);
-  EXPECT_THROW(dtxt.register_namespace("dtxt", dtxt), runtime_error);
-  EXPECT_THROW(ctxt.register_namespace("TypeC", dtxt), runtime_error);
-  ctxt.register_namespace("dtxt", dtxt);
-  EXPECT_THROW(ctxt.register_namespace("dtxt", dtxt), runtime_error);
-  EXPECT_THROW(ctxt.register_type<type_d>("dtxt"), runtime_error);
-  EXPECT_THROW(ctxt.register_type("dtxt", dcon, voiddf), runtime_error);
-
-  // Independent namespaces.
-  EXPECT_NO_THROW(ctxt.register_namespace("foo", dtxt));
-  EXPECT_NO_THROW(ctxt.register_function("dtxt", voidf));
-  EXPECT_NO_THROW(ctxt.register_type<type_d>("bar"));
-
-  struct type_e {};
-  struct type_f {};
-  auto etxt = context(false);
-  etxt.register_type<type_e>("E");
-  ctxt.register_function("make_e", make_fn([]{
-    return (type_e*)nullptr;
-  }));
-  ctxt.register_type<type_e>("Eman");
-  EXPECT_NO_THROW(ctxt.register_namespace("whatever", etxt));
-  etxt.register_member_function("foo", voidaf);
-  EXPECT_NO_THROW(ctxt.register_namespace("again", etxt));
-  auto ftxt = context(false);
-  ftxt.register_member_function("foo", make_fn([](type_a*){}));
-  EXPECT_THROW(ctxt.register_namespace("another", ftxt), runtime_error);
-}
-
-const std::string TestApisStr = R"(
+struct ApiTest : YangTest {
+  Program test_program()
+  {
+    return program(R"(
 export global var a = (0, 1, 2);
 export global {
   const b = (0., 1., 2.);
@@ -148,41 +32,229 @@ g = int(int a)
 global {
   a = a; b; c = c; d; g;
 }
-)";
+)");
+  }
 
-TEST_F(ApiTest, Program)
+  Instance test_instance()
+  {
+    return instance(test_program());
+  }
+};
+
+TEST_F(ApiTest, TypeOfInt)
 {
-  // General program API.
+  EXPECT_TRUE(type_of<int_t>().is_int());
+  EXPECT_FALSE(type_of<int_t>().is_ivec());
+}
+
+TEST_F(ApiTest, TypeOfFvec)
+{
+  EXPECT_TRUE(type_of<fvec_t<3>>().is_fvec());
+  EXPECT_EQ(3, type_of<fvec_t<3>>().vector_size());
+}
+
+TEST_F(ApiTest, TypeOfFunction)
+{
+  typedef Function<user_type*(int_t)> ft;
+  EXPECT_TRUE(type_of<ft>().is_function());
+  EXPECT_EQ(1, type_of<ft>().function_num_args());
+  EXPECT_TRUE(type_of<ft>().function_return().is_user_type());
+  EXPECT_FALSE(type_of<ft>().function_return().is_managed_user_type());
+}
+
+TEST_F(ApiTest, TypeOfUserType)
+{
+  struct a {};
+  struct b {};
+  EXPECT_EQ(type_of<a*>(), type_of<a*>());
+  EXPECT_EQ(type_of<Ref<a>>(), type_of<Ref<a>>());
+  EXPECT_NE(type_of<a*>(), type_of<b*>());
+  EXPECT_NE(type_of<Ref<a>>(), type_of<Ref<b>>());
+  EXPECT_NE(type_of<a*>(), type_of<Ref<a>>());
+}
+
+TEST_F(ApiTest, Function)
+{
+  // A weird function type that's never used. Make sure the global trampoline
+  // works anyway.
+  auto unused = [](int_t, int_t, int_t){return 1;};
+  typedef Function<int_t(int_t, int_t, int_t)> uf_t;
+  ASSERT_NO_THROW((uf_t(unused)));
+  EXPECT_EQ(1, uf_t(unused)(1, 2, 3));
+  EXPECT_EQ(1, make_fn(unused)(1, 2, 3));
+}
+
+TEST_F(ApiTest, ContextBadNames)
+{
   auto ctxt = context();
-  auto prog = program(ctxt, TestApisStr);
-  EXPECT_EQ("test0", prog.get_name());
+  struct type_a {};
+  auto acon = make_fn([]{return (type_a*)nullptr;});
+  auto voidaf = make_fn([](type_a*){});
+
+  EXPECT_THROW(ctxt.register_function("!", voidaf), runtime_error);
+  EXPECT_THROW(ctxt.register_member_function("~", voidaf), runtime_error);
+  EXPECT_THROW(ctxt.register_type<type_a>("$c"), runtime_error);
+  EXPECT_THROW(ctxt.register_type("a-b", acon, voidaf), runtime_error);
+  EXPECT_THROW(ctxt.register_constructor("a::b", acon, voidaf), runtime_error);
+  EXPECT_THROW(ctxt.register_namespace(" ", context()), runtime_error);
+}
+
+TEST_F(ApiTest, ContextTypedefs)
+{
+  auto ctxt = context();
+  struct type_a {};
+  struct type_b {};
+
+  ASSERT_NO_THROW(ctxt.register_type<type_a>("TypeA"));
+  EXPECT_THROW(ctxt.register_type<type_a>("TypeA"), runtime_error);
+  EXPECT_THROW(ctxt.register_type<type_b>("TypeA"), runtime_error);
+  EXPECT_NO_THROW(ctxt.register_type<type_b>("TypeB"));
+  EXPECT_NO_THROW(ctxt.register_type<type_a>("TypeA2"));
+}
+
+TEST_F(ApiTest, ContextFunctions)
+{
+  auto ctxt = context();
+  auto voidf = make_fn([]{});
+
+  ASSERT_NO_THROW(ctxt.register_function("foo", voidf));
+  EXPECT_THROW(ctxt.register_function("foo", voidf), runtime_error);
+  EXPECT_NO_THROW(ctxt.register_function("bar", voidf));
+}
+
+TEST_F(ApiTest, ContextMemberFunctions)
+{
+  auto ctxt = context();
+  struct type_a {};
+  auto voidaf = make_fn([](type_a*){});
+
+  ASSERT_NO_THROW(ctxt.register_member_function("foo", voidaf));
+  EXPECT_THROW(ctxt.register_member_function("foo", voidaf), runtime_error);
+  EXPECT_NO_THROW(ctxt.register_member_function("bar", voidaf));
+}
+
+TEST_F(ApiTest, ContextOverlappingUserTypes)
+{
+  auto ctxt = context();
+  struct type_a {};
+  struct type_b {};
+  auto refaf = make_fn([](Ref<type_a>){});
+  auto refbf = make_fn([](Ref<type_b>){});
+  auto bcon = make_fn([]{return (type_b*)nullptr;});
+  auto voidbf = make_fn([](type_b*){});
+
+  ctxt.register_type<type_a>("TypeA");
+  ctxt.register_type("TypeB", bcon, voidbf);
+  EXPECT_NO_THROW(ctxt.register_member_function("foo", voidbf));
+  EXPECT_NO_THROW(ctxt.register_member_function("foo", refaf));
+  EXPECT_NO_THROW(ctxt.register_member_function("foo", refbf));
+}
+
+TEST_F(ApiTest, ContextNamespaceConflicts)
+{
+  auto ctxt = context();
+  auto dtxt = context(false);
+  struct type_a {};
+  auto acon = make_fn([]{return (type_a*)nullptr;});
+  auto voidaf = make_fn([](type_a*){});
+  ctxt.register_type("TypeA", acon, voidaf);
+  ctxt.register_function("bar", voidaf);
+  
+  EXPECT_THROW(ctxt.register_function("TypeA", voidaf), runtime_error);
+  EXPECT_THROW(ctxt.register_type("bar", acon, voidaf), runtime_error);
+  EXPECT_THROW(ctxt.register_constructor("bar", acon, voidaf), runtime_error);
+  EXPECT_THROW(ctxt.register_constructor("TypeA", acon, voidaf), runtime_error);
+
+  EXPECT_THROW(dtxt.register_namespace("dtxt", dtxt), runtime_error);
+  EXPECT_THROW(ctxt.register_namespace("TypeA", dtxt), runtime_error);
+
+  ctxt.register_namespace("dtxt", dtxt);
+  EXPECT_THROW(ctxt.register_namespace("dtxt", dtxt), runtime_error);
+  EXPECT_THROW(ctxt.register_type<type_a>("dtxt"), runtime_error);
+  EXPECT_THROW(ctxt.register_type("dtxt", acon, voidaf), runtime_error);
+}
+
+TEST_F(ApiTest, ContextNamespaceIndependence)
+{
+  auto ctxt = context();
+  auto dtxt = context(false);
+  struct type_a {};
+  auto acon = make_fn([]{return (type_a*)nullptr;});
+  auto voidaf = make_fn([](type_a*){});
+  ctxt.register_type("TypeA", acon, voidaf);
+  ctxt.register_function("foo", voidaf);
+  ctxt.register_function("bar", voidaf);
+  ctxt.register_namespace("dtxt", dtxt);
+
+  EXPECT_NO_THROW(ctxt.register_namespace("foo", dtxt));
+  EXPECT_NO_THROW(ctxt.register_function("dtxt", voidaf));
+  EXPECT_NO_THROW(ctxt.register_type<type_a>("bar"));
+
+  auto etxt = context(false);
+  etxt.register_type<type_a>("TypeA");
+  ctxt.register_function("make_b", make_fn([]{
+    return (type_a*)nullptr;
+  }));
+  ctxt.register_type<type_a>("A");
+  EXPECT_NO_THROW(ctxt.register_namespace("whatever", etxt));
+  etxt.register_member_function("foo", voidaf);
+  EXPECT_NO_THROW(ctxt.register_namespace("again", etxt));
+
+  auto ftxt = context(false);
+  ftxt.register_member_function("foo", make_fn([](type_a*){}));
+  EXPECT_THROW(ctxt.register_namespace("another", ftxt), runtime_error);
+}
+
+TEST_F(ApiTest, ProgramSuccess)
+{
+  auto prog = program_suppress_errors("works = void() {}");
   ASSERT_TRUE(prog.success());
+  EXPECT_EQ("test0", prog.get_name());
+  EXPECT_NO_THROW(instance(prog));
   EXPECT_NO_THROW(prog.print_ast());
   EXPECT_NO_THROW(prog.print_ir());
+}
 
-  // Function access.
+TEST_F(ApiTest, ProgramFailure)
+{
+  auto prog = program_suppress_errors("broken");
+  ASSERT_FALSE(prog.success());
+  EXPECT_EQ("test0", prog.get_name());
+  EXPECT_THROW(instance(prog), runtime_error);
+  EXPECT_THROW(prog.print_ast(), runtime_error);
+  EXPECT_THROW(prog.print_ir(), runtime_error);
+}
+
+TEST_F(ApiTest, ProgramFunctions)
+{
+  auto prog = test_program();
   ASSERT_EQ(1, prog.get_functions().size());
+
   auto it = prog.get_functions().begin();
   EXPECT_EQ("f", it->first);
   auto type = it->second;
+
   EXPECT_TRUE(type.is_const());
   EXPECT_TRUE(type.is_exported());
   ASSERT_TRUE(type.is_function());
   ASSERT_EQ(1, type.function_num_args());
   EXPECT_TRUE(type.function_arg(0).is_int());
   EXPECT_TRUE(type.function_return().is_int());
+}
 
-  // Global access.
+TEST_F(ApiTest, ProgramGlobals)
+{
+  auto prog = test_program();
   ASSERT_EQ(4, prog.get_globals().size());
-  ASSERT_NE(prog.get_globals().find("a"), prog.get_globals().end());
-  ASSERT_NE(prog.get_globals().find("b"), prog.get_globals().end());
-  ASSERT_NE(prog.get_globals().find("c"), prog.get_globals().end());
-  ASSERT_NE(prog.get_globals().find("d"), prog.get_globals().end());
-
   auto at = prog.get_globals().find("a");
   auto bt = prog.get_globals().find("b");
   auto ct = prog.get_globals().find("c");
   auto dt = prog.get_globals().find("d");
+
+  ASSERT_NE(at, prog.get_globals().end());
+  ASSERT_NE(bt, prog.get_globals().end());
+  ASSERT_NE(ct, prog.get_globals().end());
+  ASSERT_NE(dt, prog.get_globals().end());
 
   EXPECT_TRUE(at->second.is_vector());
   EXPECT_TRUE(at->second.is_ivec());
@@ -213,64 +285,97 @@ TEST_F(ApiTest, Program)
   EXPECT_FALSE(dt->second.is_exported());
 }
 
-TEST_F(ApiTest, Instance)
+TEST_F(ApiTest, InstanceFunctionMissing)
 {
   typedef Function<int_t(int_t)> intf_t;
-  typedef Function<void()> voidf_t;
-  auto prog = program(TestApisStr);
-  auto inst = instance(prog);
-
-  // Non-existent name.
+  auto inst = test_instance();
   EXPECT_THROW(inst.get_function<intf_t>("nonexistent"), runtime_error);
   EXPECT_THROW(inst.call<int_t>("nonexistent"), runtime_error);
-  // Not a function.
+}
+
+TEST_F(ApiTest, InstanceFunctionNotFunction)
+{
+  typedef Function<int_t(int_t)> intf_t;
+  auto inst = test_instance();
   EXPECT_THROW(inst.get_function<intf_t>("a"), runtime_error);
   EXPECT_THROW(inst.call<int_t>("a", 0), runtime_error);
-  // Non-exported function.
+}
+
+TEST_F(ApiTest, InstanceFunctionNotExported)
+{
+  typedef Function<int_t(int_t)> intf_t;
+  auto inst = test_instance();
   EXPECT_THROW(inst.get_function<intf_t>("g"), runtime_error);
   EXPECT_THROW(inst.call<int_t>("g", 0), runtime_error);
-  // Function accessed via incompatible type.
+}
+
+TEST_F(ApiTest, InstanceFunctionIncompatibleType)
+{
+  typedef Function<void()> voidf_t;
+  auto inst = test_instance();
   EXPECT_THROW(inst.get_function<voidf_t>("f"), runtime_error);
   EXPECT_THROW(inst.call<float_t>("f", 0), runtime_error);
   EXPECT_THROW(inst.call<int_t>("f", 0.), runtime_error);
-  // Correct function access.
+}
+
+TEST_F(ApiTest, InstanceFunction)
+{
+  typedef Function<int_t(int_t)> intf_t;
+  auto inst = test_instance();
   EXPECT_NO_THROW(inst.get_function<intf_t>("f"));
   EXPECT_EQ(2, inst.call<int_t>("f", 1));
+}
 
-  // Non-existent name.
+TEST_F(ApiTest, InstanceGlobalMissing)
+{
+  auto inst = test_instance();
   EXPECT_THROW(inst.get_global<int_t>("nonexistent"), runtime_error);
   EXPECT_THROW(inst.set_global("nonexistent", 0), runtime_error);
-  // Not a global.
+}
+
+TEST_F(ApiTest, InstanceGlobalNotGlobal)
+{
+  typedef Function<int_t(int_t)> intf_t;
+  auto inst = test_instance();
   EXPECT_THROW(inst.get_global<intf_t>("f"), runtime_error);
   EXPECT_THROW(
       inst.set_global("f", inst.get_function<intf_t>("f")), runtime_error);
-  // Global accessed via incompatible type.
+}
+
+TEST_F(ApiTest, InstanceGlobalIncompatibleType)
+{
+  auto inst = test_instance();
   EXPECT_THROW(inst.get_global<int_t>("a"), runtime_error);
   EXPECT_THROW(inst.set_global("a", 0), runtime_error);
+}
 
-  // Export var.
+TEST_F(ApiTest, InstanceGlobalExportVar)
+{
+  auto inst = test_instance();
   EXPECT_EQ(ivec_t<3>(0, 1, 2), inst.get_global<ivec_t<3>>("a"));
   EXPECT_NO_THROW(inst.set_global("a", ivec_t<3>{0, -1, -2}));
   EXPECT_EQ(ivec_t<3>(0, -1, -2), inst.get_global<ivec_t<3>>("a"));
-  // Export const.
-  EXPECT_EQ(fvec_t<3>(0., 1., 2.), inst.get_global<fvec_t<3>>("b"));
-  EXPECT_THROW(inst.set_global("b", fvec_t<3>(0., 1., 2.)), runtime_error);
-  // Internal var.
-  EXPECT_EQ(3, inst.get_global<int_t>("c"));
-  EXPECT_THROW(inst.set_global("c", 4), runtime_error);
-  // Internal const.
-  EXPECT_EQ(18, inst.get_global<int_t>("d"));
-  EXPECT_THROW(inst.set_global("d", 1), runtime_error);
 }
 
-TEST_F(ApiTest, Failure)
+TEST_F(ApiTest, InstanceGlobalExportConst)
 {
-  auto success_prog = program_suppress_errors("works = void() {}");
-  EXPECT_TRUE(success_prog.success());
-  EXPECT_NO_THROW(instance(success_prog));
-  auto failure_prog = program_suppress_errors("broken");
-  EXPECT_FALSE(failure_prog.success());
-  EXPECT_THROW(instance(failure_prog), runtime_error);
+  auto inst = test_instance();
+  EXPECT_EQ(fvec_t<3>(0., 1., 2.), inst.get_global<fvec_t<3>>("b"));
+  EXPECT_THROW(inst.set_global("b", fvec_t<3>(0., 1., 2.)), runtime_error);
+}
+
+TEST_F(ApiTest, InstanceGlobalInternalVar)
+{
+  auto inst = test_instance();
+  EXPECT_EQ(3, inst.get_global<int_t>("c"));
+  EXPECT_THROW(inst.set_global("c", 4), runtime_error);
+}
+
+TEST_F(ApiTest, InstanceGlobalInternalConst)
+{
+  auto inst = test_instance();
+  EXPECT_EQ(18, inst.get_global<int_t>("d"));
+  EXPECT_THROW(inst.set_global("d", 1), runtime_error);
 }
 
 TEST_F(ApiTest, ErrorInfo)
