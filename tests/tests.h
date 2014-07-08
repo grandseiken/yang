@@ -22,9 +22,7 @@ protected:
   struct user_type {
     std::size_t id;
   };
-  struct muser_type {
-    std::size_t id;
-  };
+  struct other {};
 
   Context context(bool with_types = true);
   Program program_suppress_errors(const std::string& contents);
@@ -43,7 +41,6 @@ private:
   std::vector<std::unique_ptr<user_type>> _user_values;
   std::size_t _program_id;
   std::size_t _user_value_id;
-  std::size_t _muser_value_id;
 
 };
 

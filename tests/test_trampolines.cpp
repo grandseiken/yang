@@ -97,8 +97,8 @@ export get_muser_type = MuserType()
   return MuserType();
 }
 )");
-  auto u = inst.call<Ref<muser_type>>("get_muser_type");
-  EXPECT_EQ(u->id, inst.call<Ref<muser_type>>("f", u)->id);
+  auto u = inst.call<Ref<user_type>>("get_muser_type");
+  EXPECT_EQ(u->id, inst.call<Ref<user_type>>("f", u)->id);
 }
 
 TEST_F(TrampolinesTest, ReverseInt)
@@ -207,7 +207,7 @@ export f = UserType()
 TEST_F(TrampolinesTest, ReverseManagedUserType)
 {
   auto ctxt = context();
-  ctxt.register_function("context", make_fn([](Ref<muser_type> x)
+  ctxt.register_function("context", make_fn([](Ref<user_type> x)
   {
     return x;
   }));
@@ -218,7 +218,7 @@ export f = MuserType()
   return context(MuserType());
 }
 )");
-  EXPECT_EQ(0, inst.call<Ref<muser_type>>("f")->id);
+  EXPECT_EQ(0, inst.call<Ref<user_type>>("f")->id);
 }
 
 TEST_F(TrampolinesTest, MultiArg)

@@ -263,5 +263,62 @@ TEST_F(ApiTest, Instance)
   EXPECT_THROW(inst.set_global("d", 1), runtime_error);
 }
 
+TEST_F(ApiTest, Failure)
+{
+  auto success_prog = program_suppress_errors("works = void() {}");
+  EXPECT_TRUE(success_prog.success());
+  EXPECT_NO_THROW(instance(success_prog));
+  auto failure_prog = program_suppress_errors("broken");
+  EXPECT_FALSE(failure_prog.success());
+  EXPECT_THROW(instance(failure_prog), runtime_error);
+}
+
+TEST_F(ApiTest, ErrorInfo)
+{
+  auto prog = program_suppress_errors(R"(
+export x = int()
+{
+  return
+    1.0 +
+    1 + /******/ 2;
+  /*******/
+  x();
+}
+)");
+
+  const auto& errors = prog.get_errors();
+  const auto& warnings = prog.get_warnings();
+
+  ASSERT_EQ(1, errors.size());
+  ASSERT_EQ(1, warnings.size());
+  const auto& error = errors[0];
+  const auto& warning = warnings[0];
+
+  EXPECT_EQ(4, error.node.start_line);
+  EXPECT_EQ(4, error.node.end_line);
+  EXPECT_EQ(8, error.node.start_column);
+  EXPECT_EQ(8, error.node.end_column);
+  EXPECT_EQ(37, error.node.start_index);
+  EXPECT_EQ(37, error.node.end_index);
+  EXPECT_EQ("+", error.node.text);
+
+  EXPECT_EQ(4, error.tree.start_line);
+  EXPECT_EQ(5, error.tree.end_line);
+  EXPECT_EQ(4, error.tree.start_column);
+  EXPECT_EQ(4, error.tree.end_column);
+  EXPECT_EQ(33, error.tree.start_index);
+  EXPECT_EQ(43, error.tree.end_index);
+  EXPECT_EQ("1.0 +\n    1", error.tree.text);
+
+  EXPECT_EQ(7, warning.node.start_line);
+  EXPECT_EQ(7, warning.node.end_line);
+  EXPECT_EQ(2, warning.node.start_column);
+  EXPECT_EQ(5, warning.node.end_column);
+  EXPECT_EQ(73, warning.node.start_index);
+  EXPECT_EQ(76, warning.node.end_index);
+  EXPECT_EQ("x();", warning.node.text);
+  EXPECT_EQ("x();", warning.tree.text);
+}
+
 // End namespace yang.
 }

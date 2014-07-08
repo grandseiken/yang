@@ -10,18 +10,19 @@ namespace yang {
 YangTest::YangTest()
   : _program_id(0)
   , _user_value_id(0)
-  , _muser_value_id(0)
 {
 }
 
 Context YangTest::context(bool with_types)
 {
   Context context;
+  context.register_function("noop", make_fn([]{}));
   if (!with_types) {
     return context;
   }
-  // Standard context has a user type registed and a function to produce them.
-  // Each one gets a different ID.
+
+  // User type registed as both managed and unmanaged. Each one gets a
+  // different ID.
   context.register_type<user_type>("UserType");
   auto get_user_type = [this]
   {
@@ -29,20 +30,22 @@ Context YangTest::context(bool with_types)
     _user_values.emplace_back(u);
     return u;
   };
-
   auto constructor = make_fn([this]
   {
-    muser_type* m = new muser_type{_muser_value_id++};
-    return m;
+    return new user_type{_user_value_id++};
   });
-  auto destructor = make_fn([](muser_type* m)
+  auto destructor = make_fn([](user_type* m)
   {
     delete m;
   });
-
   context.register_member_function("foo", make_fn([](user_type*){}));
   context.register_function("get_user_type", make_fn(get_user_type));
   context.register_type("MuserType", constructor, destructor);
+
+  context.register_type<other>("OtherType");
+  context.register_function("get_other", make_fn([]{return (other*)nullptr;}));
+  context.register_type("MotherType", make_fn([]{return (other*)nullptr;}),
+                                      make_fn([](other*){}));
   return context;
 }
 
