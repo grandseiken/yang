@@ -84,6 +84,19 @@ TEST_F(ApiTest, Function)
   EXPECT_EQ(1, make_fn(unused)(1, 2, 3));
 }
 
+TEST_F(ApiTest, MakeFn)
+{
+  auto lambda = []{
+    return int_t(7);
+  };
+  auto fn = make_fn(lambda);
+
+  ASSERT_EQ(7, fn());
+  ASSERT_EQ(7, make_fn(lambda)());
+  ASSERT_EQ(7, make_fn(fn)());
+  ASSERT_EQ(7, make_fn(make_fn(lambda))());
+}
+
 TEST_F(ApiTest, ContextBadNames)
 {
   auto ctxt = context();

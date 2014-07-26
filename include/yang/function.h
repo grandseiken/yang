@@ -257,6 +257,17 @@ internal::make_fn_type<T> make_fn(T&& t)
 {
   return internal::make_fn_type<T>(std::forward<T>(t));
 }
+// Avoid double-wrapping when the input is already a yang::Function.
+template<typename R, typename... Args>
+Function<R(Args...)> make_fn(const Function<R(Args...)>& f)
+{
+  return f;
+}
+template<typename R, typename... Args>
+Function<R(Args...)> make_fn(Function<R(Args...)>&& f)
+{
+  return f;
+}
 
 template<typename R, typename... Args>
 Function<R(Args...)>::Function(const cpp_type& function)
