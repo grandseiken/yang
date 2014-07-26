@@ -7,31 +7,44 @@
 namespace yang {
 struct UserTypesTest : YangTest {};
 
-const std::string TestUserTypesStrA = R"(
-global {
-  var oo = null_other_type();
-}
-export takes_user_type = int(UserType u)
+TEST_F(UserTypesTest, IncorrectTypes)
 {
-  return u.get_id();
-}
-export takes_other_type = void(Other o)
-{
-  oo = o;
-  const extract = o.extract;
-  extract();
-}
-export extract_oo = void()
-{
-  takes_other_type(oo);
-}
-)";
+  auto ctxt = context();
+  auto inst = instance(R"(
+export takes_user_type = void(UserType) {}
+export takes_user_type_f = void(void(UserType)) {}
+)");
+  struct unknown {};
+  user_type u;
+  other o;
+  unknown unk;
 
-const std::string TestUserTypesStrB = R"(
+  ASSERT_NO_THROW(inst.call<void>("takes_user_type", &u));
+  EXPECT_THROW(inst.call<void>("takes_user_type", &o), runtime_error);
+  EXPECT_THROW(inst.call<void>("takes_user_type", &unk), runtime_error);
+
+  ASSERT_NO_THROW(
+      inst.call<void>("takes_user_type_f", make_fn([](user_type*){})));
+  EXPECT_THROW(
+      inst.call<void>("takes_user_type_f", make_fn([](other*){})),
+      runtime_error);
+  EXPECT_THROW(
+      inst.call<void>("takes_user_type_f", make_fn([](unknown*){})),
+      runtime_error);
+}
+
+TEST_F(UserTypesTest, UnmanagedObjectPassing)
+{
+  auto ctxt = context();
+  ctxt.register_member_function("set_id", make_fn([](user_type* u, int_t id)
+  {
+    u->id = id;
+  }));
+
+  auto inst = instance(ctxt, R"(
 export global {
   var u = get_user_type();
   const v = u;
-  var f = int() {return -1;};
 }
 export returns_user_type = UserType()
 {
@@ -41,97 +54,75 @@ export returns_user_type = UserType()
 export takes_user_type = void(UserType u)
 {
   return u.set_id(99);
-}
-export call_user_type = void(void(UserType) x, UserType u)
-{
-  x(u);
-}
-export call_void = void(void() x)
-{
-  x();
+})");
+
+  inst.call<user_type*>("returns_user_type");
+  inst.call<user_type*>("returns_user_type");
+  user_type* u = inst.call<user_type*>("returns_user_type");
+  EXPECT_EQ(3, u->id);
+
+  inst.call<void>("takes_user_type", u);
+  EXPECT_EQ(99, u->id);
+  EXPECT_EQ(99, inst.get_global<user_type*>("u")->id);
+  EXPECT_EQ(0, inst.get_global<user_type*>("v")->id);
 }
 
+TEST_F(UserTypesTest, UnmanagedMemberFunctions)
+{
+  auto ctxt = context();
+  int_t extract_value = 0;
+  ctxt.register_function("null_user_type", make_fn([]
+  {
+    return (user_type*)nullptr;
+  }));
+  ctxt.register_member_function("extract", make_fn([&](user_type* u)
+  {
+    extract_value = u->id;
+  }));
+
+  auto inst = instance(ctxt, R"(
+global var uu = null_user_type();
+export takes_user_type = void(UserType u)
+{
+  uu = u;
+  const extract = u.extract;
+  extract();
+}
+export extract_uu = void()
+{
+  takes_user_type(uu);
+})");
+
+  auto takes_user_type =
+      inst.get_function<Function<void(user_type*)>>("takes_user_type");
+  user_type u{49};
+  takes_user_type(&u);
+  EXPECT_EQ(49, extract_value);
+  u.id = 64;
+  inst.call<void>("extract_uu");
+  EXPECT_EQ(64, extract_value);
+}
+
+TEST_F(UserTypesTest, UnmanagedStealMemberFunction)
+{
+  auto ctxt = context();
+  ctxt.register_member_function("get_id", make_fn([](user_type* u)
+  {
+    return int_t(u->id);
+  }));
+
+  auto inst = instance(ctxt, R"(
+export global var f = int() {return -1;};
 export steal_function = void(UserType u)
 {
   f = u.get_id;
-}
-)";
-
-TEST_F(UserTypesTest, Unmanaged)
-{
-  struct other_t {
-    int_t value;
-  };
-  int_t extract_value = 0;
-
-  auto get_id = make_fn([](user_type* u)
-  {
-    return int_t(u->id);
-  });
-  auto set_id = make_fn([](user_type* u, int_t id)
-  {
-    u->id = id;
-  });
-  auto null_other_type = make_fn([]
-  {
-    return (other_t*)nullptr;
-  });
-  auto extract = make_fn([&](other_t* o)
-  {
-    extract_value = o->value;
-  });
-
-  auto ctxt = context();
-  auto dtxt = context();
-  ctxt.register_type<other_t>("Other");
-  ctxt.register_function("null_other_type", null_other_type);
-  ctxt.register_member_function("extract", extract);
-  ctxt.register_member_function("get_id", get_id);
-  ctxt.register_member_function("set_id", set_id);
-  dtxt.register_member_function("get_id", get_id);
-  dtxt.register_member_function("set_id", set_id);
-
-  auto prog = instance(ctxt, TestUserTypesStrA);
-  auto qrog = instance(dtxt, TestUserTypesStrB);
-
-  // Do some things with user_type.
-  qrog.call<user_type*>("returns_user_type");
-  qrog.call<user_type*>("returns_user_type");
-  user_type* u = qrog.call<user_type*>("returns_user_type");
-  EXPECT_EQ(3, u->id);
-  qrog.call<void>("takes_user_type", u);
-  EXPECT_EQ(99, u->id);
-  EXPECT_EQ(99, prog.call<int_t>("takes_user_type", u));
-  EXPECT_EQ(99, qrog.get_global<user_type*>("u")->id);
-  EXPECT_EQ(0, qrog.get_global<user_type*>("v")->id);
-
-  // Do some things with other_t.
-  auto takes_other_type =
-      prog.get_function<Function<void(other_t*)>>("takes_other_type");
-  other_t other;
-  other.value = 49;
-  takes_other_type(&other);
-  EXPECT_EQ(49, extract_value);
-
-  // Pass incorrect type to a program that knows about it.
-  EXPECT_THROW(prog.call<int_t>("takes_user_type", &other), runtime_error);
-  EXPECT_THROW(prog.call<int_t>("takes_other_type", u), runtime_error);
-  // Pass incorrect type to a program that doesn't know about it.
-  EXPECT_THROW(qrog.call<void>("takes_user_type", &other), runtime_error);
-  // Pass function involving incorrect type to same.
-  EXPECT_THROW(
-      qrog.call<void>("call_user_type", takes_other_type, u), runtime_error);
-
-  // Pass function that does something with another type, but doesn't expose it.
-  other.value = 64;
-  auto extract_oo = prog.get_function<Function<void()>>("extract_oo");
-  qrog.call<void>("call_void", extract_oo);
-  EXPECT_EQ(64, extract_value);
+})");
 
   typedef Function<int_t()> intf_t;
-  EXPECT_EQ(-1, qrog.get_global<intf_t>("f")());
-  qrog.call<void>("steal_function", u);
-  EXPECT_EQ(99, qrog.get_global<intf_t>("f")());
+  user_type u{99};
+  user_type v{64};
+  EXPECT_EQ(-1, inst.get_global<intf_t>("f")());
+  inst.call<void>("steal_function", &u);
 }
 
 const std::string TestManagedUserTypesStr = R"(
