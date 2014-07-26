@@ -151,8 +151,10 @@ export get_add = int()()
     return value += 5;
   };
 })");
+
+  typedef Function<int_t()> intf_t;
   ASSERT_EQ(1, inst.get_global<int_t>("value"));
-  EXPECT_EQ(6, inst.call<Function<int_t()>>("get_add")());
+  EXPECT_EQ(6, inst.call<intf_t>("get_add")());
   EXPECT_EQ(6, inst.get_global<int_t>("value"));
 }
 
@@ -181,7 +183,9 @@ export call_add = int(int(int) x)
   EXPECT_EQ(1, inst.get_global<int_t>("value"));
 }
 
-const std::string TestHighOrderFunctionsStr = R"(
+TEST_F(FunctionTest, HighOrderOut)
+{
+  auto inst = instance(R"(
 export out = int()()()
 {
   return int()()
@@ -196,21 +200,8 @@ export out = int()()()
 export out_in = int(int()()() x)
 {
   return x()()();
-}
+})");
 
-export in_in = int(int(int) x)
-{
-  return x(1);
-}
-export in = int(int(int(int)) x)
-{
-  return x(int(int a) {return 1 + a;});
-}
-)";
-
-TEST_F(FunctionTest, HighOrder)
-{
-  auto inst = instance(TestHighOrderFunctionsStr);
   typedef Function<int_t()> intf_t;
   typedef Function<intf_t()> intf2_t;
   typedef Function<intf2_t()> intf3_t;
@@ -218,16 +209,31 @@ TEST_F(FunctionTest, HighOrder)
   auto out_in = inst.get_function<Function<int_t(intf3_t)>>("out_in");
   EXPECT_EQ(1, out()()());
   EXPECT_EQ(1, out_in(out));
+}
 
-  typedef Function<int_t(int_t)> int2f_t;
-  typedef Function<int_t(int2f_t)> int3f_t;
-  typedef Function<int_t(int3f_t)> int4f_t;
-  auto in_in = inst.get_function<int3f_t>("in_in");
-  auto in = inst.get_function<int4f_t>("in");
+TEST_F(FunctionTest, HighOrderIn)
+{
+  auto inst = instance(R"(
+export in_in = int(int(int) x)
+{
+  return x(1);
+}
+export in = int(int(int(int)) x)
+{
+  return x(int(int a) {return 1 + a;});
+})");
+
+  typedef Function<int_t(int_t)> intf_t;
+  typedef Function<int_t(intf_t)> intf2_t;
+  typedef Function<int_t(intf2_t)> intf3_t;
+  auto in_in = inst.get_function<intf2_t>("in_in");
+  auto in = inst.get_function<intf3_t>("in");
   EXPECT_EQ(2, in(in_in));
 }
 
-const std::string TestFunctionClosuresStr = R"(
+TEST_F(FunctionTest, ClosuresInternal)
+{
+  auto inst = instance(R"(
 global {
   const global_a = 33;
   const global_b = int()
@@ -238,11 +244,6 @@ global {
       return a + global_a;
     }();
   }();
-  var global_var = 0;
-  var stored = int()
-  {
-    return 13;
-  };
 }
 
 export internal = int(int a)
@@ -285,8 +286,14 @@ export internal = int(int a)
   result += f() + f() + f();
 
   return result;
+})");
+  EXPECT_EQ(89, inst.call<int_t>("internal", 3));
 }
 
+TEST_F(FunctionTest, ClosuresExternal)
+{
+  auto inst = instance(R"(
+global var global_var = 0;
 export external = int()(int c)
 {
   closed var v = 1;
@@ -294,7 +301,26 @@ export external = int()(int c)
   {
     return v += c + ++global_var;
   };
+})");
+
+  typedef Function<int_t()> intf_t;
+  auto external = inst.call<intf_t>("external", 4);
+  EXPECT_EQ(6, external());
+  EXPECT_EQ(12, external());
+  EXPECT_EQ(19, external());
+  EXPECT_EQ(9, inst.call<intf_t>("external", 4)());
+  EXPECT_EQ(28, external());
+  EXPECT_EQ(10, inst.call<intf_t>("external", 3)());
 }
+
+TEST_F(FunctionTest, ClosuresStored)
+{
+  auto inst = instance(R"(
+global var global_var = 6;
+global var stored = int()
+{
+  return 13;
+};
 
 export store = void()
 {
@@ -305,8 +331,20 @@ export store = void()
     return v + 2 * t();
   };
   stored = f;
+})");
+
+  typedef Function<int_t()> intf_t;
+  inst.call<void>("store");
+  EXPECT_EQ(33, inst.get_global<intf_t>("stored")());
+  inst.call<void>("store");
+  EXPECT_EQ(74, inst.get_global<intf_t>("stored")());
+  inst.call<void>("store");
+  EXPECT_EQ(157, inst.get_global<intf_t>("stored")());
 }
 
+TEST_F(FunctionTest, ClosuresDouble)
+{
+  auto inst = instance(R"(
 export double = int(int n)
 {
   closed const fac = int(int n)
@@ -322,29 +360,7 @@ export double = int(int n)
     return fac(n);
   }();
 }
-)";
-
-TEST_F(FunctionTest, Closures)
-{
-  auto inst = instance(TestFunctionClosuresStr);
-  EXPECT_EQ(89, inst.call<int_t>("internal", 3));
-
-  typedef Function<int_t()> intf_t;
-  auto external = inst.call<intf_t>("external", 4);
-  EXPECT_EQ(6, external());
-  EXPECT_EQ(12, external());
-  EXPECT_EQ(19, external());
-  EXPECT_EQ(9, inst.call<intf_t>("external", 4)());
-  EXPECT_EQ(28, external());
-  EXPECT_EQ(10, inst.call<intf_t>("external", 3)());
-
-  inst.call<void>("store");
-  EXPECT_EQ(33, inst.get_global<intf_t>("stored")());
-  inst.call<void>("store");
-  EXPECT_EQ(74, inst.get_global<intf_t>("stored")());
-  inst.call<void>("store");
-  EXPECT_EQ(157, inst.get_global<intf_t>("stored")());
-
+)");
   EXPECT_EQ(120, inst.call<int_t>("double", 5));
 }
 
