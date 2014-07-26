@@ -5,78 +5,101 @@
 #include "tests.h"
 
 namespace yang {
-struct FunctionTest : YangTest {};
 
-const std::string TestCppFunctionsStr = R"(
+struct FunctionTest : YangTest {
+  Function<int_t(int_t)> cpp() const
+  {
+    return make_fn([](int_t a)
+    {
+      return a * 11;
+    });
+  }
+
+  Function<int_t(user_type*)> ucpp() const
+  {
+    return make_fn([](user_type* u)
+    {
+      return int_t(u->id * 11);
+    });
+  }
+};
+
+TEST_F(FunctionTest, NativeViaFunction)
+{
+  EXPECT_EQ(33, cpp()(3));
+}
+
+TEST_F(FunctionTest, NativeViaContext)
+{
+  auto ctxt = context();
+  ctxt.register_function("cpp", cpp());
+
+  auto inst = instance(ctxt, R"(
 export via_context = int(int x)
 {
   return cpp(x);
+})");
+  EXPECT_EQ(22, inst.call<int_t>("via_context", 2));
 }
+
+TEST_F(FunctionTest, NativeViaExplicitMember)
+{
+  auto ctxt = context();
+  ctxt.register_member_function("ucpp", ucpp());
+
+  auto inst = instance(ctxt, R"(
 export via_scope_resolve = int()
 {
   get_user_type();
-  return UserType::cpp(get_user_type());
-}
-export via_explicit_scope_resolve = int()
-{
   return UserType::ucpp(get_user_type());
+})");
+  EXPECT_EQ(11, inst.call<int_t>("via_scope_resolve"));
 }
+
+TEST_F(FunctionTest, NativeViaMember)
+{
+  auto ctxt = context();
+  ctxt.register_member_function("ucpp", ucpp());
+
+  auto inst = instance(ctxt, R"(
 export via_member_function = int()
 {
-  return get_user_type().cpp();
+  get_user_type();
+  return get_user_type().ucpp();
+})");
+  EXPECT_EQ(11, inst.call<int_t>("via_member_function"));
 }
+
+TEST_F(FunctionTest, NativeViaArgument)
+{
+  auto inst = instance(R"(
 export via_argument = int(int(int) x)
 {
   return x(5);
+})");
+  EXPECT_EQ(55, inst.call<int_t>("via_argument", cpp()));
 }
+
+TEST_F(FunctionTest, NativeViaReturn)
+{
+  auto ctxt = context();
+  ctxt.register_function("get_cpp", make_fn([&]
+  {
+    return cpp();
+  }));
+
+  auto inst = instance(ctxt, R"(
 export via_return = int()
 {
   return get_cpp()(6);
-}
-)";
-
-TEST_F(FunctionTest, Cpp)
-{
-  auto cpp = make_fn([](int_t a)
-  {
-    return a * 11;
-  });
-  auto ucpp = make_fn([](user_type* u)
-  {
-    return int_t(u->id * 11);
-  });
-  auto get_cpp = make_fn([&]
-  {
-    return cpp;
-  });
-
-  auto ctxt = context();
-  ctxt.register_function("cpp", cpp);
-  ctxt.register_member_function("ucpp", ucpp);
-  ctxt.register_function("get_cpp", get_cpp);
-  ctxt.register_member_function("cpp", ucpp);
-  auto inst = instance(ctxt, TestCppFunctionsStr);
-
-  // C++ function called from C++.
-  EXPECT_EQ(33, cpp(3));
-  // C++ function called from Yang via context.
-  EXPECT_EQ(22, inst.call<int_t>("via_context", 2));
-  // C++ function called from Yang via scope-resolved member function.
-  EXPECT_EQ(11, inst.call<int_t>("via_scope_resolve"));
-  // The same for an explicitly-registered function.
-  EXPECT_EQ(22, inst.call<int_t>("via_explicit_scope_resolve"));
-  // C++ function called from Yang via member function.
-  EXPECT_EQ(33, inst.call<int_t>("via_member_function"));
-  // C++ function passed to Yang.
-  EXPECT_EQ(55, inst.call<int_t>("via_argument", cpp));
-  // C++ function returned to Yang.
+})");
   EXPECT_EQ(inst.call<int_t>("via_return"), 66);
 }
 
-const std::string TestYangFunctionsStr = R"(
-global {
-  var value = 1;
-}
+TEST_F(FunctionTest, YangViaYang)
+{
+  auto inst = instance(R"(
+global var value = 1;
 export add = int(int x)
 {
   return value += x;
@@ -84,57 +107,78 @@ export add = int(int x)
 export add5 = int()
 {
   return add(5);
+})");
+
+  ASSERT_EQ(1, inst.get_global<int_t>("value"));
+  EXPECT_EQ(4, inst.call<int_t>("add", 3));
+  EXPECT_EQ(4, inst.get_global<int_t>("value"));
+  EXPECT_EQ(9, inst.call<int_t>("add5"));
+  EXPECT_EQ(9, inst.get_global<int_t>("value"));
+}
+
+TEST_F(FunctionTest, YangViaArgument)
+{
+  typedef Function<int_t(int_t)> intf_t;
+  auto ctxt = context();
+  ctxt.register_function("context_function", make_fn([](intf_t function)
+  {
+    return function(-2);
+  }));
+
+  auto inst = instance(ctxt, R"(
+global var value = 1;
+export add = int(int x)
+{
+  return value += x;
 }
 export add_via_context = int()
 {
   return context_function(add);
+})");
+  ASSERT_EQ(1, inst.get_global<int_t>("value"));
+  EXPECT_EQ(-1, inst.call<int_t>("add_via_context"));
+  EXPECT_EQ(-1, inst.get_global<int_t>("value"));
 }
+
+TEST_F(FunctionTest, YangViaReturn)
+{
+  auto inst = instance(R"(
+global var value = 1;
 export get_add = int()()
 {
-  return add5;
+  return int()
+  {
+    return value += 5;
+  };
+})");
+  ASSERT_EQ(1, inst.get_global<int_t>("value"));
+  EXPECT_EQ(6, inst.call<Function<int_t()>>("get_add")());
+  EXPECT_EQ(6, inst.get_global<int_t>("value"));
+}
+
+TEST_F(FunctionTest, YangViaOtherInstance)
+{
+  const std::string source = R"(
+global var value = 1;
+export add = int(int x)
+{
+  return value += x;
 }
 export call_add = int(int(int) x)
 {
   return x(13);
-}
-)";
+})";
 
-TEST_F(FunctionTest, Yang)
-{
+  auto inst = instance(source);
+  auto jnst = instance(source);
+  ASSERT_EQ(1, inst.get_global<int_t>("value"));
+  ASSERT_EQ(1, jnst.get_global<int_t>("value"));
+
   typedef Function<int_t(int_t)> intf_t;
-  auto context_function = make_fn([](intf_t function)
-  {
-    return function(-2);
-  });
-  auto ctxt = context();
-  ctxt.register_function("context_function", context_function);
-
-  auto inst = instance(ctxt, TestYangFunctionsStr);
-  auto jnst = instance(ctxt, TestYangFunctionsStr);
-
-  auto inst_add = inst.get_function<intf_t>("add");
   auto jnst_add = jnst.get_function<intf_t>("add");
-  auto inst_add5 = inst.get_function<Function<int_t()>>("add5");
-
-  EXPECT_EQ(1, inst.get_global<int_t>("value"));
-  EXPECT_EQ(1, jnst.get_global<int_t>("value"));
-
-  // Call Yang function from C++.
-  EXPECT_EQ(4, inst_add(3));
-  EXPECT_EQ(4, inst.get_global<int_t>("value"));
-  // Call Yang function from Yang.
-  EXPECT_EQ(9, inst_add5());
-  EXPECT_EQ(9, inst.get_global<int_t>("value"));
-  // Pass Yang function to C++.
-  EXPECT_EQ(7, inst.call<int_t>("add_via_context"));
-  EXPECT_EQ(7, inst.get_global<int_t>("value"));
-  // Return Yang function to C++.
-  EXPECT_EQ(12, inst.call<Function<int_t()>>("get_add")());
-  EXPECT_EQ(12, inst.get_global<int_t>("value"));
-  // Call Yang function from a different Yang instance.
   EXPECT_EQ(14, inst.call<int_t>("call_add", jnst_add));
-  EXPECT_EQ(12, inst.get_global<int_t>("value"));
   EXPECT_EQ(14, jnst.get_global<int_t>("value"));
+  EXPECT_EQ(1, inst.get_global<int_t>("value"));
 }
 
 const std::string TestHighOrderFunctionsStr = R"(
