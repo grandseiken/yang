@@ -148,8 +148,6 @@ export global {
 
     EXPECT_EQ(1, get_managed_count());  
     auto con = inst.get_global<Function<Ref<user_type>()>>("con");
-    // TODO: throw an exception here, and the *next* test fails. Is something
-    // not exception-safe here?
     EXPECT_EQ(1, con()->id);
     EXPECT_EQ(1, get_managed_count());  
   }
@@ -199,72 +197,72 @@ export get_count_closure = int()()
   EXPECT_EQ(0, get_managed_count());
 }
 
-const std::string TestUserTypedefsStrA = R"(
-export foo = a1()
+TEST_F(UserTypesTest, UnmanagedTypedefs)
 {
-  return get_a();
+  user_type u{0};
+  auto ctxt = context(false);
+  ctxt.register_type<user_type>("u1");
+  ctxt.register_type<user_type>("u2");
+  ctxt.register_function("get_u", make_fn([&]{return &u;}));
+  ctxt.register_member_function("mfn", make_fn([](user_type*)
+  {
+    return (int_t)4;
+  }));
+
+  auto inst = instance(ctxt, R"(
+export foo = u1()
+{
+  return get_u();
 }
-export bar = a2()
+export bar = u2()
 {
-  return get_a();
+  return get_u();
 }
 export do_it = int()
 {
   const a = foo();
   const b = bar();
-  return foo().afn() + b.afn() +
-         a2::afn(a) + a1::afn(bar());
-}
-)";
-
-const std::string TestUserTypedefsStrB = R"(
-export foo = a1()
-{
-  return get_a();
-}
-export bar = ma()
-{
-  return ma(foo());
-}
-)";
-
-TEST_F(UserTypesTest, Typedefs)
-{
-  struct type_a {
-    std::size_t count;
-  };
-  type_a the_a{0};
-
-  auto afn = [](type_a*){
-    return (int_t)4;
-  };
-  auto ctxt = context(false);
-  ctxt.register_member_function("afn", make_fn(afn));
-  ctxt.register_type<type_a>("a1");
-  ctxt.register_type<type_a>("a2");
-  ctxt.register_function("get_a", make_fn([&]{return &the_a;}));
-
-  auto inst = instance(ctxt, TestUserTypedefsStrA);
+  return foo().mfn() + b.mfn() +
+         u2::mfn(a) + u1::mfn(bar());
+})");
   EXPECT_EQ(16, inst.call<int_t>("do_it"));
+}
 
-  auto ma_ctor = [](type_a* a)
+TEST_F(UserTypesTest, ManagedTypedefs)
+{
+  user_type u{0};
+  auto ctxt = context(false);
+  ctxt.register_type<user_type>("u");
+  ctxt.register_function("get_u", make_fn([&]{return &u;}));
+
+  auto ma_ctor = [](user_type* u)
   {
-    ++a->count;
-    return a;
+    ++u->id;
+    return u;
   };
-  auto ma_dtor = [](type_a* a)
+  auto ma_dtor = [](user_type* u)
   {
-    --a->count;
+    --u->id;
   };
-  ctxt.register_type("ma", make_fn(ma_ctor), make_fn(ma_dtor));
+  ctxt.register_type("mu", make_fn(ma_ctor), make_fn(ma_dtor));
+
   {
-    ASSERT_EQ(0, the_a.count);
-    auto jnst = instance(ctxt, TestUserTypedefsStrB);
-    auto ref = jnst.call<Ref<type_a>>("bar");
-    EXPECT_EQ(1, the_a.count);
+    ASSERT_EQ(0, u.id);
+    auto inst = instance(ctxt, R"(
+export foo = u()
+{
+  return get_u();
+}
+export bar = mu()
+{
+  return mu(foo());
+}
+)");
+    auto ref = inst.call<Ref<user_type>>("bar");
+    EXPECT_EQ(1, u.id);
   }
-  instance("");
-  EXPECT_EQ(0, the_a.count);
+  force_collection();
+  EXPECT_EQ(0, u.id);
 }
 
 // End namespace yang.

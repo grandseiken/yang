@@ -15,7 +15,7 @@ class YangTest : public testing::Test {
 public:
 
   YangTest();
-  ~YangTest() override {}
+  ~YangTest() override;
 
 protected:
 

@@ -14,6 +14,13 @@ YangTest::YangTest()
 {
 }
 
+YangTest::~YangTest()
+{
+  // Ensure destructors (which may refer to members of the test fixture) are
+  // called before it is destroyed.
+  force_collection();
+}
+
 void YangTest::force_collection()
 {
   instance("");
