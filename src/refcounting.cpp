@@ -43,7 +43,7 @@ void cleanup_cyclic_structures()
   // such structures, and a reverse lookup of the structures that depend upon
   // it.
   struct reference_data_t {
-    std::size_t count;
+    std::size_t count = 0;
     std::unordered_set<Prefix*> dependents;
   };
   std::unordered_map<Prefix*, reference_data_t> data;
@@ -176,6 +176,7 @@ void cleanup_structures()
     auto copy = get_structure_cleanup_list();
     get_structure_cleanup_list().clear();
 
+    std::unordered_set<Prefix*> to_free;
     for (Prefix* v : copy) {
       // It's possible the iterative process will add something to the cleanup
       // list that we just freed, though, since this loop also frees cycles
@@ -187,6 +188,12 @@ void cleanup_structures()
 
       // Call destructor.
       v->vtable->destructor(v);
+      to_free.insert(v);
+    }
+    // Since current the cleanup list may contain a cycle of dependents, we must
+    // call all of their destructors before freeing any: otherwise there are
+    // undefined writes.
+    for (Prefix* v : to_free) {
       free(v);
     }
 

@@ -393,12 +393,6 @@ void LexScope::init_structure_type(
     type_list.push_back(_b.get_llvm_type(pair.second));
     _structure.table[pair.first] = Structure::entry(pair.second, number++);
   }
-  // TODO: figure out why this hack fixes segfaults in the GC. Presumably, some
-  // algorithm is dereferencing at an offset of DATA_START even when there are
-  // no values at all.
-  if (global_data && symbols.empty()) {
-    type_list.push_back(_b.get_llvm_type(yang::Type::int_t()));
-  }
   struct_type->setBody(type_list, false);
 
   auto free_type =
