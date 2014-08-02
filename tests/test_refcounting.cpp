@@ -236,8 +236,6 @@ export loops = int()
 TEST_F(RefcountingTest, CyclicClosures)
 {
   auto inst = instance(R"(
-global const AVOID_SEGFAULT = 0;
-global AVOID_SEGFAULT; // TODO
 export cycles = int()()
 {
   closed var n = 0;

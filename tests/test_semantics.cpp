@@ -226,8 +226,6 @@ export ordering = int()
 TEST_F(SemanticsTest, EditLoop)
 {
   auto inst = instance(R"(
-global const AVOID_SEGFAULT = 0;
-global AVOID_SEGFAULT; // TODO
 export edit = int()()
 {
   closed var ff = int() {return 0;};

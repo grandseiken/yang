@@ -379,10 +379,9 @@ void LexScope::init_structure_type(
   _structure.type = llvm::PointerType::get(struct_type, 0);
   std::vector<llvm::Type*> type_list;
 
-  // The first element in closure structures is a pointer to the parent
-  // structure.
+  // The first element in any structure is a pointer to the parent.
   type_list.push_back(_b.void_ptr_type());
-  // The second element is the reference counter.
+  // The second is the reference counter.
   type_list.push_back(_b.int_type());
   // The third is a pointer to the vtable containing (in order) the destructor,
   // the outgoing reference count, and the reference count query function.
@@ -393,6 +392,12 @@ void LexScope::init_structure_type(
     // Type-calculation must be kept up-to-date with new types.
     type_list.push_back(_b.get_llvm_type(pair.second));
     _structure.table[pair.first] = Structure::entry(pair.second, number++);
+  }
+  // TODO: figure out why this hack fixes segfaults in the GC. Presumably, some
+  // algorithm is dereferencing at an offset of DATA_START even when there are
+  // no values at all.
+  if (global_data && symbols.empty()) {
+    type_list.push_back(_b.get_llvm_type(yang::Type::int_t()));
   }
   struct_type->setBody(type_list, false);
 

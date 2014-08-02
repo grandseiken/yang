@@ -29,9 +29,12 @@ namespace {
 
 namespace yang {
 namespace internal {
+// TODO: refcounting is super naive at the moment. We increment and decrement
+// all over the place even when analysis could show it's unnecessary. Fix that.
+// Write benchmarks to show improvement.
 
 IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
-                         StaticData& static_data, symbol_frame& globals,
+                         StaticData& static_data, const symbol_frame& globals,
                          const ContextInternals& context)
   : IrCommon(module, engine, static_data)
   , _context(context)

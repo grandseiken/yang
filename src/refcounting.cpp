@@ -82,7 +82,7 @@ void cleanup_cyclic_structures()
     matched.insert(v);
   }
 
-  // Then, repeatedly trim the set down by preserving only those structures
+  // Then, iteratively trim the set down by preserving only those structures
   // matching condition (2) until we reach a fixed point.
   bool something_excluded = true;
   while (something_excluded) {
@@ -107,7 +107,7 @@ void cleanup_cyclic_structures()
     matched = preserve;
   }
 
-  // Don't bother doing the delete here: simply shove them into the cleanup
+  // Don't bother doing the delete here: just shove them into the cleanup
   // list and wait for the next time around.
   for (Prefix* v : matched) {
     yang::internal::get_structure_possible_cycle_list().erase(v);

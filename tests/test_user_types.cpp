@@ -114,9 +114,9 @@ export steal_function = void(UserType u)
 
   typedef Function<int_t()> intf_t;
   user_type u{99};
-  user_type v{64};
   EXPECT_EQ(-1, inst.get_global<intf_t>("f")());
   inst.call<void>("steal_function", &u);
+  EXPECT_EQ(99, inst.get_global<intf_t>("f")());
 }
 
 TEST_F(UserTypesTest, ManagedRef)
