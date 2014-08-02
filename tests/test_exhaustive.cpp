@@ -7,7 +7,9 @@
 namespace yang {
 struct ExhaustiveTest : YangTest {};
 
-const std::string TestExhaustiveStr = R"(
+TEST_F(ExhaustiveTest, Constructs)
+{
+  auto prog = program(R"(
 global {
   const t = true;
   var u = true;
@@ -329,11 +331,8 @@ export to_int0 = int() {return [v];}
 export to_int1 = int() {return [vv][0];}
 export to_float0 = int() {return [u.];}
 export to_float1 = int() {return [uu.[0]];}
-)";
+)");
 
-TEST_F(ExhaustiveTest, Constructs)
-{
-  auto prog = program(TestExhaustiveStr);
   auto inst = instance(prog);
   for (const auto& pair : prog.get_functions()) {
     EXPECT_EQ(1, inst.call<int_t>(pair.first)) <<
@@ -341,7 +340,9 @@ TEST_F(ExhaustiveTest, Constructs)
   }
 }
 
-const std::string TestExhaustiveRefCountStr = R"(
+TEST_F(ExhaustiveTest, Refcount)
+{
+  auto inst = instance(R"(
 fn = int()()
 {
   closed var v = 0;
@@ -559,11 +560,8 @@ export exhaustive_refcount = int()
 
   return fn()();
 }
-)";
-
-TEST_F(ExhaustiveTest, Refcount)
-{
-  instance(TestExhaustiveRefCountStr).call<int_t>("exhaustive_refcount");
+)");
+  inst.call<int_t>("exhaustive_refcount");
 }
 
 // End namespace yang.
