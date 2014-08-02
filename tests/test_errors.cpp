@@ -257,24 +257,24 @@ ERROR(ScopeQ, "global void() {var a = 0;}; x = void() {a;}", "a");
 ERROR(ScopeR, "~global {const a = 0;} x = void() {a;}", "a");
 
 // Some multi-line errors, just for fun.
-const std::string TestMultilineErrorStrA = R"(
+namespace {
+  const std::string multiline_error_a = R"(
 export x = int
 /**/()
 {
   if (1) {
     return 1;
   }
-}
-)";
-const std::string TestMultilineErrorStrB = R"(
+})";
+  const std::string multiline_error_b = R"(
 x = void()
 {
   return 0 +
   0.; // Comment continues for a while.
+})";
 }
-)";
-ERROR(MultilineA, TestMultilineErrorStrA, "int\n/**/()");
-ERROR(MultilineB, TestMultilineErrorStrB, "+");
+ERROR(MultilineA, multiline_error_a, "int\n/**/()");
+ERROR(MultilineB, multiline_error_b, "+");
 
 // Avoid warnings.
 WARNING(AvoidWarningA, "export x = void(int) {}", "");

@@ -223,9 +223,11 @@ export ordering = int()
   EXPECT_EQ(34, inst.call<int_t>("ordering"));
 }
 
-TEST_F(SemanticsTest, DISABLED_EditLoop)
+TEST_F(SemanticsTest, EditLoop)
 {
   auto inst = instance(R"(
+global const AVOID_SEGFAULT = 0;
+global AVOID_SEGFAULT; // TODO
 export edit = int()()
 {
   closed var ff = int() {return 0;};
@@ -244,13 +246,6 @@ export edit = int()()
 
   typedef Function<int_t()> intf_t;
   auto edit = inst.call<intf_t>("edit");
-  // TODO: calling this three times makes the garbage collection pass segfault
-  // all over the place. Fix it and re-enable this test.
-  //
-  // Probably add a bunch of optional instrumentation to all the memory
-  // allocation and garbage-collection and so on to make sort of thing easier to
-  // work out. (And use that to really make sure everything is being cleaned
-  // up.)
   ASSERT_EQ(0, edit());
   ASSERT_EQ(1, edit());
   ASSERT_EQ(2, edit());

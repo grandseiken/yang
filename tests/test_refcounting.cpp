@@ -4,40 +4,51 @@
 //============================================================================//
 #include "tests.h"
 
+// TODO: instrument memory allocation and garbage collection and make sure
+// everything is actually getting destroyed at the end.
+//
+// Also see if this can be used to provide useful debugging diagnostics and
+// statistics on memory usage, refcount contention, etc.
+
 namespace yang {
 struct RefcountingTest : YangTest {};
 
-const std::string TestFunctionRefCountingStr = R"(
-export global {
-  const noop = int()
-  {
-    return 0;
-  };
-  var stored = int()
-  {
-    return 0;
-  };
-
-  {
-    const t = stored;
-    t;
-  }
-}
-
+TEST_F(RefcountingTest, StoredFunctions)
+{
+  auto inst = instance(R"(
+export global var stored = int() {return 0;};
 export store = void(int() x)
 {
   stored = x;
 }
-
 export call = int()
 {
   return stored();
 }
-
 export get = int()()
 {
   return stored;
+})");
+
+  typedef Function<int_t()> intf_t;
+  EXPECT_EQ(0, inst.get_global<intf_t>("stored")());
+
+  // Goes out of scope before we use it.
+  inst.call<void>("store", make_fn([]{return 42;}));
+  EXPECT_EQ(42, inst.call<int_t>("call"));
+  EXPECT_EQ(42, inst.call<intf_t>("get")());
+
+  // The same thing but via set_global.
+  inst.set_global<intf_t>("stored", make_fn([]{return 43;}));
+  EXPECT_EQ(43, inst.call<int_t>("call"));
+  EXPECT_EQ(43, inst.call<intf_t>("get")());
 }
+
+TEST_F(RefcountingTest, AdvancedStoredFunctions)
+{
+  auto inst = instance(R"(
+global const noop = int() {return 0;};
+global var stored = noop;
 
 export pass_through = int()(int()() x)
 {
@@ -94,8 +105,50 @@ export overwrite_and_return = int()()
   const temp = stored;
   stored = noop;
   return temp;
+})");
+
+  // Goes out of scope before we even return to Yang.
+  int_t h_contents = 99;
+  auto h = make_fn([&]
+  {
+    // Make it a bit complicated so it's not all optimised away.
+    std::function<int_t()> t = [&]
+    {
+      return ++h_contents;
+    };
+    return make_fn(t);
+  });
+
+  typedef Function<int_t()> intf_t;
+  auto h_prime = inst.call<intf_t>("pass_through", h);
+  EXPECT_EQ(100, h_prime());
+  EXPECT_EQ(101, inst.get_global<intf_t>("stored")());
+
+  // Stored only in Yang locals for a while.
+  inst.call<void>("store_in_local");
+  EXPECT_EQ(107, inst.get_global<intf_t>("stored")());
+
+  // Stored only in local while constructing new functions in C++.
+  auto callout = make_fn([]
+  {
+    return make_fn([]{});
+  });
+  inst.call<void>("store_in_local_callout", callout);
+  EXPECT_EQ(111, inst.get_global<intf_t>("stored")());
+
+  EXPECT_EQ(112, inst.call<intf_t>("overwrite_and_return")());
 }
 
+TEST_F(RefcountingTest, FunctionTemporaries)
+{
+  auto ctxt = context();
+  int_t n = 0;
+  ctxt.register_function("get_fn", make_fn([&]
+  {
+    return make_fn([&]{return ++n;});
+  }));
+
+  auto inst = instance(ctxt, R"(
 export temporaries = int()
 {
   const f = int(int() a, int() b)
@@ -110,8 +163,14 @@ export temporaries = int()
     };
   };
   return f(get_fn(), get_fn()) + f(g(3), g(7));
+})");
+
+  EXPECT_EQ(13, inst.call<int_t>("temporaries"));
 }
 
+TEST_F(RefcountingTest, ClosureLoops)
+{
+  auto inst = instance(R"(
 export loops = int()
 {
   const alloc = int()()
@@ -170,88 +229,15 @@ export loops = int()
   for (const t = alloc(); !t();) result += t();
 
   return result;
-}
-)";
-
-TEST_F(RefcountingTest, Functions)
-{
-  auto ctxt = context();
-  int_t n = 0;
-  ctxt.register_function("get_fn", make_fn([&]
-  {
-    return make_fn([&]{return ++n;});
-  }));
-
-  auto inst = instance(ctxt, TestFunctionRefCountingStr);
-  typedef Function<int_t()> intf_t;
-  EXPECT_EQ(0, inst.get_global<intf_t>("stored")());
-
-  // No refcounting necessary.
-  auto f = make_fn([]
-  {
-    return 13;
-  });
-  inst.call<void>("store", f);
-  EXPECT_EQ(13, inst.call<int_t>("call"));
-  EXPECT_EQ(13, inst.call<intf_t>("get")());
-
-  {
-    // Goes out of scope before we use it.
-    auto g = make_fn([]
-    {
-      return 42;
-    });
-    inst.call<void>("store", g);
-  }
-  EXPECT_EQ(42, inst.call<int_t>("call"));
-  EXPECT_EQ(42, inst.call<intf_t>("get")());
-
-  {
-    // The same thing but via set_global.
-    auto g = make_fn([]
-    {
-      return 43;
-    });
-    inst.set_global<intf_t>("stored", g);
-  }
-  EXPECT_EQ(43, inst.call<int_t>("call"));
-  EXPECT_EQ(43, inst.call<intf_t>("get")());
-
-  // Goes out of scope before we even return to Yang.
-  int_t h_contents = 99;
-  auto h = make_fn([&]
-  {
-    // Make it a bit complicated so it's not all optimised away.
-    std::function<int_t()> t = [&]
-    {
-      return ++h_contents;
-    };
-    return make_fn(t);
-  });
-  auto h_prime = inst.call<intf_t>("pass_through", h);
-  EXPECT_EQ(100, h_prime());
-
-  // Stored only in Yang locals for a while.
-  inst.call<void>("store_in_local");
-  EXPECT_EQ(106, inst.get_global<intf_t>("stored")());
-
-  // Stored only in local while constructing new functions in C++.
-  auto callout = make_fn([]
-  {
-    return make_fn([]{});
-  });
-  inst.call<void>("store_in_local_callout", callout);
-  EXPECT_EQ(110, inst.get_global<intf_t>("stored")());
-
-  EXPECT_EQ(111, inst.call<intf_t>("overwrite_and_return")());
-  EXPECT_EQ(13, inst.call<int_t>("temporaries"));
+})");
   EXPECT_EQ(18, inst.call<int_t>("loops"));
-
-  // It'd be nice to test memory usage and that everything is actually getting
-  // destroyed at the end, but it's not clear how to do that unintrusively.
 }
 
-const std::string TestStructureRefCountingStr = R"(
+TEST_F(RefcountingTest, CyclicClosures)
+{
+  auto inst = instance(R"(
+global const AVOID_SEGFAULT = 0;
+global AVOID_SEGFAULT; // TODO
 export cycles = int()()
 {
   closed var n = 0;
@@ -279,8 +265,21 @@ export cycles = int()()
     return g();
   };
   return f;
+})");
+
+  typedef Function<int_t()> intf_t;
+  EXPECT_EQ(3, inst.call<intf_t>("cycles")());
 }
 
+TEST_F(RefcountingTest, GlobalClosures)
+{
+  auto ctxt = context();
+  ctxt.register_member_function("f", make_fn([](user_type* t, int_t a)
+  {
+    return int_t(t->id * 2 * a);
+  }));
+
+  auto inst = instance(ctxt, R"(
 global const u = get_user_type();
 export global {
   var f = int(int) {return 0;};
@@ -292,26 +291,11 @@ export global {
       g = get_user_type().f;
     }();
   } while (false);
-}
-)";
+})");
 
-TEST_F(RefcountingTest, Structures)
-{
-  auto ctxt = context();
-  auto member = make_fn([](user_type* t, int_t a)
-  {
-    return int_t(t->id * 2 * a);
-  });
-  ctxt.register_member_function("f", member);
-
-  auto inst = instance(ctxt, TestStructureRefCountingStr);
-  typedef Function<int_t()> intf_t;
-  auto cycles = inst.call<intf_t>("cycles");
-  EXPECT_EQ(3, cycles());
-
-  typedef Function<int_t(int_t)> intf2_t;
-  EXPECT_EQ(0, inst.get_global<intf2_t>("f")(4));
-  EXPECT_EQ(8, inst.get_global<intf2_t>("g")(4));
+  typedef Function<int_t(int_t)> intf_t;
+  EXPECT_EQ(0, inst.get_global<intf_t>("f")(4));
+  EXPECT_EQ(8, inst.get_global<intf_t>("g")(4));
 }
 
 TEST_F(RefcountingTest, Objects)
@@ -340,13 +324,6 @@ TEST_F(RefcountingTest, Objects)
   EXPECT_EQ(17, Instance(jnst).call<int_t>("g"));
 }
 
-const std::string TestStringRefCountingStr = R"(
-export test = string(int a)
-{
-  return a > 1 ? "str" : a ? """str""" : "st" "r";
-}
-)";
-
 TEST_F(RefcountingTest, Strings)
 {
   auto ctxt = context();
@@ -354,7 +331,11 @@ TEST_F(RefcountingTest, Strings)
 
   const char* str = nullptr;
   {
-    auto inst = instance(ctxt, TestStringRefCountingStr);
+    auto inst = instance(ctxt, R"(
+export test = string(int a)
+{
+  return a > 1 ? "str" : a ? """str""" : "st" "r";
+})");
     str = inst.call<Ref<const char>>("test", 2).get();
     EXPECT_EQ(std::string(str), std::string("str"));
     str = inst.call<Ref<const char>>("test", 1).get();
