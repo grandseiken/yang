@@ -10,7 +10,19 @@ namespace yang {
 YangTest::YangTest()
   : _program_id(0)
   , _user_value_id(0)
+  , _managed_count(0)
 {
+}
+
+void YangTest::force_collection()
+{
+  instance("");
+}
+
+std::size_t YangTest::get_managed_count()
+{
+  force_collection();
+  return _managed_count;
 }
 
 Context YangTest::context(bool with_types)
@@ -32,15 +44,26 @@ Context YangTest::context(bool with_types)
   };
   auto constructor = make_fn([this]
   {
+    ++_managed_count;
     return new user_type{_user_value_id++};
   });
-  auto destructor = make_fn([](user_type* m)
+  auto destructor = make_fn([this](user_type* m)
   {
+    --_managed_count;
     delete m;
   });
   context.register_member_function("foo", make_fn([](user_type*){}));
   context.register_function("get_user_type", make_fn(get_user_type));
   context.register_type("MuserType", constructor, destructor);
+
+  context.register_member_function("get_id", make_fn([](user_type* u)
+  {
+    return int_t(u->id);
+  }));
+  context.register_member_function("get_id", make_fn([](Ref<user_type> u)
+  {
+    return int_t(u->id);
+  }));
 
   context.register_type<other>("OtherType");
   context.register_function("get_other", make_fn([]{return (other*)nullptr;}));

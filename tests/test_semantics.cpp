@@ -288,8 +288,7 @@ global {
     // Is that good enough?
     EXPECT_EQ(0, temp_int);
   }
-  // Force a collection so that destructor is called.
-  instance("");
+  force_collection();
   EXPECT_EQ(25, temp_int);
 }
 // TODO: just getting started. Need way more semantic tests.

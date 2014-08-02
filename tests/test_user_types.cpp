@@ -105,13 +105,7 @@ export extract_uu = void()
 
 TEST_F(UserTypesTest, UnmanagedStealMemberFunction)
 {
-  auto ctxt = context();
-  ctxt.register_member_function("get_id", make_fn([](user_type* u)
-  {
-    return int_t(u->id);
-  }));
-
-  auto inst = instance(ctxt, R"(
+  auto inst = instance(R"(
 export global var f = int() {return -1;};
 export steal_function = void(UserType u)
 {
@@ -125,84 +119,84 @@ export steal_function = void(UserType u)
   inst.call<void>("steal_function", &u);
 }
 
-const std::string TestManagedUserTypesStr = R"(
-export global {
-  const con = Managed;
-  var m = con(2);
-  var c = int() {return 0;};
-}
-export make_user_type = Managed()
+TEST_F(UserTypesTest, ManagedRef)
 {
-  return Managed(17);
+  auto inst = instance(R"(
+export make_user_type = MuserType()
+{
+  return MuserType();
+})");
+
+  {
+    auto ref = inst.call<Ref<user_type>>("make_user_type");
+    auto sef = inst.call<Ref<user_type>>("make_user_type");
+    EXPECT_EQ(0, ref->id);
+    EXPECT_EQ(1, sef->id);
+    EXPECT_EQ(2, get_managed_count());
+  }
+  EXPECT_EQ(0, get_managed_count());
 }
+
+TEST_F(UserTypesTest, ManagedGlobal)
+{
+  {
+    auto inst = instance(R"(
+export global {
+  const con = MuserType;
+  var m = con();
+})");
+
+    EXPECT_EQ(1, get_managed_count());  
+    auto con = inst.get_global<Function<Ref<user_type>()>>("con");
+    // TODO: throw an exception here, and the *next* test fails. Is something
+    // not exception-safe here?
+    EXPECT_EQ(1, con()->id);
+    EXPECT_EQ(1, get_managed_count());  
+  }
+  EXPECT_EQ(0, get_managed_count());
+}
+
+TEST_F(UserTypesTest, ManagedLocal)
+{
+  {
+    auto inst = instance(R"(
+global var m = MuserType();
+export global var c = int() {return 0;};
 export get_some_count = int()
 {
   const t = c();
-  c = m.get_count;
-  m = con(4);
+  c = m.get_id;
+  m = MuserType();
   return t;
-}
-export get_count_closure = int()()
-{
-  closed const t = Managed(0);
-  return int()
-  {
-    return t.get_count();
-  };
-}
-)";
+})");
 
-TEST_F(UserTypesTest, Managed)
-{
-  std::size_t count = 0;
-  struct Managed {
-    std::size_t count;
-    int_t data;
-  };
-  struct BadManaged {};
-  auto constructor = make_fn([&](int_t data)
-  {
-    return new Managed{count++, data};
-  });
-  auto destructor = make_fn([&](Managed* m)
-  {
-    --count;
-    delete m;
-  });
-  auto get_count = make_fn([](Ref<Managed> m)
-  {
-    return (int_t)m->count;
-  });
-
-  auto ctxt = context();
-  ctxt.register_type("Managed", constructor, destructor);
-  ctxt.register_member_function("get_count", get_count);
-  {
-    auto inst = instance(ctxt, TestManagedUserTypesStr);
-    {
-      auto ref = inst.call<Ref<Managed>>("make_user_type");
-      auto sef = inst.call<Ref<Managed>>("make_user_type");
-      EXPECT_EQ(1, ref->count);
-      EXPECT_EQ(2, sef->count);
-      EXPECT_EQ(17, ref->data);
-      EXPECT_EQ(3, count);
-
-      auto con = inst.get_global<Function<Ref<Managed>(int_t)>>("con");
-      EXPECT_EQ(3, con(0)->count);
-      EXPECT_EQ(4, count);
-    }
-    instance("");
-    EXPECT_EQ(1, count);
     EXPECT_EQ(0, inst.call<int_t>("get_some_count"));
     EXPECT_EQ(0, inst.call<int_t>("get_some_count"));
     EXPECT_EQ(1, inst.call<int_t>("get_some_count"));
     EXPECT_EQ(2, inst.call<int_t>("get_some_count"));
-
-    auto get_count_closure = inst.call<Function<int_t()>>("get_count_closure");
-    EXPECT_EQ(2, get_count_closure());
+    EXPECT_EQ(2, get_managed_count());
   }
-  instance("");
-  EXPECT_EQ(0, count);
+  EXPECT_EQ(0, get_managed_count());
+}
+
+TEST_F(UserTypesTest, ManagedClosure)
+{
+  auto inst = instance(R"(
+export get_count_closure = int()()
+{
+  closed const t = MuserType();
+  return int()
+  {
+    return t.get_id();
+  };
+})");
+
+  {
+    auto get_count_closure = inst.call<Function<int_t()>>("get_count_closure");
+    EXPECT_EQ(0, get_count_closure());
+    EXPECT_EQ(1, get_managed_count());
+  }
+  EXPECT_EQ(0, get_managed_count());
 }
 
 const std::string TestUserTypedefsStrA = R"(

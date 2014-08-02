@@ -23,6 +23,8 @@ protected:
     std::size_t id;
   };
   struct other {};
+  void force_collection();
+  std::size_t get_managed_count();
 
   Context context(bool with_types = true);
   Program program_suppress_errors(const std::string& contents);
@@ -41,6 +43,7 @@ private:
   std::vector<std::unique_ptr<user_type>> _user_values;
   std::size_t _program_id;
   std::size_t _user_value_id;
+  std::size_t _managed_count;
 
 };
 
