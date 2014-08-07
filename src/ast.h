@@ -14,6 +14,7 @@
 #include <yang/typedefs.h>
 #include <yang/type.h>
 
+// FLEX lexer type.
 typedef void* scan_t;
 
 namespace yang {
@@ -149,6 +150,8 @@ struct Node {
 
   void add_front(Node* node);
   void add(Node* node);
+  std::size_t get_parent_index() const;
+
   void set_inner_bounds(const Node* node);
   void extend_inner_bounds(const Node* node);
   void extend_bounds(const Node* node);
@@ -164,8 +167,9 @@ struct Node {
   std::size_t left_tree_index;
   std::size_t right_tree_index;
 
-  // Type and children.
+  // Type, parent and children.
   node_type type;
+  Node* parent;
   std::vector<Node*> children;
 
   // Literal values.

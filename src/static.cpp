@@ -20,13 +20,112 @@ namespace std {
 
 namespace yang {
 namespace internal {
+namespace {
 
-// TODO: many things would be a lot easier if AST nodes only had parent pointers
-// and child indices. Another idea to make things cleaner is to use RAII for
-// removing contexts and symbol tables and so on when we go back up the tree. Or
-// put more things in the result types. Or use more self-contained recursive
-// functions where possible like get_no_effect_node(). Or turn those into
-// separate walkers.
+bool is_assignment(const Node& node)
+{
+  return
+      node.type == Node::ASSIGN ||
+      node.type == Node::ASSIGN_LOGICAL_OR ||
+      node.type == Node::ASSIGN_LOGICAL_AND ||
+      node.type == Node::ASSIGN_BITWISE_OR ||
+      node.type == Node::ASSIGN_BITWISE_AND ||
+      node.type == Node::ASSIGN_BITWISE_LSHIFT ||
+      node.type == Node::ASSIGN_BITWISE_RSHIFT ||
+      node.type == Node::ASSIGN_POW ||
+      node.type == Node::ASSIGN_MOD ||
+      node.type == Node::ASSIGN_ADD ||
+      node.type == Node::ASSIGN_SUB ||
+      node.type == Node::ASSIGN_MUL ||
+      node.type == Node::ASSIGN_DIV;
+}
+
+bool is_tree_root(const Node& node)
+{
+  return node.parent && node.get_parent_index() == 0 &&
+      (node.parent->type == Node::EXPR_STMT ||
+       node.parent->type == Node::LOOP_AFTER_BLOCK ||
+       node.parent->type == Node::FOR_STMT);
+}
+
+bool is_type_expression(const Node& node)
+{
+  return
+      node.type == Node::TYPE_VOID || node.type == Node::TYPE_INT ||
+      node.type == Node::TYPE_FLOAT || node.type == Node::TYPE_FUNCTION;
+}
+
+bool valid_all_contexts(const Node& node)
+{
+  // IDENTIFIER, NAMED_EXPRESSION, and CALL are currently the only things that
+  // make sense in both contexts.
+  return
+      node.type == Node::IDENTIFIER || node.type == Node::NAMED_EXPRESSION ||
+      node.type == Node::CALL;
+}
+
+bool use_function_immediate_assign_hack(const Node& node)
+{
+  // Node should be type GLOBAL_ASSIGN, ASSIGN_VAR or ASSIGN_CONST.
+  return node.children[0]->type == Node::IDENTIFIER &&
+      node.children[1]->type == Node::FUNCTION;
+}
+
+const Node* get_no_effect_node(const Node& node)
+{
+  if (node.type == Node::EMPTY_EXPR || node.type == Node::CALL ||
+      node.type == Node::ASSIGN_VAR || node.type == Node::ASSIGN_CONST ||
+      node.type == Node::INCREMENT || node.type == Node::DECREMENT ||
+      node.type == Node::ASSIGN ||
+      node.type == Node::ASSIGN_LOGICAL_OR ||
+      node.type == Node::ASSIGN_LOGICAL_AND ||
+      node.type == Node::ASSIGN_BITWISE_OR ||
+      node.type == Node::ASSIGN_BITWISE_AND ||
+      node.type == Node::ASSIGN_BITWISE_XOR ||
+      node.type == Node::ASSIGN_BITWISE_LSHIFT ||
+      node.type == Node::ASSIGN_BITWISE_RSHIFT ||
+      node.type == Node::ASSIGN_POW ||
+      node.type == Node::ASSIGN_MOD ||
+      node.type == Node::ASSIGN_ADD ||
+      node.type == Node::ASSIGN_SUB ||
+      node.type == Node::ASSIGN_MUL ||
+      node.type == Node::ASSIGN_DIV ||
+      // Identifier doesn't actually have any effect, but we want probably want
+      // to allow its use to disable "unused" warnings. This does mean that e.g.
+      // "0 || a;" or "(a, a);" don't warn either, though. Maybe it shouldn't be
+      // allowed?
+      node.type == Node::IDENTIFIER) {
+    return nullptr;
+  }
+  if (node.type == Node::LOGICAL_OR || node.type == Node::LOGICAL_AND) {
+    return get_no_effect_node(*node.children[1]);
+  }
+  if (node.type == Node::VECTOR_CONSTRUCT) {
+    // Without a genuine comma operator, (a(), b()) really does have an
+    // effect...
+    for (const auto& n : node.children) {
+      const Node* m = get_no_effect_node(*n);
+      if (m) {
+        return m;
+      }
+    }
+    return nullptr;
+  }
+  if (node.type == Node::TERNARY && (!get_no_effect_node(*node.children[1]) ||
+                                     !get_no_effect_node(*node.children[2]))) {
+    return nullptr;
+  }
+  return &node;
+}
+
+// End anonymous namespace.
+}
+
+// TODO: another idea to make things cleaner is to use RAII for removing
+// contexts and symbol tables and so on when we go back up the tree. Or put more
+// things in the result types. Or use more self-contained recursive functions
+// where possible like get_no_effect_node(). Or turn those into separate
+// walkers.
 StaticChecker::StaticChecker(
     const ContextInternals& context, ParseData& data,
     symbol_frame& functions_output, symbol_frame& globals_output)
@@ -64,15 +163,11 @@ void StaticChecker::preorder(const Node& node)
     _scopes.back().metadata.push();
     _scopes.back().metadata.add(ERR_EXPR_CONTEXT, {});
   }
-  bool tree_root = _scopes.back().metadata.has(
-      TREE_ROOT_CONTEXT, _scopes.back().metadata.size() - 1);
   const Node* no_effect_node = get_no_effect_node(node);
-  if (tree_root && no_effect_node) {
+  if (is_tree_root(node) && no_effect_node) {
     error(*no_effect_node, "operation has no effect", false);
   }
 
-  // Only so we know whether the parent node was a TREE_ROOT_CONTEXT.
-  _scopes.back().metadata.push();
   switch (node.type) {
     case Node::GLOBAL:
       if (node.int_value & Node::MODIFIER_NEGATION) {
@@ -91,10 +186,6 @@ void StaticChecker::preorder(const Node& node)
           _scopes.back().metadata.add(EXPORT_GLOBAL, {});
         }
       }
-      break;
-    case Node::EXPR_STMT:
-      _scopes.back().metadata.push();
-      _scopes.back().metadata.add(TREE_ROOT_CONTEXT, {});
       break;
     case Node::GLOBAL_ASSIGN:
     case Node::ASSIGN_VAR:
@@ -119,31 +210,12 @@ void StaticChecker::preorder(const Node& node)
         add_symbol(node, node.children[0]->string_value, {}, false, false);
       }
       break;
-    case Node::ASSIGN:
-    case Node::ASSIGN_LOGICAL_OR:
-    case Node::ASSIGN_LOGICAL_AND:
-    case Node::ASSIGN_BITWISE_OR:
-    case Node::ASSIGN_BITWISE_AND:
-    case Node::ASSIGN_BITWISE_XOR:
-    case Node::ASSIGN_BITWISE_LSHIFT:
-    case Node::ASSIGN_BITWISE_RSHIFT:
-    case Node::ASSIGN_POW:
-    case Node::ASSIGN_MOD:
-    case Node::ASSIGN_ADD:
-    case Node::ASSIGN_SUB:
-    case Node::ASSIGN_MUL:
-    case Node::ASSIGN_DIV:
-      // Change which warning references affect.
-      _scopes.back().metadata.push();
-      _scopes.back().metadata.add(ASSIGN_LHS_CONTEXT, {});
-      break;
     case Node::FUNCTION:
       _scopes.back().metadata.push();
       _scopes.back().metadata.add(TYPE_EXPR_CONTEXT, {});
       break;
     case Node::LOOP_AFTER_BLOCK:
       push_symbol_tables();
-      _scopes.back().metadata.add(TREE_ROOT_CONTEXT, {});
       break;
     case Node::BLOCK:
     case Node::IF_STMT:
@@ -157,10 +229,6 @@ void StaticChecker::preorder(const Node& node)
       // Insert a marker into the symbol table that break and continue
       // statements can check for.
       _scopes.back().metadata.add(LOOP_BODY, {});
-      if (node.type == Node::FOR_STMT) {
-        _scopes.back().metadata.push();
-        _scopes.back().metadata.add(TREE_ROOT_CONTEXT, {});
-      }
       break;
 
     default: {}
@@ -233,11 +301,11 @@ void StaticChecker::infix(const Node& node, const result_list& results)
     }
 
     case Node::FOR_STMT:
-      if (results.size() == 1 || results.size() == 3) {
-        _scopes.back().metadata.pop();
-      }
       if (results.size() == 2) {
         _scopes.back().metadata.push();
+      }
+      if (results.size() == 3) {
+        _scopes.back().metadata.pop();
       }
       break;
 
@@ -246,22 +314,6 @@ void StaticChecker::infix(const Node& node, const result_list& results)
     case Node::ASSIGN_CONST:
       // Remove temporary reference to identifier on the left.
       pop_symbol_tables();
-      break;
-    case Node::ASSIGN:
-    case Node::ASSIGN_LOGICAL_OR:
-    case Node::ASSIGN_LOGICAL_AND:
-    case Node::ASSIGN_BITWISE_OR:
-    case Node::ASSIGN_BITWISE_AND:
-    case Node::ASSIGN_BITWISE_XOR:
-    case Node::ASSIGN_BITWISE_LSHIFT:
-    case Node::ASSIGN_BITWISE_RSHIFT:
-    case Node::ASSIGN_POW:
-    case Node::ASSIGN_MOD:
-    case Node::ASSIGN_ADD:
-    case Node::ASSIGN_SUB:
-    case Node::ASSIGN_MUL:
-    case Node::ASSIGN_DIV:
-      _scopes.back().metadata.pop();
       break;
 
     // Right-hand-sides of non-vectorised ternary and logical operators need an
@@ -345,10 +397,6 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
            node.type == Node::LOOP_AFTER_BLOCK) {
     pop_symbol_tables();
   }
-  else if (node.type == Node::EXPR_STMT) {
-    _scopes.back().metadata.pop();
-  }
-  _scopes.back().metadata.pop();
 
   // See preorder for error.
   bool context_err = !valid_all_contexts(node) &&
@@ -594,7 +642,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
       }
 
       // Update read/write warnings.
-      (_scopes.back().metadata.has(ASSIGN_LHS_CONTEXT) ?
+      (is_assignment(*node.parent) && node.get_parent_index() == 0 ?
            symbol.warn_writes : symbol.warn_reads) = false;
       return symbol.type;
     }
@@ -830,8 +878,7 @@ Type StaticChecker::visit(const Node& node, const result_list& results)
         }
         Type t = it->symbol_table[ident].type;
 
-        if (!_scopes.back().metadata.has(TREE_ROOT_CONTEXT,
-                                         _scopes.back().metadata.size() - 1)) {
+        if (!is_tree_root(node)) {
           it->symbol_table[ident].warn_reads = false;
         }
 
@@ -1018,79 +1065,9 @@ bool StaticChecker::inside_function() const
   return _scopes.back().metadata.has(RETURN_TYPE);
 }
 
-const Node* StaticChecker::get_no_effect_node(const Node& node) const
-{
-  if (node.type == Node::EMPTY_EXPR || node.type == Node::CALL ||
-      node.type == Node::ASSIGN_VAR || node.type == Node::ASSIGN_CONST ||
-      node.type == Node::INCREMENT || node.type == Node::DECREMENT ||
-      node.type == Node::ASSIGN ||
-      node.type == Node::ASSIGN_LOGICAL_OR ||
-      node.type == Node::ASSIGN_LOGICAL_AND ||
-      node.type == Node::ASSIGN_BITWISE_OR ||
-      node.type == Node::ASSIGN_BITWISE_AND ||
-      node.type == Node::ASSIGN_BITWISE_XOR ||
-      node.type == Node::ASSIGN_BITWISE_LSHIFT ||
-      node.type == Node::ASSIGN_BITWISE_RSHIFT ||
-      node.type == Node::ASSIGN_POW ||
-      node.type == Node::ASSIGN_MOD ||
-      node.type == Node::ASSIGN_ADD ||
-      node.type == Node::ASSIGN_SUB ||
-      node.type == Node::ASSIGN_MUL ||
-      node.type == Node::ASSIGN_DIV ||
-      // Identifier doesn't actually have any effect, but we want probably want
-      // to allow its use to disable "unused" warnings. This does mean that e.g.
-      // "0 || a;" or "(a, a);" don't warn either, though. Maybe it shouldn't be
-      // allowed?
-      node.type == Node::IDENTIFIER) {
-    return nullptr;
-  }
-  if (node.type == Node::LOGICAL_OR || node.type == Node::LOGICAL_AND) {
-    return get_no_effect_node(*node.children[1]);
-  }
-  if (node.type == Node::VECTOR_CONSTRUCT) {
-    // Without a genuine comma operator, (a(), b()) really does have an
-    // effect...
-    for (const auto& n : node.children) {
-      const Node* m = get_no_effect_node(*n);
-      if (m) {
-        return m;
-      }
-    }
-    return nullptr;
-  }
-  if (node.type == Node::TERNARY && (!get_no_effect_node(*node.children[1]) ||
-                                     !get_no_effect_node(*node.children[2]))) {
-    return nullptr;
-  }
-  return &node;
-}
-
-bool StaticChecker::is_type_expression(const Node& node) const
-{
-  return
-      node.type == Node::TYPE_VOID || node.type == Node::TYPE_INT ||
-      node.type == Node::TYPE_FLOAT || node.type == Node::TYPE_FUNCTION;
-}
-
-bool StaticChecker::valid_all_contexts(const Node& node) const
-{
-  // IDENTIFIER, NAMED_EXPRESSION, and CALL are currently the only things that
-  // make sense in both contexts.
-  return
-      node.type == Node::IDENTIFIER || node.type == Node::NAMED_EXPRESSION ||
-      node.type == Node::CALL;
-}
-
 bool StaticChecker::inside_type_context() const
 {
   return _scopes.back().metadata.has(TYPE_EXPR_CONTEXT);
-}
-
-bool StaticChecker::use_function_immediate_assign_hack(const Node& node) const
-{
-  // Node should be type GLOBAL_ASSIGN, ASSIGN_VAR or ASSIGN_CONST.
-  return node.children[0]->type == Node::IDENTIFIER &&
-      node.children[1]->type == Node::FUNCTION;
 }
 
 void StaticChecker::push_symbol_tables()

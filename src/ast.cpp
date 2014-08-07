@@ -25,6 +25,7 @@ Node::Node(scan_t scan, const Node* inner, node_type type)
   , left_tree_index(left_index)
   , right_tree_index(right_index)
   , type(type)
+  , parent(nullptr)
   , int_value(0)
   , float_value(0)
 {
@@ -60,6 +61,7 @@ Node::Node(scan_t scan, node_type type)
   , left_tree_index(left_index)
   , right_tree_index(right_index)
   , type(type)
+  , parent(nullptr)
   , int_value(0)
   , float_value(0)
 {
@@ -73,6 +75,7 @@ Node::Node(scan_t scan, node_type type, yang::int_t value)
   , left_tree_index(left_index)
   , right_tree_index(right_index)
   , type(type)
+  , parent(nullptr)
   , int_value(value)
   , float_value(0)
 {
@@ -86,6 +89,7 @@ Node::Node(scan_t scan, node_type type, yang::float_t value)
   , left_tree_index(left_index)
   , right_tree_index(right_index)
   , type(type)
+  , parent(nullptr)
   , int_value(0)
   , float_value(value)
 {
@@ -99,6 +103,7 @@ Node::Node(scan_t scan, node_type type, const std::string& value)
   , left_tree_index(left_index)
   , right_tree_index(right_index)
   , type(type)
+  , parent(nullptr)
   , int_value(0)
   , float_value(0)
   , string_value(value)
@@ -129,6 +134,8 @@ void Node::add_front(Node* node)
 {
   ((ParseData*)yang_get_extra(scan))->orphans.erase(node);
   children.insert(children.begin(), node);
+  node->parent = this;
+
   left_tree_index = std::min(left_tree_index, node->left_tree_index);
   right_tree_index = std::max(right_tree_index, node->right_tree_index);
 }
@@ -137,8 +144,26 @@ void Node::add(Node* node)
 {
   ((ParseData*)yang_get_extra(scan))->orphans.erase(node);
   children.push_back(node);
+  node->parent = this;
+
   left_tree_index = std::min(left_tree_index, node->left_tree_index);
   right_tree_index = std::max(right_tree_index, node->right_tree_index);
+}
+
+std::size_t Node::get_parent_index() const
+{
+  if (!parent) {
+    return 0;
+  }
+  std::size_t index = 0;
+  for (const auto& child : parent->children) {
+    if (child == this) {
+      return index;
+    }
+    ++index;
+  }
+  // Unreachable.
+  return 0;
 }
 
 void Node::set_inner_bounds(const Node* node)

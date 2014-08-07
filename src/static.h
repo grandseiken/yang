@@ -38,12 +38,7 @@ private:
   void enter_function(const Type& return_type);
   const Type& current_return_type() const;
   bool inside_function() const;
-
-  const Node* get_no_effect_node(const Node& node) const;
-  bool is_type_expression(const Node& node) const;
-  bool valid_all_contexts(const Node& node) const;
   bool inside_type_context() const;
-  bool use_function_immediate_assign_hack(const Node& node) const;
 
   // Symbol table management that also tracks unreferenced symbols for warnings.
   void push_symbol_tables();
@@ -65,8 +60,6 @@ private:
     RETURN_TYPE,
     TYPE_EXPR_CONTEXT,
     ERR_EXPR_CONTEXT,
-    ASSIGN_LHS_CONTEXT,
-    TREE_ROOT_CONTEXT,
   };
   friend std::hash<metadata_t>;
   

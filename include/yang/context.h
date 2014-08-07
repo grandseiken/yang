@@ -39,7 +39,8 @@
 // TODO: code hot-swapping. Careful with pointer values (e.g. functions) in
 // global data struct which probably need to be left as default values.
 // TODO: make sure everything is (possibly optionally?) thread-safe.
-// Things that aren't thread-safe (and need locking):
+// Things that aren't thread-safe and need locking or instancing:
+// - AST orphans list
 // - YangTrampolineGlobals
 // - possibly cpp_trampoline_lookup_map
 // - static refcount deletion lists; these need to be per-something somehow
@@ -49,7 +50,7 @@
 //   from different Instances where one happens to hold a reference to a
 //   function from the other.
 // The last is the trickiest bit and should probably be optional.
-// TODO: vectorised assignment? Pattern-matching assignment?
+// TODO: multiple / pattern-matching assignment?
 //
 // Further off (helpful stuff that can be emulated without needing to be built-
 // -in right away):
