@@ -29,9 +29,9 @@ public:
 
 protected:
 
-  void preorder(const Node& node) override;
-  void infix(const Node& node, const result_list& results) override;
-  Type visit(const Node& node, const result_list& results) override;
+  void before(const Node& node) override;
+  void infix(const Node& node, const result_list& results) override {}
+  Type after(const Node& node, const result_list& results) override;
 
 private:
 
@@ -48,7 +48,10 @@ private:
   void add_symbol_checking_collision(
       const Node& node, const std::string& name,
       const Type& type, bool global, bool unreferenced_warning = true);
+
   void error(const Node& node, const std::string& message, bool error = true);
+  std::string str(const Node& node) const;
+  std::string str(const Type& type) const;
 
   std::string _immediate_left_assign;
   bool _immediate_left_assign_warn_reads;

@@ -146,7 +146,7 @@ void IrGenerator::obtain_function_pointers()
   _b.generated_function_pointers.clear();
 }
 
-void IrGenerator::preorder(const Node& node)
+void IrGenerator::before(const Node& node)
 {
   auto& fback = _scopes.back();
   switch (node.type) {
@@ -421,7 +421,7 @@ void IrGenerator::infix(const Node& node, const result_list& results)
   }
 }
 
-Value IrGenerator::visit(const Node& node, const result_list& results)
+Value IrGenerator::after(const Node& node, const result_list& results)
 {
   auto parent = _b.b.GetInsertBlock() ?
       _b.b.GetInsertBlock()->getParent() : nullptr;
@@ -998,7 +998,7 @@ void IrGenerator::create_function(
   _scopes.emplace_back(_scopes.back().next_lex_scope());
   auto& fback = _scopes.back();
 
-  // The code for Node::TYPE_FUNCTION in visit() ensures it takes an environment
+  // The code for Node::TYPE_FUNCTION in after() ensures it takes an environment
   // pointer.
   fback.metadata.add(LexScope::ENVIRONMENT_PTR, &*eptr);
   fback.metadata.add(LexScope::FUNCTION, function);
@@ -1013,7 +1013,7 @@ void IrGenerator::create_function(
   // Also, we naively allocate at most one closure structure per function
   // invocation. Obviously, if we could partition the inner functions such that
   // the sets of enclosing variables they access are disjoint, we could allocate
-  // separate structures for each (and potentially return unused memory sooner).i
+  // separate structures for each (and potentially return unused memory sooner).
   if (!node.static_info.closed_environment.empty()) {
     fback.init_structure_type(
         "closure", node.static_info.closed_environment, false);

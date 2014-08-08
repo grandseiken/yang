@@ -59,9 +59,9 @@ if (true) {
 export ternary_fun = int()
 {
   const a = 1 ? (1, 2) : (0, 1);
-  const b = (1, 0) ? 2 * (1, 1) * 2 : (2, 3);
+  const b = (1, 0) ? 2 * (1, 1) * 2 : (const c = 2, 3);
   ++global_i;
-  return $+a + $*b + global_i;
+  return $+a + $*b + global_i + c;
 }
 
 export crazy_combine = int()
@@ -81,8 +81,8 @@ global {
 })");
 
   EXPECT_EQ(10, inst.call<int_t>("count_to_ten"));
-  EXPECT_EQ(17, inst.call<int_t>("ternary_fun"));
-  EXPECT_EQ(67, inst.call<int_t>("crazy_combine"));
+  EXPECT_EQ(19, inst.call<int_t>("ternary_fun"));
+  EXPECT_EQ(71, inst.call<int_t>("crazy_combine"));
   EXPECT_EQ(10, inst.get_global<int_t>("ten"));
 }
 

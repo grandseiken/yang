@@ -235,6 +235,8 @@ ERROR(VarW, "x = void() {closed const a = 0; void() {--a;};}", "--");
 ERROR(VarX, "x = void() {a + var a = 1;}", "a");
 ERROR(VarY, "x = void() {var a = a;}", "a");
 ERROR(VarZ, "x = void() {var a + 1 = 0;}", "a", "=");
+ERROR(Var0, "x = void() {0 && (var a = 0); a;}", "a");
+ERROR(Var1, "x = void() {0 ? (var a = 0) : (var b = 0); a; b;}", "a", "b");
 
 // Name resolution / scope errors.
 ERROR(ScopeA, "x = void() {y;}", "y");

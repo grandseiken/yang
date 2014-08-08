@@ -12,7 +12,7 @@ AstPrinter::AstPrinter()
 {
 }
 
-void AstPrinter::preorder(const Node& node)
+void AstPrinter::before(const Node& node)
 {
   switch (node.type) {
     case Node::BLOCK:
@@ -27,7 +27,7 @@ void AstPrinter::infix(const Node&, const result_list&)
 {
 }
 
-std::string AstPrinter::visit(const Node& node, const result_list& results)
+std::string AstPrinter::after(const Node& node, const result_list& results)
 {
   std::string s = node_op_string(node.type);
   std::string type_id =
