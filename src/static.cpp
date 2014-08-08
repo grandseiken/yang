@@ -193,19 +193,373 @@ void StaticChecker::before(const Node& node)
   // since there's no way to decide if an int2 or int3 was intended. However,
   // the erroneous 1 == 1. gives type INT, as the result would be INT whether or
   // not the operand type was intended to be int or float.
+  std::function<Type(const result_list&)> result_macro;
+#define RESULT [&](const result_list& results) -> Type
+#define RESULT_FOR_ANY(condition) if (condition) result_macro = RESULT
+#define RESULT_FOR(node_type) RESULT_FOR_ANY(node.type == Node::node_type)
+
+  // For simple context-insensitive nodes we define the behaviour with macros.
+  RESULT_FOR(TYPE_VOID) {return {};};
+  RESULT_FOR(TYPE_INT) {return numeric_type(false, node.int_value);};
+  RESULT_FOR(TYPE_FLOAT) {return numeric_type(true, node.int_value);};
+  RESULT_FOR(NAMED_EXPRESSION) {return results[0];};
+  RESULT_FOR(EXPR_STMT) {return Type(true);};
+  RESULT_FOR(RETURN_STMT) {
+    Type t = node.children.empty() ? Type() : results[0];
+    // If we're not in a function, we must be in a global block.
+    if (!inside_function()) {
+      error(node, "return statement inside `global`");
+      return t;
+    }
+    if (!t.is(current_return_type())) {
+      const auto& n = node.children.empty() ? node : *node.children[0];
+      error(n, "returning " + str(t) + " from " +
+               str(current_return_type()) + " function");
+    }
+    return current_return_type();
+  };
+  RESULT_FOR(MEMBER_SELECTION) {
+    if (!results[0].user_type()) {
+      error(node, "member function access on " + str(results[0]));
+      return Type(true);
+    }
+    if (results[0].is_error()) {
+      return Type(true);
+    }
+
+    const auto& m =
+        _context.member_lookup(results[0].external(), node.string_value);
+    if (m.type.is_void()) {
+      error(node, "undeclared member function `" +
+                  results[0].string(_context, false) +
+                  "::" + node.string_value + "`");
+      return Type(true);
+    }
+    // Omit the first argument (self). Unfortunately, the indirection here
+    // makes errors when calling the returned function somewhat vague.
+    std::vector<yang::Type> args;
+    for (std::size_t i = 1; i < m.type.function_num_args(); ++i) {
+      args.push_back(m.type.function_arg(i));
+    }
+    return yang::Type::function_t(m.type.function_return(), args);
+  };
+  RESULT_FOR_ANY(node.type == Node::BREAK_STMT ||
+                 node.type == Node::CONTINUE_STMT) {
+    if (!_scopes.back().metadata.has(LOOP_BODY)) {
+      error(node, str(node) + " outside of loop body");
+    }
+    return Type(true);
+  };
+  RESULT_FOR(IDENTIFIER) {
+    // Look up user types in a type-context.
+    if (inside_type_context()) {
+      const auto& t = _context.type_lookup(node.string_value);
+      if (!t.is_void()) {
+        return t;
+      }
+      error(node, "undeclared type `" + node.string_value + "`");
+      return Type(true);
+    }
+
+    // Regular symbols.
+    auto it = _scopes.rbegin();
+    for (; it != _scopes.rend(); ++it) {
+      if (it->symbol_table.has(node.string_value)) {
+        break;
+      }
+      if (it == --_scopes.rend()) {
+        // Check Context if symbol isn't present in the Program table.
+        const auto& t = _context.constructor_lookup(node.string_value);
+        if (!t.ctor.type.is_void()) {
+          // Fix the constructor return type.
+          std::vector<yang::Type> args;
+          for (std::size_t i = 0;
+               i < t.ctor.type.function_num_args(); ++i) {
+            args.push_back(t.ctor.type.function_arg(i));
+          }
+          return yang::Type::function_t(
+              t.ctor.type.function_return().make_managed(true), args);
+        }
+
+        const auto& f = _context.function_lookup(node.string_value);
+        if (!f.type.is_void()) {
+          return f.type;
+        }
+
+        error(node, "undeclared identifier `" + node.string_value + "`");
+        add_symbol(node, node.string_value, Type(true), false, false);
+        it = _scopes.rbegin();
+        break;
+      }
+    }
+
+    auto& symbol = it->symbol_table[node.string_value];
+    // If this is a reference to variable in an enclosing function, make
+    // sure it's added to that function's closed environment.
+    if (it != _scopes.rbegin() && it != --_scopes.rend()) {
+      if (!symbol.closed) {
+        error(node, "symbol `" + node.string_value + "` declared without "
+                    "`closed` modifier in enclosing function");
+        symbol.closed = true;
+      }
+      symbol.warn_closed = false;
+      it->function.static_info.closed_environment.emplace(
+          node.string_value + "/" + std::to_string(symbol.scope_number),
+          symbol.type.external());
+    }
+
+    // Update read/write warnings.
+    (is_assignment(*node.parent) && node.get_parent_index() == 0 ?
+         symbol.warn_writes : symbol.warn_reads) = false;
+    return symbol.type;
+  };
+  RESULT_FOR(EMPTY_EXPR) {return yang::Type::int_t();};
+  RESULT_FOR(INT_LITERAL) {return yang::Type::int_t();};
+  RESULT_FOR(FLOAT_LITERAL) {return yang::Type::float_t();};
+  RESULT_FOR(STRING_LITERAL) {return type_of<Ref<const char>>();};
+  RESULT_FOR_ANY(node.type == Node::POW || node.type == Node::MOD ||
+                 node.type == Node::ADD || node.type == Node::SUB ||
+                 node.type == Node::MUL || node.type == Node::DIV) {
+    // Takes two integers or floats and produces a value of the same type,
+    // with vectorisation.
+    if (!results[0].is_binary_match(results[1]) ||
+        (!(results[0].is_int() && results[1].is_int()) &&
+         !(results[0].is_float() && results[1].is_float()))) {
+      error(node, str(node) + " applied to " +
+                  str(results[0]) + " and " + str(results[1]));
+      return Type(true);
+    }
+    return binary_type(results[0], results[1], results[0].is_float());
+  };
+  RESULT_FOR_ANY(node.type == Node::EQ || node.type == Node::NE ||
+                 node.type == Node::GE || node.type == Node::LE ||
+                 node.type == Node::GT || node.type == Node::LT) {
+    // Takes two integers or floats and produces an integer, with
+    // vectorisation.
+    if (!results[0].is_binary_match(results[1])) {
+      error(node, str(node) + " applied to " +
+                  str(results[0]) + " and " + str(results[1]));
+      return Type(true);
+    }
+    else if (!(results[0].is_int() && results[1].is_int()) &&
+             !(results[0].is_float() && results[1].is_float())) {
+      error(node, str(node) + " applied to " +
+                  str(results[0]) + " and " + str(results[1]));
+    }
+    return binary_type(results[0], results[1], false);
+  };
+  RESULT_FOR_ANY(node.type == Node::FOLD_LOGICAL_OR ||
+                 node.type == Node::FOLD_LOGICAL_AND ||
+                 node.type == Node::FOLD_BITWISE_OR ||
+                 node.type == Node::FOLD_BITWISE_AND ||
+                 node.type == Node::FOLD_BITWISE_XOR ||
+                 node.type == Node::FOLD_BITWISE_LSHIFT ||
+                 node.type == Node::FOLD_BITWISE_RSHIFT) {
+    if (!results[0].is_vector() || !results[0].is_int()) {
+      error(node, str(node) + " applied to " + str(results[0]));
+    }
+    return yang::Type::int_t();
+  };
+  RESULT_FOR_ANY(node.type == Node::FOLD_POW || node.type == Node::FOLD_MOD ||
+                 node.type == Node::FOLD_ADD || node.type == Node::FOLD_SUB ||
+                 node.type == Node::FOLD_MUL || node.type == Node::FOLD_DIV) {
+    if (!results[0].is_vector() ||
+        !(results[0].is_int() || results[0].is_float())) {
+      error(node, str(node) + " applied to " + str(results[0]));
+      return Type(true);
+    }
+    return element_type(results[0]);
+  };
+  RESULT_FOR_ANY(node.type == Node::FOLD_EQ || node.type == Node::FOLD_NE ||
+                 node.type == Node::FOLD_GE || node.type == Node::FOLD_LE ||
+                 node.type == Node::FOLD_GT || node.type == Node::FOLD_LT) {
+    if (!results[0].is_vector() ||
+        !(results[0].is_int() || results[0].is_float())) {
+      error(node, str(node) + " applied to " + str(results[0]));
+    }
+    return yang::Type::int_t();
+  };
+  RESULT_FOR_ANY(node.type == Node::LOGICAL_NEGATION ||
+                 node.type == Node::BITWISE_NEGATION) {
+    if (!results[0].is_int()) {
+      error(node, str(node) + " applied to " + str(results[0]));
+    }
+    return numeric_type(false, results[0].external().vector_size());
+  };
+  RESULT_FOR(ARITHMETIC_NEGATION) {
+    if (!(results[0].is_int() || results[0].is_float())) {
+      error(node, str(node) + " applied to " + str(results[0]));
+      return Type(true);
+    }
+    return results[0];
+  };
+  RESULT_FOR_ANY(node.type == Node::INCREMENT || node.type == Node::DECREMENT) {
+    if (!(results[0].is_int() || results[0].is_float())) {
+      error(node, str(node) + " applied to " + str(results[0]));
+      return Type(true);
+    }
+    Type t = results[0];
+    if (node.children[0]->type == Node::IDENTIFIER) {
+      if (results[0].external().is_const()) {
+        error(node, str(node) + " applied to " + str(results[0]));
+        t = t.make_const(false);
+      }
+      std::string s = node.children[0]->string_value;
+      for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it) {
+        if (it->symbol_table.has(s)) {
+          it->symbol_table[s].warn_writes = false;
+        }
+      }
+    }
+    return t;
+  };
+  RESULT_FOR_ANY(
+      node.type == Node::ASSIGN ||
+      node.type == Node::ASSIGN_LOGICAL_OR ||
+      node.type == Node::ASSIGN_LOGICAL_AND ||
+      node.type == Node::ASSIGN_BITWISE_OR ||
+      node.type == Node::ASSIGN_BITWISE_AND ||
+      node.type == Node::ASSIGN_BITWISE_XOR ||
+      node.type == Node::ASSIGN_BITWISE_LSHIFT ||
+      node.type == Node::ASSIGN_BITWISE_RSHIFT ||
+      node.type == Node::ASSIGN_POW || node.type == Node::ASSIGN_MOD ||
+      node.type == Node::ASSIGN_ADD || node.type == Node::ASSIGN_SUB ||
+      node.type == Node::ASSIGN_MUL || node.type == Node::ASSIGN_DIV) {
+    if (node.children[0]->type != Node::IDENTIFIER) {
+      if (!results[0].is_error()) {
+        error(node, "assignments must be directly to an identifier");
+      }
+      return results[1];
+    }
+
+    const std::string& ident = node.children[0]->string_value;
+    for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it) {
+      if (!it->symbol_table.has(ident)) {
+        continue;
+      }
+      Type t = it->symbol_table[ident].type;
+
+      if (!is_tree_root(node)) {
+        it->symbol_table[ident].warn_reads = false;
+      }
+
+      if (node.type != Node::ASSIGN) {
+        bool math =
+            node.type == Node::ASSIGN_POW ||
+            node.type == Node::ASSIGN_MOD ||
+            node.type == Node::ASSIGN_ADD ||
+            node.type == Node::ASSIGN_SUB ||
+            node.type == Node::ASSIGN_MUL ||
+            node.type == Node::ASSIGN_DIV;
+
+        if (!t.is_assign_binary_match(results[1])) {
+          error(node, str(node) + " applied to " +
+                      str(t) + " and " + str(results[1]));
+          return Type(true);
+        }
+        if (!math && (!t.is_int() || !results[1].is_int())) {
+          error(node, str(node) + " applied to " +
+                      str(t) + " and " + str(results[1]));
+          return binary_type(t, results[1], false);
+        }
+        if (math && !(t.is_int() && results[1].is_int()) &&
+            !(t.is_float() && results[1].is_float())) {
+          error(node, str(node) + " applied to " +
+                      str(t) + " and " + str(results[1]));
+          return binary_type(t, results[1], results[0].is_float());
+        }
+      }
+      if (node.type == Node::ASSIGN && !t.is(results[1])) {
+        error(node, str(results[1]) + " assigned to `" + ident +
+                    "` of type " + str(t));
+        return Type(true);
+      }
+      if (t.external().is_const()) {
+        error(node, "assignment to `" + ident + "` of type " + str(t));
+      }
+      return t;
+    }
+
+    if (!_context.function_lookup(ident).type.is_void()) {
+      error(node, "cannot assign to context function `" + ident + "`");
+    }
+    else if (!_context.constructor_lookup(ident).ctor.type.is_void()) {
+      error(node, "cannot assign to context constructor `" + ident + "`");
+    }
+    else if (!_context.type_lookup(ident).is_void()) {
+      error(node, "cannot assign to context type `" + ident + "`");
+    }
+    else {
+      error(node, "undeclared identifier `" + ident + "`");
+    }
+    add_symbol(node, ident, results[1], false, false);
+    return results[1];
+  };
+  RESULT_FOR(INT_CAST) {
+    if (!results[0].is_float()) {
+      error(node, str(node) + " applied to " + str(results[0]));
+    }
+    return numeric_type(false, results[0].external().vector_size());
+  };
+  RESULT_FOR(FLOAT_CAST) {
+    if (!results[0].is_int()) {
+      error(node, str(node) + " applied to " + str(results[0]));
+    }
+    return numeric_type(true, results[0].external().vector_size());
+  };
+  RESULT_FOR(VECTOR_CONSTRUCT) {
+    Type t = results[0];
+    std::string ts;
+    bool unify_error = false;
+    std::unordered_set<Type> bad_types;
+    for (std::size_t i = 0; i < results.size(); ++i) {
+      if (node.children[i]->type == Node::NAMED_EXPRESSION) {
+        error(*node.children[i],
+              str(node) + ": named argument in vector construction");
+      }
+      if (!results[i].primitive() && !bad_types.count(results[i])) {
+        // Store the bad types we saw already so as not to repeat the error.
+        error(*node.children[i],
+              str(node) + ": element with non-primitive type " +
+              str(results[i]) + " in vector construction");
+        t = Type(true);
+        bad_types.insert(results[i]);
+      }
+      if (i) {
+        bool error = t.is_error();
+        t = t.unify(results[i]);
+        if (!error && t.is_error()) {
+          unify_error = true;
+        }
+        ts += ", ";
+      }
+      ts += str(results[i]);
+    }
+    if (unify_error) {
+      error(node, str(node) + " applied to different types " + ts);
+      return Type(true);
+    }
+    return numeric_type(t.is_float(), results.size());
+  };
+  RESULT_FOR(VECTOR_INDEX) {
+    if (!results[0].is_vector() || !results[1].is(yang::Type::int_t())) {
+      error(node, str(node) + " applied to " +
+                  str(results[0]) + " and " + str(results[1]));
+      return results[0].is_vector() ? element_type(results[0]) : Type(true);
+    }
+    return element_type(results[0]);
+  };
+
+#undef RESULT_FOR
+#undef RESULT_FOR_ANY
+  if (result_macro) {
+    result(node, result_macro);
+  }
+
   switch (node.type) {
-    case Node::TYPE_VOID:
-      result(node, []{return Type{};});
-      break;
-    case Node::TYPE_INT:
-      result(node, [&]{return numeric_type(false, node.int_value);});
-      break;
-    case Node::TYPE_FLOAT:
-      result(node, [&]{return numeric_type(true, node.int_value);});
-      break;
     case Node::TYPE_FUNCTION:
       type_function:
-      result(node, [&](const result_list& results)
+      result(node, RESULT
       {
         bool err = results[0].is_error();
         std::vector<yang::Type> args;
@@ -227,7 +581,7 @@ void StaticChecker::before(const Node& node)
       // Make sure to warn on unused top-level elements. This doesn't actually
       // pop anything, since it's the last frame.
       call_after(node, [&]{pop_symbol_tables();});
-      result(node, []{return Type{};});
+      result(node, RESULT {return Type{};});
       break;
 
     case Node::GLOBAL:
@@ -252,7 +606,7 @@ void StaticChecker::before(const Node& node)
         pop_symbol_tables();
         _scopes.pop_back();
       });
-      result(node, []{return Type{};});
+      result(node, RESULT {return Type{};});
       break;
 
     case Node::GLOBAL_ASSIGN:
@@ -280,8 +634,7 @@ void StaticChecker::before(const Node& node)
       }
 
       if (node.type == Node::GLOBAL_ASSIGN) {
-        result(node, [&](const result_list& results) -> Type
-        {
+        result(node, RESULT {
           if (node.children[0]->type != Node::IDENTIFIER) {
             if (!results[0].is_error()) {
               error(node, "assignments must be directly to an identifier");
@@ -309,8 +662,7 @@ void StaticChecker::before(const Node& node)
         });
       }
       else {
-        result(node, [&](const result_list& results)
-        {
+        result(node, RESULT {
           if (!results[1].not_void()) {
             error(node, "assignment of type " + str(results[1]));
           }
@@ -372,8 +724,7 @@ void StaticChecker::before(const Node& node)
     case Node::FUNCTION:
       _scopes.back().metadata.push();
       _scopes.back().metadata.add(TYPE_EXPR_CONTEXT, {});
-      result(node, [&](const result_list& results)
-      {
+      result(node, RESULT {
         return results[0].function() ? results[0] : Type(true);
       });
 
@@ -457,19 +808,11 @@ void StaticChecker::before(const Node& node)
       });
       break;
 
-    case Node::NAMED_EXPRESSION:
-      result(node, [](const result_list& results)
-      {
-        return results[0];
-      });
-      break;
-
     case Node::LOOP_AFTER_BLOCK:
     case Node::BLOCK:
       push_symbol_tables();
       call_after(node, [&]{pop_symbol_tables();});
-      result(node, [&](const result_list& results)
-      {
+      result(node, RESULT {
         // Check for dead code.
         bool dead = false;
         for (std::size_t i = 0; i < results.size(); ++i) {
@@ -491,34 +834,10 @@ void StaticChecker::before(const Node& node)
       });
       break;
 
-    case Node::EXPR_STMT:
-      result(node, []{return Type(true);});
-      break;
-
-    case Node::RETURN_STMT:
-      result(node, [&](const result_list& results)
-      {
-        Type t = node.children.empty() ? Type() : results[0];
-        // If we're not in a function, we must be in a global block.
-        if (!inside_function()) {
-          error(node, "return statement inside `global`");
-          return t;
-        }
-        const Type& current_return = current_return_type();
-        if (!t.is(current_return)) {
-          const auto& n = node.children.empty() ? node : *node.children[0];
-          error(n, "returning " + str(t) + " from " +
-                   str(current_return) + " function");
-        }
-        return current_return;
-      });
-      break;
-
     case Node::IF_STMT:
       push_symbol_tables();
       call_after(node, [&]{pop_symbol_tables();});
-      result(node, [&](const result_list& results)
-      {
+      result(node, RESULT {
         if (!results[0].is(yang::Type::int_t())) {
           error(*node.children[0],
                 str(node) + " branching on " + str(results[0]));
@@ -549,8 +868,7 @@ void StaticChecker::before(const Node& node)
         call_after(*node.children[1], [&]{_scopes.back().metadata.push();});
         call_after(*node.children[2], [&]{_scopes.back().metadata.pop();});
       }
-      result(node, [&](const result_list& results)
-      {
+      result(node, RESULT {
         std::size_t cond = node.type != Node::WHILE_STMT;
         if (!results[cond].is(yang::Type::int_t())) {
           error(*node.children[cond],
@@ -558,124 +876,6 @@ void StaticChecker::before(const Node& node)
         }
         return Type(true);
       });
-      break;
-
-    case Node::BREAK_STMT:
-    case Node::CONTINUE_STMT:
-      result(node, [&]
-      {
-        if (!_scopes.back().metadata.has(LOOP_BODY)) {
-          error(node, str(node) + " outside of loop body");
-        }
-        return Type(true);
-      });
-      break;
-
-    case Node::MEMBER_SELECTION:
-      result(node, [&](const result_list& results) -> Type
-      {
-        if (!results[0].user_type()) {
-          error(node, "member function access on " + str(results[0]));
-          return Type(true);
-        }
-        if (results[0].is_error()) {
-          return Type(true);
-        }
-
-        const auto& m =
-            _context.member_lookup(results[0].external(), node.string_value);
-        if (m.type.is_void()) {
-          error(node, "undeclared member function `" +
-                      results[0].string(_context, false) +
-                      "::" + node.string_value + "`");
-          return Type(true);
-        }
-        // Omit the first argument (self). Unfortunately, the indirection here
-        // makes errors when calling the returned function somewhat vague.
-        std::vector<yang::Type> args;
-        for (std::size_t i = 1; i < m.type.function_num_args(); ++i) {
-          args.push_back(m.type.function_arg(i));
-        }
-        return yang::Type::function_t(m.type.function_return(), args);
-      });
-      break;
-
-    case Node::IDENTIFIER:
-      result(node, [&](const result_list& results) -> Type
-      {
-        // Look up user types in a type-context.
-        if (inside_type_context()) {
-          const auto& t = _context.type_lookup(node.string_value);
-          if (!t.is_void()) {
-            return t;
-          }
-          error(node, "undeclared type `" + node.string_value + "`");
-          return Type(true);
-        }
-
-        // Regular symbols.
-        auto it = _scopes.rbegin();
-        for (; it != _scopes.rend(); ++it) {
-          if (it->symbol_table.has(node.string_value)) {
-            break;
-          }
-          if (it == --_scopes.rend()) {
-            // Check Context if symbol isn't present in the Program table.
-            const auto& t = _context.constructor_lookup(node.string_value);
-            if (!t.ctor.type.is_void()) {
-              // Fix the constructor return type.
-              std::vector<yang::Type> args;
-              for (std::size_t i = 0;
-                   i < t.ctor.type.function_num_args(); ++i) {
-                args.push_back(t.ctor.type.function_arg(i));
-              }
-              return yang::Type::function_t(
-                  t.ctor.type.function_return().make_managed(true), args);
-            }
-
-            const auto& f = _context.function_lookup(node.string_value);
-            if (!f.type.is_void()) {
-              return f.type;
-            }
-
-            error(node, "undeclared identifier `" + node.string_value + "`");
-            add_symbol(node, node.string_value, Type(true), false, false);
-            it = _scopes.rbegin();
-            break;
-          }
-        }
-
-        auto& symbol = it->symbol_table[node.string_value];
-        // If this is a reference to variable in an enclosing function, make
-        // sure it's added to that function's closed environment.
-        if (it != _scopes.rbegin() && it != --_scopes.rend()) {
-          if (!symbol.closed) {
-            error(node, "symbol `" + node.string_value + "` declared without "
-                        "`closed` modifier in enclosing function");
-            symbol.closed = true;
-          }
-          symbol.warn_closed = false;
-          it->function.static_info.closed_environment.emplace(
-              node.string_value + "/" + std::to_string(symbol.scope_number),
-              symbol.type.external());
-        }
-
-        // Update read/write warnings.
-        (is_assignment(*node.parent) && node.get_parent_index() == 0 ?
-             symbol.warn_writes : symbol.warn_reads) = false;
-        return symbol.type;
-      });
-      break;
-
-    case Node::EMPTY_EXPR:
-    case Node::INT_LITERAL:
-      result(node, [&]{return yang::Type::int_t();});
-      break;
-    case Node::FLOAT_LITERAL:
-      result(node, [&]{return yang::Type::float_t();});
-      break;
-    case Node::STRING_LITERAL:
-      result(node, [&]{return type_of<Ref<const char>>();});
       break;
 
     case Node::TERNARY:
@@ -690,8 +890,7 @@ void StaticChecker::before(const Node& node)
           call_after(*node.children[2], [&]{pop_symbol_tables();});
         }
       });
-      result(node, [&](const result_list& results)
-      {
+      result(node, RESULT {
         // The ternary operator vectorises, as in:
         // (a, b) ? (c, d) : (e, f) is equivalent to (a ? c : e, b ? d : f).
         //
@@ -726,11 +925,9 @@ void StaticChecker::before(const Node& node)
       if (inside_type_context()) {
         goto type_function;
       }
-      result(node, [&](const result_list& results)
-      {
+      result(node, RESULT {
         // The grammar doesn't distinguish function-type construction from
         // call-expressions in all contexts, so we need to check here.
-
         for (std::size_t i = 1; i < results.size(); ++i) {
           if (node.children[i]->type == Node::NAMED_EXPRESSION) {
             error(*node.children[i],
@@ -775,8 +972,7 @@ void StaticChecker::before(const Node& node)
     case Node::BITWISE_XOR:
     case Node::BITWISE_LSHIFT:
     case Node::BITWISE_RSHIFT:
-      result(node, [&](const result_list& results)
-      {
+      result(node, RESULT {
         // Takes two integers and produces an integer, with vectorisation.
         if (!results[0].is_binary_match(results[1])) {
           error(node, str(node) + " applied to " +
@@ -791,307 +987,10 @@ void StaticChecker::before(const Node& node)
       });
       break;
 
-    case Node::POW:
-    case Node::MOD:
-    case Node::ADD:
-    case Node::SUB:
-    case Node::MUL:
-    case Node::DIV:
-      result(node, [&](const result_list& results)
-      {
-        // Takes two integers or floats and produces a value of the same type,
-        // with vectorisation.
-        if (!results[0].is_binary_match(results[1]) ||
-            (!(results[0].is_int() && results[1].is_int()) &&
-             !(results[0].is_float() && results[1].is_float()))) {
-          error(node, str(node) + " applied to " +
-                      str(results[0]) + " and " + str(results[1]));
-          return Type(true);
-        }
-        return binary_type(results[0], results[1], results[0].is_float());
-      });
-      break;
-
-    case Node::EQ:
-    case Node::NE:
-    case Node::GE:
-    case Node::LE:
-    case Node::GT:
-    case Node::LT:
-      result(node, [&](const result_list& results)
-      {
-        // Takes two integers or floats and produces an integer, with
-        // vectorisation.
-        if (!results[0].is_binary_match(results[1])) {
-          error(node, str(node) + " applied to " +
-                      str(results[0]) + " and " + str(results[1]));
-          return Type(true);
-        }
-        else if (!(results[0].is_int() && results[1].is_int()) &&
-                 !(results[0].is_float() && results[1].is_float())) {
-          error(node, str(node) + " applied to " +
-                      str(results[0]) + " and " + str(results[1]));
-        }
-        return binary_type(results[0], results[1], false);
-      });
-      break;
-
-    case Node::FOLD_LOGICAL_OR:
-    case Node::FOLD_LOGICAL_AND:
-    case Node::FOLD_BITWISE_OR:
-    case Node::FOLD_BITWISE_AND:
-    case Node::FOLD_BITWISE_XOR:
-    case Node::FOLD_BITWISE_LSHIFT:
-    case Node::FOLD_BITWISE_RSHIFT:
-      result(node, [&](const result_list& results)
-      {
-        if (!results[0].is_vector() || !results[0].is_int()) {
-          error(node, str(node) + " applied to " + str(results[0]));
-        }
-        return yang::Type::int_t();
-      });
-      break;
-
-    case Node::FOLD_POW:
-    case Node::FOLD_MOD:
-    case Node::FOLD_ADD:
-    case Node::FOLD_SUB:
-    case Node::FOLD_MUL:
-    case Node::FOLD_DIV:
-      result(node, [&](const result_list& results)
-      {
-        if (!results[0].is_vector() ||
-            !(results[0].is_int() || results[0].is_float())) {
-          error(node, str(node) + " applied to " + str(results[0]));
-          return Type(true);
-        }
-        return element_type(results[0]);
-      });
-      break;
-
-    case Node::FOLD_EQ:
-    case Node::FOLD_NE:
-    case Node::FOLD_GE:
-    case Node::FOLD_LE:
-    case Node::FOLD_GT:
-    case Node::FOLD_LT:
-      result(node, [&](const result_list& results)
-      {
-        if (!results[0].is_vector() ||
-            !(results[0].is_int() || results[0].is_float())) {
-          error(node, str(node) + " applied to " + str(results[0]));
-        }
-        return yang::Type::int_t();
-      });
-      break;
-
-    case Node::LOGICAL_NEGATION:
-    case Node::BITWISE_NEGATION:
-      result(node, [&](const result_list& results)
-      {
-        if (!results[0].is_int()) {
-          error(node, str(node) + " applied to " + str(results[0]));
-        }
-        return numeric_type(false, results[0].external().vector_size());
-      });
-      break;
-
-    case Node::ARITHMETIC_NEGATION:
-      result(node, [&](const result_list& results)
-      {
-        if (!(results[0].is_int() || results[0].is_float())) {
-          error(node, str(node) + " applied to " + str(results[0]));
-          return Type(true);
-        }
-        return results[0];
-      });
-      break;
-    case Node::INCREMENT:
-    case Node::DECREMENT:
-      result(node, [&](const result_list& results)
-      {
-        if (!(results[0].is_int() || results[0].is_float())) {
-          error(node, str(node) + " applied to " + str(results[0]));
-          return Type(true);
-        }
-        Type t = results[0];
-        if (node.children[0]->type == Node::IDENTIFIER) {
-          if (results[0].external().is_const()) {
-            error(node, str(node) + " applied to " + str(results[0]));
-            t = t.make_const(false);
-          }
-          std::string s = node.children[0]->string_value;
-          for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it) {
-            if (it->symbol_table.has(s)) {
-              it->symbol_table[s].warn_writes = false;
-            }
-          }
-        }
-        return t;
-      });
-      break;
-
-    case Node::ASSIGN:
-    case Node::ASSIGN_LOGICAL_OR:
-    case Node::ASSIGN_LOGICAL_AND:
-    case Node::ASSIGN_BITWISE_OR:
-    case Node::ASSIGN_BITWISE_AND:
-    case Node::ASSIGN_BITWISE_XOR:
-    case Node::ASSIGN_BITWISE_LSHIFT:
-    case Node::ASSIGN_BITWISE_RSHIFT:
-    case Node::ASSIGN_POW:
-    case Node::ASSIGN_MOD:
-    case Node::ASSIGN_ADD:
-    case Node::ASSIGN_SUB:
-    case Node::ASSIGN_MUL:
-    case Node::ASSIGN_DIV:
-      result(node, [&](const result_list& results)
-      {
-        if (node.children[0]->type != Node::IDENTIFIER) {
-          if (!results[0].is_error()) {
-            error(node, "assignments must be directly to an identifier");
-          }
-          return results[1];
-        }
-
-        const std::string& ident = node.children[0]->string_value;
-        for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it) {
-          if (!it->symbol_table.has(ident)) {
-            continue;
-          }
-          Type t = it->symbol_table[ident].type;
-
-          if (!is_tree_root(node)) {
-            it->symbol_table[ident].warn_reads = false;
-          }
-
-          if (node.type != Node::ASSIGN) {
-            bool math =
-                node.type == Node::ASSIGN_POW ||
-                node.type == Node::ASSIGN_MOD ||
-                node.type == Node::ASSIGN_ADD ||
-                node.type == Node::ASSIGN_SUB ||
-                node.type == Node::ASSIGN_MUL ||
-                node.type == Node::ASSIGN_DIV;
-
-            if (!t.is_assign_binary_match(results[1])) {
-              error(node, str(node) + " applied to " +
-                          str(t) + " and " + str(results[1]));
-              return Type(true);
-            }
-            if (!math && (!t.is_int() || !results[1].is_int())) {
-              error(node, str(node) + " applied to " +
-                          str(t) + " and " + str(results[1]));
-              return binary_type(t, results[1], false);
-            }
-            if (math && !(t.is_int() && results[1].is_int()) &&
-                !(t.is_float() && results[1].is_float())) {
-              error(node, str(node) + " applied to " +
-                          str(t) + " and " + str(results[1]));
-              return binary_type(t, results[1], results[0].is_float());
-            }
-          }
-          if (node.type == Node::ASSIGN && !t.is(results[1])) {
-            error(node, str(results[1]) + " assigned to `" + ident +
-                        "` of type " + str(t));
-            return Type(true);
-          }
-          if (t.external().is_const()) {
-            error(node, "assignment to `" + ident + "` of type " + str(t));
-          }
-          return t;
-        }
-
-        if (!_context.function_lookup(ident).type.is_void()) {
-          error(node, "cannot assign to context function `" + ident + "`");
-        }
-        else if (!_context.constructor_lookup(ident).ctor.type.is_void()) {
-          error(node, "cannot assign to context constructor `" + ident + "`");
-        }
-        else if (!_context.type_lookup(ident).is_void()) {
-          error(node, "cannot assign to context type `" + ident + "`");
-        }
-        else {
-          error(node, "undeclared identifier `" + ident + "`");
-        }
-        add_symbol(node, ident, results[1], false, false);
-        return results[1];
-      });
-      break;
-
-    case Node::INT_CAST:
-      result(node, [&](const result_list& results)
-      {
-        if (!results[0].is_float()) {
-          error(node, str(node) + " applied to " + str(results[0]));
-        }
-        return numeric_type(false, results[0].external().vector_size());
-      });
-      break;
-
-    case Node::FLOAT_CAST:
-      result(node, [&](const result_list& results)
-      {
-        if (!results[0].is_int()) {
-          error(node, str(node) + " applied to " + str(results[0]));
-        }
-        return numeric_type(true, results[0].external().vector_size());
-      });
-      break;
-
-    case Node::VECTOR_CONSTRUCT:
-      result(node, [&](const result_list& results)
-      {
-        Type t = results[0];
-        std::string ts;
-        bool unify_error = false;
-        std::unordered_set<Type> bad_types;
-        for (std::size_t i = 0; i < results.size(); ++i) {
-          if (node.children[i]->type == Node::NAMED_EXPRESSION) {
-            error(*node.children[i],
-                  str(node) + ": named argument in vector construction");
-          }
-          if (!results[i].primitive() && !bad_types.count(results[i])) {
-            // Store the bad types we saw already so as not to repeat the error.
-            error(*node.children[i],
-                  str(node) + ": element with non-primitive type " +
-                  str(results[i]) + " in vector construction");
-            t = Type(true);
-            bad_types.insert(results[i]);
-          }
-          if (i) {
-            bool error = t.is_error();
-            t = t.unify(results[i]);
-            if (!error && t.is_error()) {
-              unify_error = true;
-            }
-            ts += ", ";
-          }
-          ts += str(results[i]);
-        }
-        if (unify_error) {
-          error(node, str(node) + " applied to different types " + ts);
-          return Type(true);
-        }
-        return numeric_type(t.is_float(), results.size());
-      });
-      break;
-
-    case Node::VECTOR_INDEX:
-      result(node, [&](const result_list& results)
-      {
-        if (!results[0].is_vector() || !results[1].is(yang::Type::int_t())) {
-          error(node, str(node) + " applied to " +
-                      str(results[0]) + " and " + str(results[1]));
-          return results[0].is_vector() ? element_type(results[0]) : Type(true);
-        }
-        return element_type(results[0]);
-      });
-      break;
-
     default: {}
   }
 
+#undef RESULT
   // Type/expression context error result overrides any other result.
   if (context_err) {
     result(node, []{return Type(true);});
