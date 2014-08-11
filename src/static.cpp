@@ -633,92 +633,68 @@ void StaticChecker::before(const Node& node)
         add_symbol(node, node.children[0]->string_value, {}, false, false);
       }
 
-      if (node.type == Node::GLOBAL_ASSIGN) {
-        result(node, RESULT {
-          if (node.children[0]->type != Node::IDENTIFIER) {
-            if (!results[0].is_error()) {
-              error(node, "assignments must be directly to an identifier");
-            }
-            return {};
-          }
-          const std::string& s = node.children[0]->string_value;
-          Type t = results[1].make_const(true);
-          if (!results[1].function()) {
-            error(node, "global assignment of type " + str(results[1]));
-            add_symbol_checking_collision(node, s, results[1], true, false);
-          }
-          else {
-            add_symbol_checking_collision(node, s, t, true, !t.is_error());
-            _scopes[0].symbol_table[s].warn_reads &=
-                _immediate_left_assign_warn_reads;
-          }
-          // Only export functions get added to the function table. They also
-          // are automatically assumed to be referenced.
-          if (!t.is_error() && node.int_value & Node::MODIFIER_EXPORT) {
-            _functions_output.emplace(s, t.external().make_exported(true));
-            _scopes[0].symbol_table[s].warn_reads = false;
-          }
-          return {};
-        });
-      }
-      else {
-        result(node, RESULT {
-          if (!results[1].not_void()) {
-            error(node, "assignment of type " + str(results[1]));
-          }
-          if (node.children[0]->type != Node::IDENTIFIER) {
-            error(node, "assignments must be directly to an identifier");
-            return results[1];
-          }
-          const std::string& s = node.children[0]->string_value;
+      result(node, RESULT {
+        Type t = results[1].make_const(node.type == Node::ASSIGN_CONST ||
+                                       node.type == Node::GLOBAL_ASSIGN);
 
-          auto add_global = [&]
-          {
-            bool exported = _scopes.back().metadata.has(EXPORT_GLOBAL);
-            const Type& t = _scopes[0].symbol_table.get(s, 0).type;
-            if (!t.is_error()) {
-              _globals_output.emplace(s, t.external().make_exported(exported));
-            }
-            if (exported) {
-              _scopes[0].symbol_table.get(s, 0).warn_writes = false;
-              _scopes[0].symbol_table.get(s, 0).warn_reads = false;
-            }
-          };
-          bool global =
-              !inside_function() && _scopes.back().symbol_table.size() <= 3 &&
-              !_scopes.back().metadata.has(GLOBAL_DESTRUCTOR);
-          if (!global) {
-            node.static_info.scope_number =
-                _scopes.back().scope_numbering.back();
-          }
-
-          Type t = results[1].make_const(node.type == Node::ASSIGN_CONST);
-          // Merge warnings for immediate assign hack.
-          bool warn_reads = true;
-          if (use_function_immediate_assign_hack(node)) {
-            warn_reads &= _immediate_left_assign_warn_reads;
-          }
-
-          // Within global blocks, use the top-level symbol table frame.
-          if (global) {
-            add_symbol_checking_collision(node, s, t, true);
-            // Store global in the global map for future use.
-            add_global();
-          }
-          else {
-            add_symbol_checking_collision(node, s, t, false);
-          }
-          auto& sym = (global ? _scopes[0] : _scopes.back()).symbol_table[s];
-          sym.warn_reads &= warn_reads;
-          sym.closed = sym.warn_closed = node.int_value & Node::MODIFIER_CLOSED;
-          if (global && sym.closed) {
-            sym.warn_closed = false;
-            error(node, "`closed` modifier has no effect on global " +
-                        node.string_value, false);
-          }
+        if (node.type == Node::GLOBAL_ASSIGN && !results[1].function()) {
+          error(node, "global assignment of type " + str(results[1]));
+          t = Type(true);
+        }
+        if (node.type != Node::GLOBAL_ASSIGN && !results[1].not_void()) {
+          error(node, "assignment of type " + str(results[1]));
+          t = Type(true);
+        }
+        if (node.children[0]->type != Node::IDENTIFIER) {
+          error(node, "assignments must be directly to an identifier");
           return results[1];
-        });
-      }
+        }
+        const std::string& s = node.children[0]->string_value;
+
+        bool global_scope = node.type == Node::GLOBAL_ASSIGN || (
+            !inside_function() && _scopes.back().symbol_table.size() <= 3 &&
+            !_scopes.back().metadata.has(GLOBAL_DESTRUCTOR));
+        if (!global_scope) {
+          node.static_info.scope_number =
+              _scopes.back().scope_numbering.back();
+        }
+
+        // Within global blocks, use the top-level symbol table frame.
+        add_symbol_checking_collision(node, s, t, global_scope);
+        auto& sym = (global_scope ? _scopes[0] : _scopes.back()).symbol_table;
+
+        // Store global variables in the global map for future use.
+        if (global_scope && node.type != Node::GLOBAL_ASSIGN) {
+          bool exported = _scopes.back().metadata.has(EXPORT_GLOBAL);
+          if (!t.is_error()) {
+            _globals_output.emplace(s, t.external().make_exported(exported));
+          }
+          if (exported) {
+            sym[s].warn_writes = sym[s].warn_reads = false;
+          }
+        }
+
+        // Merge warnings for immediate assign hack.
+        if (use_function_immediate_assign_hack(node)) {
+          sym[s].warn_reads &= _immediate_left_assign_warn_reads;
+        }
+        sym[s].closed = sym[s].warn_closed =
+            node.int_value & Node::MODIFIER_CLOSED;
+        if (global_scope && sym[s].closed) {
+          sym[s].warn_closed = false;
+          error(node, "`closed` modifier has no effect on global " +
+                      node.string_value, false);
+        }
+
+        // Only export functions get added to the function table. They also
+        // are automatically assumed to be referenced.
+        if (node.type == Node::GLOBAL_ASSIGN && !t.is_error() &&
+            node.int_value & Node::MODIFIER_EXPORT) {
+          _functions_output.emplace(s, t.external().make_exported(true));
+          sym[s].warn_reads = false;
+        }
+        return results[1];
+      });
       break;
 
     case Node::FUNCTION:

@@ -72,7 +72,7 @@ ERROR(TopLevelC, "global x = 0;", "x");
 ERROR(TopLevelD, "export = void() {}", "=");
 ERROR(TopLevelE, "export export = void() {}", "export");
 ERROR(TopLevelF, "export for = void() {}", "for");
-ERROR(TopLevelG, "export int4 = void() {}", "int4");
+ERROR(TopLevelG, "export int4 = void() {}", "int4", "=");
 ERROR(TopLevelH, "global const x = int;", "int");
 ERROR(TopLevelI, "global const x = 0", "0");
 ERROR(TopLevelJ, "void() x = void() {}", "x");
@@ -83,6 +83,7 @@ ERROR(TopLevelN, "x = 0;", "=");
 ERROR(TopLevelO, "x = void();", "void");
 ERROR(TopLevelP, "x = {};", "{");
 ERROR(TopLevelQ, "x = () {};", ")");
+ERROR(TopLevelR, "x = 0; y = float() {return x;}", "=");
 ERROR(SyntaxA, "x = void() {0}", "}");
 ERROR(SyntaxB, "x = void() {return}", "}");
 ERROR(SyntaxC, "x = void(return 0;) {}", "return");
@@ -122,7 +123,7 @@ ERROR(TypeExpressionD, "x = void() {int;}", "int");
 ERROR(TypeExpressionE, "x = void() {return int();}", "int");
 
 // Function signature / invocation errors.
-ERROR(FunctionA, "int = void() {}", "int");
+ERROR(FunctionA, "int = void() {}", "int", "=");
 ERROR(FunctionB, "global {return 0;}", "return 0;");
 ERROR(FunctionC, "~global {return;}", "return;");
 ERROR(FunctionD, "export ~global {}", "export ~global {}");
@@ -237,6 +238,7 @@ ERROR(VarY, "x = void() {var a = a;}", "a");
 ERROR(VarZ, "x = void() {var a + 1 = 0;}", "a", "=");
 ERROR(Var0, "x = void() {0 && (var a = 0); a;}", "a");
 ERROR(Var1, "x = void() {0 ? (var a = 0) : (var b = 0); a; b;}", "a", "b");
+ERROR(Var2, "global const x = 0; x = void() {}", "=");
 
 // Name resolution / scope errors.
 ERROR(ScopeA, "x = void() {y;}", "y");
