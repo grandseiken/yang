@@ -548,14 +548,11 @@ Value LexScope::structure_ptr(llvm::Value* ptr, const std::string& name)
   return Value(_structure.table[name].type, structure_ptr(ptr, index));
 }
 
-llvm::BasicBlock* LexScope::create_block(
-    metadata_t meta, const std::string& name)
+llvm::BasicBlock* LexScope::create_block(const std::string& name)
 {
   auto parent = _b.b.GetInsertBlock() ?
       _b.b.GetInsertBlock()->getParent() : nullptr;
-  auto block = llvm::BasicBlock::Create(_b.b.getContext(), name, parent);
-  metadata.add(meta, block);
-  return block;
+  return llvm::BasicBlock::Create(_b.b.getContext(), name, parent);
 }
 
 llvm::BasicBlock* LexScope::get_block(metadata_t meta)

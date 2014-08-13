@@ -23,10 +23,6 @@ void AstPrinter::before(const Node& node)
   }
 }
 
-void AstPrinter::infix(const Node&, const result_list&)
-{
-}
-
 std::string AstPrinter::after(const Node& node, const result_list& results)
 {
   std::string s = node_op_string(node.type);

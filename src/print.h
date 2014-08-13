@@ -19,7 +19,6 @@ public:
 protected:
 
   void before(const Node& node) override;
-  void infix(const Node& node, const result_list& results) override;
   std::string after(const Node& node, const result_list& results) override;
 
 private:

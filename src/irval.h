@@ -146,21 +146,9 @@ public:
     FUNCTION,
     PARENT_BLOCK,
     TYPE_EXPR_CONTEXT,
-
-    IF_THEN_BLOCK,
-    IF_ELSE_BLOCK,
-
-    LOOP_COND_BLOCK,
-    LOOP_BODY_BLOCK,
-    LOOP_AFTER_BLOCK,
-
     LOOP_BREAK_LABEL,
     LOOP_CONTINUE_LABEL,
-
-    LOGICAL_OP_SOURCE_BLOCK,
-    LOGICAL_OP_RHS_BLOCK,
-
-    MERGE_BLOCK,
+    OTHER_SOURCE_BLOCK,
   };
 
   LexScope(Builder& builder, bool create_functions = true);
@@ -179,8 +167,7 @@ public:
   llvm::Value* structure_ptr(llvm::Value* ptr, std::size_t index);
   Value structure_ptr(llvm::Value* ptr, const std::string& name);
 
-  // Create block and insert in the metadata table.
-  llvm::BasicBlock* create_block(metadata_t meta, const std::string& name);
+  llvm::BasicBlock* create_block(const std::string& name);
   llvm::BasicBlock* get_block(metadata_t meta);
 
   // Storing to some structure (global data or closure) with refcounting.

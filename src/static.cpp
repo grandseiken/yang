@@ -179,7 +179,7 @@ void StaticChecker::before(const Node& node)
     // Avoid duplicated errors by adding an override context.
     _scopes.back().metadata.push();
     _scopes.back().metadata.add(ERR_EXPR_CONTEXT, {});
-    call_after(node, [&]{_scopes.back().metadata.pop();});
+    call_after(node, [=]{_scopes.back().metadata.pop();});
   }
   const Node* no_effect_node = get_no_effect_node(node);
   if (is_tree_root(node) && no_effect_node) {
@@ -194,16 +194,19 @@ void StaticChecker::before(const Node& node)
   // the erroneous 1 == 1. gives type INT, as the result would be INT whether or
   // not the operand type was intended to be int or float.
   std::function<Type(const result_list&)> result_macro;
-#define RESULT [&](const result_list& results) -> Type
+#define RESULT [=,&node](const result_list& results) -> Type
 #define RESULT_FOR_ANY(condition) if (condition) result_macro = RESULT
 #define RESULT_FOR(node_type) RESULT_FOR_ANY(node.type == Node::node_type)
+#define CONSTANT [=,&node](const result_list&) -> Type
+#define CONSTANT_FOR_ANY(condition) if (condition) result_macro = CONSTANT
+#define CONSTANT_FOR(node_type) CONSTANT_FOR_ANY(node.type == Node::node_type)
 
   // For simple context-insensitive nodes we define the behaviour with macros.
-  RESULT_FOR(TYPE_VOID) {return {};};
-  RESULT_FOR(TYPE_INT) {return numeric_type(false, node.int_value);};
-  RESULT_FOR(TYPE_FLOAT) {return numeric_type(true, node.int_value);};
+  CONSTANT_FOR(TYPE_VOID) {return {};};
+  CONSTANT_FOR(TYPE_INT) {return numeric_type(false, node.int_value);};
+  CONSTANT_FOR(TYPE_FLOAT) {return numeric_type(true, node.int_value);};
   RESULT_FOR(NAMED_EXPRESSION) {return results[0];};
-  RESULT_FOR(EXPR_STMT) {return Type(true);};
+  CONSTANT_FOR(EXPR_STMT) {return Type(true);};
   RESULT_FOR(RETURN_STMT) {
     Type t = node.children.empty() ? Type() : results[0];
     // If we're not in a function, we must be in a global block.
@@ -243,14 +246,14 @@ void StaticChecker::before(const Node& node)
     }
     return yang::Type::function_t(m.type.function_return(), args);
   };
-  RESULT_FOR_ANY(node.type == Node::BREAK_STMT ||
-                 node.type == Node::CONTINUE_STMT) {
+  CONSTANT_FOR_ANY(node.type == Node::BREAK_STMT ||
+                   node.type == Node::CONTINUE_STMT) {
     if (!_scopes.back().metadata.has(LOOP_BODY)) {
       error(node, str(node) + " outside of loop body");
     }
     return Type(true);
   };
-  RESULT_FOR(IDENTIFIER) {
+  CONSTANT_FOR(IDENTIFIER) {
     // Look up user types in a type-context.
     if (inside_type_context()) {
       const auto& t = _context.type_lookup(node.string_value);
@@ -287,7 +290,7 @@ void StaticChecker::before(const Node& node)
         }
 
         error(node, "undeclared identifier `" + node.string_value + "`");
-        add_symbol(node, node.string_value, Type(true), false, false);
+        add_symbol(node, node.string_value, Type(true), false);
         it = _scopes.rbegin();
         break;
       }
@@ -313,10 +316,10 @@ void StaticChecker::before(const Node& node)
          symbol.warn_writes : symbol.warn_reads) = false;
     return symbol.type;
   };
-  RESULT_FOR(EMPTY_EXPR) {return yang::Type::int_t();};
-  RESULT_FOR(INT_LITERAL) {return yang::Type::int_t();};
-  RESULT_FOR(FLOAT_LITERAL) {return yang::Type::float_t();};
-  RESULT_FOR(STRING_LITERAL) {return type_of<Ref<const char>>();};
+  CONSTANT_FOR(EMPTY_EXPR) {return yang::Type::int_t();};
+  CONSTANT_FOR(INT_LITERAL) {return yang::Type::int_t();};
+  CONSTANT_FOR(FLOAT_LITERAL) {return yang::Type::float_t();};
+  CONSTANT_FOR(STRING_LITERAL) {return type_of<Ref<const char>>();};
   RESULT_FOR_ANY(node.type == Node::POW || node.type == Node::MOD ||
                  node.type == Node::ADD || node.type == Node::SUB ||
                  node.type == Node::MUL || node.type == Node::DIV) {
@@ -580,8 +583,8 @@ void StaticChecker::before(const Node& node)
     case Node::PROGRAM:
       // Make sure to warn on unused top-level elements. This doesn't actually
       // pop anything, since it's the last frame.
-      call_after(node, [&]{pop_symbol_tables();});
-      result(node, RESULT {return Type{};});
+      call_after(node, [=]{pop_symbol_tables();});
+      result(node, CONSTANT {return Type{};});
       break;
 
     case Node::GLOBAL:
@@ -601,12 +604,12 @@ void StaticChecker::before(const Node& node)
           _scopes.back().metadata.add(EXPORT_GLOBAL, {});
         }
       }
-      call_after(node, [&]
+      call_after(node, [=]
       {
         pop_symbol_tables();
         _scopes.pop_back();
       });
-      result(node, RESULT {return Type{};});
+      result(node, CONSTANT {return Type{};});
       break;
 
     case Node::GLOBAL_ASSIGN:
@@ -628,7 +631,7 @@ void StaticChecker::before(const Node& node)
       // Add the identifier to the table temporarily to avoid lookup errors on
       // the name.
       push_symbol_tables();
-      call_after(*node.children[0], [&]{pop_symbol_tables();});
+      call_after(*node.children[0], [=]{pop_symbol_tables();});
       if (node.children[0]->type == Node::IDENTIFIER) {
         add_symbol(node, node.children[0]->string_value, {}, false, false);
       }
@@ -704,7 +707,7 @@ void StaticChecker::before(const Node& node)
         return results[0].function() ? results[0] : Type(true);
       });
 
-      call_after_result(*node.children[0], [&](const Type& result)
+      call_after_result(*node.children[0], [=,&node](const Type& result)
       {
         // Erase type context.
         _scopes.back().metadata.pop();
@@ -764,7 +767,7 @@ void StaticChecker::before(const Node& node)
         push_symbol_tables();
       });
 
-      call_after(node, [&](const result_list& results)
+      call_after(node, [=,&node](const result_list& results)
       {
         if (!current_return_type().is_void() &&
             (results[1].is_error() || !results[1].not_void())) {
@@ -787,7 +790,7 @@ void StaticChecker::before(const Node& node)
     case Node::LOOP_AFTER_BLOCK:
     case Node::BLOCK:
       push_symbol_tables();
-      call_after(node, [&]{pop_symbol_tables();});
+      call_after(node, [=]{pop_symbol_tables();});
       result(node, RESULT {
         // Check for dead code.
         bool dead = false;
@@ -812,7 +815,7 @@ void StaticChecker::before(const Node& node)
 
     case Node::IF_STMT:
       push_symbol_tables();
-      call_after(node, [&]{pop_symbol_tables();});
+      call_after(node, [=]{pop_symbol_tables();});
       result(node, RESULT {
         if (!results[0].is(yang::Type::int_t())) {
           error(*node.children[0],
@@ -835,14 +838,14 @@ void StaticChecker::before(const Node& node)
     case Node::WHILE_STMT:
     case Node::DO_WHILE_STMT:
       push_symbol_tables();
-      call_after(node, [&]{pop_symbol_tables();});
+      call_after(node, [=]{pop_symbol_tables();});
       // Insert a marker into the symbol table that break and continue
       // statements can check for.
       _scopes.back().metadata.add(LOOP_BODY, {});
       // Separate scope for the loop after-statement.
       if (node.type == Node::FOR_STMT) {
-        call_after(*node.children[1], [&]{_scopes.back().metadata.push();});
-        call_after(*node.children[2], [&]{_scopes.back().metadata.pop();});
+        call_after(*node.children[1], [=]{_scopes.back().metadata.push();});
+        call_after(*node.children[2], [=]{_scopes.back().metadata.pop();});
       }
       result(node, RESULT {
         std::size_t cond = node.type != Node::WHILE_STMT;
@@ -855,15 +858,15 @@ void StaticChecker::before(const Node& node)
       break;
 
     case Node::TERNARY:
-      call_after_result(*node.children[0], [&](const Type& result)
+      call_after_result(*node.children[0], [=,&node](const Type& result)
       {
         if (!result.is_vector()) {
           push_symbol_tables();
-          call_after(*node.children[1], [&]{
+          call_after(*node.children[1], [=]{
             pop_symbol_tables();
             push_symbol_tables();
           });
-          call_after(*node.children[2], [&]{pop_symbol_tables();});
+          call_after(*node.children[2], [=]{pop_symbol_tables();});
         }
       });
       result(node, RESULT {
@@ -936,11 +939,11 @@ void StaticChecker::before(const Node& node)
     case Node::LOGICAL_AND:
       // Right-hand-sides of non-vectorised logical operators need an extra
       // scope, as they won't always be run.
-      call_after_result(*node.children[0], [&](const Type& result)
+      call_after_result(*node.children[0], [=,&node](const Type& result)
       {
         if (!result.is_vector()) {
           push_symbol_tables();
-          call_after(*node.children[1], [&]{pop_symbol_tables();});
+          call_after(*node.children[1], [=]{pop_symbol_tables();});
         }
       });
     case Node::BITWISE_OR:
@@ -966,14 +969,14 @@ void StaticChecker::before(const Node& node)
     default: {}
   }
 
-#undef RESULT
   // Type/expression context error result overrides any other result.
   if (context_err) {
-    result(node, []{return Type(true);});
+    result(node, CONSTANT {return Type(true);});
   }
+#undef RESULT
 }
 
-Type StaticChecker::after(const Node& node, const result_list& results)
+Type StaticChecker::after(const Node& node, const result_list&)
 {
   error(node, "unimplemented construct");
   return Type(true);

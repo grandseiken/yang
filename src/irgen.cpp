@@ -140,6 +140,8 @@ void IrGenerator::emit_global_functions()
 
 void IrGenerator::obtain_function_pointers()
 {
+  // Getting function pointers to store in vtables is delayed until after
+  // optimisation has taken place, or they will be wrong.
   for (const auto& pair : _b.generated_function_pointers) {
     *pair.first = _b.engine.getPointerToFunction(pair.second);
   }
@@ -148,8 +150,240 @@ void IrGenerator::obtain_function_pointers()
 
 void IrGenerator::before(const Node& node)
 {
-  auto& fback = _scopes.back();
+  std::function<Value(const result_list&)> result_macro;
+#define RESULT [=,&node](const result_list& results) -> Value
+#define RESULT_FOR_ANY(condition) if (condition) result_macro = RESULT
+#define RESULT_FOR(node_type) RESULT_FOR_ANY(node.type == Node::node_type)
+#define CONSTANT [=,&node](const result_list&) -> Value
+#define CONSTANT_FOR_ANY(condition) if (condition) result_macro = CONSTANT
+#define CONSTANT_FOR(node_type) CONSTANT_FOR_ANY(node.type == Node::node_type)
+
+  CONSTANT_FOR(TYPE_VOID) {return yang::Type::void_t();};
+  CONSTANT_FOR(TYPE_INT) {return node.int_value > 1 ?
+      yang::Type::ivec_t(node.int_value) : yang::Type::int_t();};
+  CONSTANT_FOR(TYPE_FLOAT) {return node.int_value > 1 ?
+      yang::Type::fvec_t(node.int_value) : yang::Type::float_t();};
+  RESULT_FOR(NAMED_EXPRESSION) {return results[0];};
+  RESULT_FOR(EXPR_STMT) {return results[0];};
+  RESULT_FOR(RETURN_STMT) {
+    auto dead_block = _scopes.back().create_block("dead");
+    _scopes.back().dereference_scoped_locals(0);
+    node.children.empty() ? _b.b.CreateRetVoid() : _b.b.CreateRet(results[0]);
+    _b.b.SetInsertPoint(dead_block);
+    return node.children.empty() ? Value() : results[0];
+  };
+  RESULT_FOR_ANY(node.type == Node::ASSIGN ||
+                 node.type == Node::ASSIGN_LOGICAL_OR ||
+                 node.type == Node::ASSIGN_LOGICAL_AND ||
+                 node.type == Node::ASSIGN_BITWISE_OR ||
+                 node.type == Node::ASSIGN_BITWISE_AND ||
+                 node.type == Node::ASSIGN_BITWISE_XOR ||
+                 node.type == Node::ASSIGN_BITWISE_LSHIFT ||
+                 node.type == Node::ASSIGN_BITWISE_RSHIFT ||
+                 node.type == Node::ASSIGN_POW ||
+                 node.type == Node::ASSIGN_MOD ||
+                 node.type == Node::ASSIGN_ADD ||
+                 node.type == Node::ASSIGN_SUB ||
+                 node.type == Node::ASSIGN_MUL ||
+                 node.type == Node::ASSIGN_DIV) {
+    const std::string& s = node.children[0]->string_value;
+    Value v = node.type == Node::ASSIGN ?
+        results[1] : binary(node, results[0], results[1]);
+    _scopes.back().memory_store(v, get_variable_ptr(s));
+    return v;
+  };
+  CONSTANT_FOR_ANY(node.type == Node::BREAK_STMT ||
+                   node.type == Node::CONTINUE_STMT) {
+    _scopes.back().dereference_loop_locals();
+    auto dead_block = _scopes.back().create_block("dead");
+    _b.b.CreateBr(_scopes.back().get_block(
+        node.type == Node::BREAK_STMT ? LexScope::LOOP_BREAK_LABEL :
+                                        LexScope::LOOP_CONTINUE_LABEL));
+    _b.b.SetInsertPoint(dead_block);
+    return {};
+  };
+  RESULT_FOR(MEMBER_SELECTION) {
+    llvm::Value* env = nullptr;
+    // Don't need to allocate anything for managed user-types: we already
+    // have a chunk.
+    if (results[0].type.is_managed_user_type()) {
+      env = results[0];
+    }
+    else {
+      env = _chunk.allocate_closure_struct(get_global_struct());
+      _chunk.memory_store(results[0], env, "object");
+    }
+    Value v = get_member_function(results[0].type, node.string_value);
+    v = _b.function_value(v.type, v, env);
+    _scopes.back().update_reference_count(v, 1);
+    _scopes.back().refcount_init(v);
+    return v;
+  };
+  CONSTANT_FOR(IDENTIFIER) {
+    // In type-context, we just want to return a user type.
+    if (_scopes.back().metadata.has(LexScope::TYPE_EXPR_CONTEXT)) {
+      return _context.type_lookup(node.string_value);
+    }
+
+    // Load the variable, if it's there. We must be careful to only return
+    // globals/functions *after* they have been defined, otherwise it might
+    // be a reference to a context function of the same name.
+    Value variable_ptr = get_variable_ptr(node.string_value);
+    if (variable_ptr) {
+      return variable_ptr.irval->getType()->isPointerTy() ?
+          _scopes.back().memory_load(variable_ptr.type, variable_ptr) :
+          variable_ptr;
+    }
+
+    // It must be a context function.
+    const auto& t = _context.constructor_lookup(node.string_value);
+    if (!t.ctor.type.is_void()) {
+      Value v = get_constructor(node.string_value);
+      return _b.function_value(v.type, v, get_global_struct());
+    }
+    const auto& f = _context.function_lookup(node.string_value);
+    if (!f.type.is_void()) {
+      return _b.function_value(f);
+    }
+    // It's possible that nothing matches, when this is the identifier on the
+    // left of a variable declaration.
+    return Value();
+  };
+  CONSTANT_FOR(EMPTY_EXPR) {return _b.constant_int(1);};
+  CONSTANT_FOR(INT_LITERAL) {return _b.constant_int(node.int_value);};
+  CONSTANT_FOR(FLOAT_LITERAL) {return _b.constant_float(node.float_value);};
+  CONSTANT_FOR(STRING_LITERAL) {
+    StaticString* s = nullptr;
+    auto it = _string_literals.find(node.string_value);
+    if (it == _string_literals.end()) {
+      s = new StaticString(node.string_value);
+      _string_literals.emplace(node.string_value, _b.static_data.size());
+      _b.static_data.emplace_back(s);
+    }
+    else {
+      s = (StaticString*)_b.static_data[it->second].get();
+    }
+
+    // TODO: string literal keep-alives the instance it was spawned from
+    // (get_global_struct()), when it really only needs to keep-alive the
+    // program.
+    llvm::Value* chunk = _chunk.allocate_closure_struct(get_global_struct());
+    _chunk.memory_store(_b.constant_ptr(s->value.c_str()), chunk, "object");
+    return Value(type_of<Ref<const char>>(),
+                 _b.b.CreateBitCast(chunk, _b.void_ptr_type()));
+  };
+  // Most binary operators map directly to (vectorisations of) LLVM IR
+  // instructions.
+  RESULT_FOR_ANY(node.type == Node::BITWISE_OR ||
+                 node.type == Node::BITWISE_AND ||
+                 node.type == Node::BITWISE_XOR ||
+                 node.type == Node::BITWISE_LSHIFT ||
+                 node.type == Node::BITWISE_RSHIFT ||
+                 node.type == Node::POW || node.type == Node::MOD ||
+                 node.type == Node::ADD || node.type == Node::SUB ||
+                 node.type == Node::MUL || node.type == Node::DIV) {
+    return binary(node, results[0], results[1]);
+  };
+  RESULT_FOR_ANY(node.type == Node::EQ || node.type == Node::NE ||
+                 node.type == Node::GE || node.type == Node::LE ||
+                 node.type == Node::GT || node.type == Node::LT) {
+    return b2i(binary(node, results[0], results[1]));
+  };
+  RESULT_FOR_ANY(node.type == Node::FOLD_LOGICAL_OR ||
+                 node.type == Node::FOLD_LOGICAL_AND) {
+    return b2i(fold(node, results[0], true));
+  };
+  RESULT_FOR_ANY(node.type == Node::FOLD_BITWISE_OR ||
+                 node.type == Node::FOLD_BITWISE_OR ||
+                 node.type == Node::FOLD_BITWISE_AND ||
+                 node.type == Node::FOLD_BITWISE_XOR ||
+                 node.type == Node::FOLD_BITWISE_LSHIFT ||
+                 node.type == Node::FOLD_BITWISE_RSHIFT) {
+    return fold(node, results[0]);
+  };
+  RESULT_FOR(FOLD_POW) {
+    // POW is the only right-associative fold operator.
+    return fold(node, results[0], false, false, true);
+  };
+  RESULT_FOR_ANY(node.type == Node::FOLD_MOD ||
+                 node.type == Node::FOLD_ADD || node.type == Node::FOLD_SUB ||
+                 node.type == Node::FOLD_MUL || node.type == Node::FOLD_DIV) {
+    return fold(node, results[0]);
+  };
+  RESULT_FOR_ANY(node.type == Node::FOLD_EQ || node.type == Node::FOLD_NE ||
+                 node.type == Node::FOLD_GE || node.type == Node::FOLD_LE ||
+                 node.type == Node::FOLD_GT || node.type == Node::FOLD_LT) {
+    return b2i(fold(node, results[0], false, true));
+  };
+  RESULT_FOR(LOGICAL_NEGATION) {
+    Value v = _b.default_for_type(results[0].type);
+    v.irval = _b.b.CreateICmpEQ(results[0], v);
+    return b2i(v);
+  };
+  RESULT_FOR(BITWISE_NEGATION) {
+    Value v = _b.default_for_type(results[0].type, 0u - 1);
+    v.irval = _b.b.CreateXor(results[0], v);
+    return v;
+  };
+  RESULT_FOR(ARITHMETIC_NEGATION) {
+    Value v = _b.default_for_type(results[0].type);
+    v.irval = results[0].type.is_int() || results[0].type.is_ivec() ?
+        _b.b.CreateSub(v, results[0]) : _b.b.CreateFSub(v, results[0]);
+    return v;
+  };
+  RESULT_FOR_ANY(node.type == Node::INCREMENT || node.type == Node::DECREMENT) {
+    Value v = _b.default_for_type(
+        results[0].type, node.type == Node::INCREMENT ? 1 : -1);
+    v.irval = results[0].type.is_int() || results[0].type.is_ivec() ?
+        _b.b.CreateAdd(results[0], v) : _b.b.CreateFAdd(results[0], v);
+    if (node.children[0]->type == Node::IDENTIFIER) {
+      const std::string& s = node.children[0]->string_value;
+      _scopes.back().memory_store(v, get_variable_ptr(s));
+    }
+    return v;
+  };
+  RESULT_FOR(INT_CAST) {return f2i(results[0]);};
+  RESULT_FOR(FLOAT_CAST) {return i2f(results[0]);};
+  RESULT_FOR(VECTOR_CONSTRUCT) {
+    Value v = results[0].type.is_int() ? _b.constant_ivec(0, results.size()) :
+                                         _b.constant_fvec(0, results.size());
+    for (std::size_t i = 0; i < results.size(); ++i) {
+      v.irval = _b.b.CreateInsertElement(
+          v.irval, results[i], _b.constant_int(i));
+    }
+    return v;
+  };
+  RESULT_FOR(VECTOR_INDEX) {
+    // Indexing out-of-bounds produces constant zero.
+    Value v = results[0].type.is_ivec() ?
+        _b.constant_int(0) : _b.constant_float(0);
+    auto ge = _b.b.CreateICmpSGE(results[1], _b.constant_int(0));
+    auto lt = _b.b.CreateICmpSLT(
+        results[1], _b.constant_int(results[0].type.vector_size()));
+
+    auto in = _b.b.CreateAnd(ge, lt);
+    v.irval =_b.b.CreateSelect(
+        in, _b.b.CreateExtractElement(results[0], results[1]), v);
+    return v;
+  };
+#undef RESULT_FOR
+#undef RESULT_FOR_ANY
+  if (result_macro) {
+    result(node, result_macro);
+  }
+
   switch (node.type) {
+    case Node::TYPE_FUNCTION:
+      type_function:
+      result(node, RESULT {
+        std::vector<yang::Type> args;
+        for (std::size_t i = 1; i < results.size(); ++i) {
+          args.push_back(results[i].type);
+        }
+        return yang::Type::function_t(results[0].type, args);
+      });
+      break;
+
     case Node::GLOBAL:
     {
       // GLOBAL init functions don't need external linkage, since they are
@@ -169,224 +403,290 @@ void IrGenerator::before(const Node& node)
       auto it = function->arg_begin();
       it->setName("env");
       _scopes.emplace_back(_scopes.back().next_lex_scope());
-      auto& fback = _scopes.back();
       _b.b.SetInsertPoint(block);
 
-      fback.metadata.add(LexScope::ENVIRONMENT_PTR, &*it);
-      fback.metadata.add(LexScope::FUNCTION, function);
+      _scopes.back().metadata.add(LexScope::ENVIRONMENT_PTR, &*it);
+      _scopes.back().metadata.add(LexScope::FUNCTION, function);
       if (!node.static_info.closed_environment.empty()) { 
-        fback.init_structure_type(
+        _scopes.back().init_structure_type(
             "closure", node.static_info.closed_environment, false);
 
-        llvm::Value* v = fback.allocate_closure_struct(&*it);
-        fback.metadata[LexScope::CLOSURE_PTR] = v;
-        fback.update_reference_count(nullptr, v, 1);
-        fback.refcount_init(_b.function_value(
+        llvm::Value* v = _scopes.back().allocate_closure_struct(&*it);
+        _scopes.back().metadata[LexScope::CLOSURE_PTR] = v;
+        _scopes.back().update_reference_count(nullptr, v, 1);
+        _scopes.back().refcount_init(_b.function_value(
             yang::Type::function_t(yang::Type::void_t(), {}),
             _b.constant_ptr(nullptr), v));
       }
 
       if (!(node.int_value & Node::MODIFIER_NEGATION)) {
-        fback.metadata.add(LexScope::GLOBAL_INIT_FUNCTION, function);
+        _scopes.back().metadata.add(LexScope::GLOBAL_INIT_FUNCTION, function);
       }
+      result(node, CONSTANT {
+        _scopes.back().dereference_scoped_locals(0);
+        _scopes.pop_back();
+        _b.b.CreateRetVoid();
+        return {};
+      });
       break;
     }
 
-    case Node::FUNCTION:
-      fback.metadata.push();
-      fback.metadata.add(LexScope::TYPE_EXPR_CONTEXT, nullptr);
-      break;
     case Node::GLOBAL_ASSIGN:
-    case Node::ASSIGN_VAR:
-    case Node::ASSIGN_CONST:
-      // See static.cpp for details on the immediate left assign hack.
       if (node.children[1]->type == Node::FUNCTION) {
         _immediate_left_assign = node.children[0]->string_value;
       }
+      result(node, RESULT {
+        auto function = _b.b.GetInsertBlock()->getParent();
+        get_trampoline_function(results[1].type, false);
+        // Modifiers such as `export` are stored in int_value for now.
+        if (node.int_value & Node::MODIFIER_EXPORT) {
+          function->setLinkage(llvm::Function::ExternalLinkage);
+        }
+        function->setName(node.children[0]->string_value);
+        _scopes.back().symbol_table.add(
+            node.children[0]->string_value, results[1]);
+        return results[1];
+      });
+      break;
+
+    case Node::FUNCTION:
+      _scopes.back().metadata.push();
+      _scopes.back().metadata.add(LexScope::TYPE_EXPR_CONTEXT, nullptr);
+      call_after_result(*node.children[0], [&](const Value& value)
+      {
+        _scopes.back().metadata.pop();
+        create_function(node, value.type);
+      });
+
+      result(node, RESULT {
+        if (results[0].type.function_return().is_void()) {
+          _scopes.back().dereference_scoped_locals(0);
+          _b.b.CreateRetVoid();
+        }
+        else {
+          // In a function that passes the static check, control never reaches
+          // this point; but the block must have a terminator.
+          _b.b.CreateBr(_b.b.GetInsertBlock());
+        }
+        auto parent_block = _scopes.back().get_block(LexScope::PARENT_BLOCK);
+        _scopes.pop_back();
+
+        auto parent = _b.b.GetInsertBlock()->getParent();
+        if (!_scopes.back().metadata.has(LexScope::FUNCTION)) {
+          return Value(results[0].type, parent);
+        }
+        // If this was a nested function, set the insert point back to the last
+        // block in the enclosing function and make the proper expression value.
+        _b.b.SetInsertPoint(parent_block);
+        // If the current function created a closure, we have to pass the new
+        // environment pointer (which has a parent pointer to the old one)
+        // instead. There is some potential for optimisation if an entire tree
+        // of inner functions never creates a closure, where we could instead
+        // dereference and pass only the closure scopes they actually access;
+        // it's kind of complicated and not really a huge optimisation, though.
+        auto closure = _scopes.back().metadata[LexScope::CLOSURE_PTR];
+        return _b.function_value(
+            results[0].type, parent,
+            closure ? closure :
+                _scopes.back().metadata[LexScope::ENVIRONMENT_PTR]);
+      });
       break;
 
     case Node::BLOCK:
     case Node::LOOP_AFTER_BLOCK:
-      fback.push_scope();
+      _scopes.back().push_scope();
+      result(node, CONSTANT {
+        auto after_block = _scopes.back().create_block("after");
+        _b.b.CreateBr(after_block);
+        _b.b.SetInsertPoint(after_block);
+        _scopes.back().pop_scope();
+        return {};
+      });
       break;
 
     case Node::IF_STMT:
     {
-      fback.push_scope();
-      fback.create_block(LexScope::IF_THEN_BLOCK, "then");
-      fback.create_block(LexScope::MERGE_BLOCK, "merge");
-      if (node.children.size() > 2) {
-        fback.create_block(LexScope::IF_ELSE_BLOCK, "else");
+      _scopes.back().push_scope();
+      auto then_block = _scopes.back().create_block("then");
+      auto merge_block = _scopes.back().create_block("merge");
+      llvm::BasicBlock* else_block = nullptr;
+      bool has_else = node.children.size() > 2;
+      if (has_else) {
+        else_block = _scopes.back().create_block("else");
+        call_after(*node.children[1], [=]
+        {
+          _b.b.CreateBr(merge_block);
+          _b.b.SetInsertPoint(else_block);
+        });
       }
+
+      call_after_result(*node.children[0], [=](const Value& value)
+      {
+        _b.b.CreateCondBr(i2b(value), then_block,
+                          has_else ? else_block : merge_block);
+        _b.b.SetInsertPoint(then_block);
+      });
+      result(node, RESULT {
+        _b.b.CreateBr(merge_block);
+        _b.b.SetInsertPoint(merge_block);
+        _scopes.back().pop_scope();
+        return results[0];
+      });
       break;
     }
 
     case Node::FOR_STMT:
     {
-      fback.push_scope();
-      fback.create_block(LexScope::LOOP_COND_BLOCK, "cond");
-      fback.create_block(LexScope::LOOP_BODY_BLOCK, "loop");
-      auto after_block =
-          fback.create_block(LexScope::LOOP_AFTER_BLOCK, "after");
-      auto merge_block = fback.create_block(LexScope::MERGE_BLOCK, "merge");
-      fback.metadata.add(LexScope::LOOP_BREAK_LABEL, merge_block);
-      fback.metadata.add(LexScope::LOOP_CONTINUE_LABEL, after_block);
+      _scopes.back().push_scope();
+      auto cond_block = _scopes.back().create_block("cond");
+      auto loop_block = _scopes.back().create_block("loop");
+      auto after_block = _scopes.back().create_block("after");
+      auto merge_block = _scopes.back().create_block("merge");
+      _scopes.back().metadata.add(LexScope::LOOP_BREAK_LABEL, merge_block);
+      _scopes.back().metadata.add(LexScope::LOOP_CONTINUE_LABEL, after_block);
+
+      call_after(*node.children[0], [=]
+      {
+        _b.b.CreateBr(cond_block);
+        _b.b.SetInsertPoint(cond_block);
+        _scopes.back().push_scope(true);
+      });
+      call_after_result(*node.children[1], [=](const Value& value)
+      {
+        auto clean_block = _scopes.back().create_block("clean");
+        _b.b.CreateCondBr(i2b(value), loop_block, clean_block);
+        _b.b.SetInsertPoint(clean_block);
+        _scopes.back().dereference_scoped_locals();
+        _b.b.CreateBr(merge_block);
+        _b.b.SetInsertPoint(after_block);
+      });
+      call_after(*node.children[2], [=]
+      {
+        _b.b.CreateBr(cond_block);
+        _b.b.SetInsertPoint(loop_block);
+      });
+      result(node, RESULT {
+        _scopes.back().pop_scope(true);
+        _b.b.CreateBr(after_block);
+        _b.b.SetInsertPoint(merge_block);
+        _scopes.back().pop_scope();
+        return results[0];
+      });
       break;
     }
 
     case Node::WHILE_STMT:
     {
-      fback.push_scope();
-      auto cond_block = fback.create_block(LexScope::LOOP_COND_BLOCK, "cond");
-      auto merge_block = fback.create_block(LexScope::MERGE_BLOCK, "merge");
-      fback.create_block(LexScope::LOOP_BODY_BLOCK, "loop");
-      fback.metadata.add(LexScope::LOOP_BREAK_LABEL, merge_block);
-      fback.metadata.add(LexScope::LOOP_CONTINUE_LABEL, cond_block);
+      _scopes.back().push_scope();
+      auto cond_block = _scopes.back().create_block("cond");
+      auto merge_block = _scopes.back().create_block("merge");
+      auto loop_block = _scopes.back().create_block("loop");
+      _scopes.back().metadata.add(LexScope::LOOP_BREAK_LABEL, merge_block);
+      _scopes.back().metadata.add(LexScope::LOOP_CONTINUE_LABEL, cond_block);
 
       _b.b.CreateBr(cond_block);
       _b.b.SetInsertPoint(cond_block);
-      fback.push_scope(true);
+      _scopes.back().push_scope(true);
+
+      call_after_result(*node.children[0], [=](const Value& value)
+      {
+        auto clean_block = _scopes.back().create_block("clean");
+        _b.b.CreateCondBr(i2b(value), loop_block, clean_block);
+        _b.b.SetInsertPoint(clean_block);
+        _scopes.back().dereference_scoped_locals();
+        _b.b.CreateBr(merge_block);
+        _b.b.SetInsertPoint(loop_block);
+      });
+      result(node, RESULT {
+        _scopes.back().pop_scope(true);
+        _b.b.CreateBr(cond_block);
+        _b.b.SetInsertPoint(merge_block);
+        _scopes.back().pop_scope();
+        return results[0];
+      });
       break;
     }
 
     case Node::DO_WHILE_STMT:
     {
-      fback.push_scope(true);
-      auto loop_block = fback.create_block(LexScope::LOOP_BODY_BLOCK, "loop");
-      auto cond_block = fback.create_block(LexScope::LOOP_COND_BLOCK, "cond");
-      auto merge_block = fback.create_block(LexScope::MERGE_BLOCK, "merge");
-      fback.metadata.add(LexScope::LOOP_BREAK_LABEL, merge_block);
-      fback.metadata.add(LexScope::LOOP_CONTINUE_LABEL, cond_block);
-      fback.push_scope(true);
+      _scopes.back().push_scope(true);
+      auto loop_block = _scopes.back().create_block("loop");
+      auto cond_block = _scopes.back().create_block("cond");
+      auto merge_block = _scopes.back().create_block("merge");
+      _scopes.back().metadata.add(LexScope::LOOP_BREAK_LABEL, merge_block);
+      _scopes.back().metadata.add(LexScope::LOOP_CONTINUE_LABEL, cond_block);
+      _scopes.back().push_scope(true);
 
       _b.b.CreateBr(loop_block);
       _b.b.SetInsertPoint(loop_block);
-      break;
-    }
 
-    default: {}
-  }
-}
-
-void IrGenerator::infix(const Node& node, const result_list& results)
-{
-  auto& fback = _scopes.back();
-  switch (node.type) {
-    case Node::FUNCTION:
-    {
-      fback.metadata.pop();
-      create_function(node, results[0].type);
-      break;
-    }
-
-    case Node::IF_STMT:
-    {
-      auto then_block = fback.get_block(LexScope::IF_THEN_BLOCK);
-      auto else_block = fback.get_block(LexScope::IF_ELSE_BLOCK);
-      auto merge_block = fback.get_block(LexScope::MERGE_BLOCK);
-
-      if (results.size() == 1) {
-        bool has_else = node.children.size() > 2;
-        _b.b.CreateCondBr(i2b(results[0]), then_block,
-                          has_else ? else_block : merge_block);
-        _b.b.SetInsertPoint(then_block);
-      }
-      if (results.size() == 2) {
-        _b.b.CreateBr(merge_block);
-        _b.b.SetInsertPoint(else_block);
-      }
-      break;
-    }
-
-    case Node::FOR_STMT:
-    {
-      auto cond_block = fback.get_block(LexScope::LOOP_COND_BLOCK);
-      auto loop_block = fback.get_block(LexScope::LOOP_BODY_BLOCK);
-      auto after_block = fback.get_block(LexScope::LOOP_AFTER_BLOCK);
-      auto merge_block = fback.get_block(LexScope::MERGE_BLOCK);
-
-      if (results.size() == 1) {
+      call_after(*node.children[0], [=]
+      {
+        _scopes.back().pop_scope(true);
+        _scopes.back().push_scope();
         _b.b.CreateBr(cond_block);
         _b.b.SetInsertPoint(cond_block);
-        fback.push_scope(true);
-      }
-      if (results.size() == 2) {
-        auto parent = _b.b.GetInsertBlock()->getParent();
-        auto clean_block =
-            llvm::BasicBlock::Create(_b.b.getContext(), "clean", parent);
-        _b.b.CreateCondBr(i2b(results[1]), loop_block, clean_block);
-        _b.b.SetInsertPoint(clean_block);
-        fback.dereference_scoped_locals();
-        _b.b.CreateBr(merge_block);
-        _b.b.SetInsertPoint(after_block);
-      }
-      if (results.size() == 3) {
-        _b.b.CreateBr(cond_block);
-        _b.b.SetInsertPoint(loop_block);
-      }
-      break;
-    }
-
-    case Node::WHILE_STMT:
-    {
-      auto loop_block = fback.get_block(LexScope::LOOP_BODY_BLOCK);
-      auto merge_block = fback.get_block(LexScope::MERGE_BLOCK);
-
-      auto parent = _b.b.GetInsertBlock()->getParent();
-      auto clean_block =
-          llvm::BasicBlock::Create(_b.b.getContext(), "clean", parent);
-      _b.b.CreateCondBr(i2b(results[0]), loop_block, clean_block);
-      _b.b.SetInsertPoint(clean_block);
-      fback.dereference_scoped_locals();
-      _b.b.CreateBr(merge_block);
-      _b.b.SetInsertPoint(loop_block);
-      break;
-    }
-
-    case Node::DO_WHILE_STMT:
-    {
-      auto cond_block = fback.get_block(LexScope::LOOP_COND_BLOCK);
-      fback.pop_scope(true);
-      fback.push_scope();
-      _b.b.CreateBr(cond_block);
-      _b.b.SetInsertPoint(cond_block);
+      });
+      result(node, RESULT {
+        _scopes.back().pop_scope();
+        _scopes.back().pop_scope();
+        _b.b.CreateCondBr(i2b(results[1]), loop_block, merge_block);
+        _b.b.SetInsertPoint(merge_block);
+        return results[0];
+      });
       break;
     }
 
     case Node::TERNARY:
-    {
-      // Vectorised ternary can't short-circuit.
-      if (results[0].type.is_vector()) {
-        break;
-      }
-
-      if (results.size() == 1) {
-        fback.metadata.push();
-
+      call_after_result(*node.children[0], [=,&node](const Value& value)
+      {
+        // Vectorised ternary can't short-circuit.
+        if (value.type.is_vector()) {
+          result(node, RESULT {
+            return Value(
+                results[1].type,
+                _b.b.CreateSelect(i2b(results[0]), results[1], results[2]));
+          });
+          return;
+        }
         // Blocks and branching are necessary (as opposed to a select
         // instruction) to short-circuit and avoiding evaluating the other path.
-        auto then_block = fback.create_block(LexScope::IF_THEN_BLOCK, "then");
-        auto else_block = fback.create_block(LexScope::IF_ELSE_BLOCK, "else");
-        fback.create_block(LexScope::MERGE_BLOCK, "merge");
+        auto then_block = _scopes.back().create_block("then");
+        auto else_block = _scopes.back().create_block("else");
+        auto merge_block = _scopes.back().create_block("merge");
 
-        _b.b.CreateCondBr(i2b(results[0]), then_block, else_block);
+        _scopes.back().metadata.push();
+        _b.b.CreateCondBr(i2b(value), then_block, else_block);
         _b.b.SetInsertPoint(then_block);
-        fback.push_scope();
-      }
-      if (results.size() == 2) {
-        fback.pop_scope();
-        auto else_block = fback.get_block(LexScope::IF_ELSE_BLOCK);
-        auto merge_block = fback.get_block(LexScope::MERGE_BLOCK);
-        _b.b.CreateBr(merge_block);
+        _scopes.back().push_scope();
 
-        // Metadata blocks must always be updated to the current one, in case we
-        // created a bunch of new ones before we got to the end!
-        fback.metadata[LexScope::IF_THEN_BLOCK] = _b.b.GetInsertBlock();
-        _b.b.SetInsertPoint(else_block);
-        fback.push_scope();
-      }
+        call_after(*node.children[1], [=]
+        {
+          _scopes.back().pop_scope();
+          _b.b.CreateBr(merge_block);
+
+          // Save the last block so we can add it as a predecessor.
+          _scopes.back().metadata.add(
+              LexScope::OTHER_SOURCE_BLOCK, _b.b.GetInsertBlock());
+          _b.b.SetInsertPoint(else_block);
+          _scopes.back().push_scope();
+        });
+
+        result(node, RESULT {
+          _scopes.back().pop_scope();
+          auto last_then_block =
+              _scopes.back().get_block(LexScope::OTHER_SOURCE_BLOCK);
+          auto last_else_block = _b.b.GetInsertBlock();
+          _scopes.back().metadata.pop();
+          _b.b.CreateBr(merge_block);
+          _b.b.SetInsertPoint(merge_block);
+          auto phi = _b.b.CreatePHI(_b.get_llvm_type(results[1].type), 2);
+          phi->addIncoming(results[1], last_then_block);
+          phi->addIncoming(results[2], last_else_block);
+          return Value(results[1].type, phi);
+        });
+      });
       break;
-    }
 
     // Logical OR and AND short-circuit. This interacts in a subtle way with
     // vectorisation: we can short-circuit only when the left-hand operand is a
@@ -395,521 +695,130 @@ void IrGenerator::infix(const Node& node, const result_list& results)
     // don't; it seems a bit daft.)
     case Node::LOGICAL_OR:
     case Node::LOGICAL_AND:
-    {
-      if (results[0].type.is_vector()) {
-        break;
-      }
-      fback.metadata.push();
-      fback.metadata.add(LexScope::LOGICAL_OP_SOURCE_BLOCK,
-                         &*_b.b.GetInsertPoint());
-      auto rhs_block =
-          fback.create_block(LexScope::LOGICAL_OP_RHS_BLOCK, "rhs");
-      auto merge_block = fback.create_block(LexScope::MERGE_BLOCK, "merge");
+      call_after_result(*node.children[0], [=,&node](const Value& value)
+      {
+        if (value.type.is_vector()) {
+          // Short-circuiting isn't possible.
+          result(node, RESULT {
+            return binary(node, b2i(i2b(results[0])), b2i(i2b(results[1])));
+          });
+          return;
+        }
+        _scopes.back().metadata.push();
+        auto source_block = _b.b.GetInsertBlock();
+        auto rhs_block = _scopes.back().create_block("rhs");
+        auto merge_block = _scopes.back().create_block("merge");
 
-      if (node.type == Node::LOGICAL_OR) {
-        _b.b.CreateCondBr(i2b(results[0]), merge_block, rhs_block);
-      }
-      else {
-        _b.b.CreateCondBr(i2b(results[0]), rhs_block, merge_block);
-      }
-      _b.b.SetInsertPoint(rhs_block);
-      fback.push_scope();
-      break;
-    }
+        if (node.type == Node::LOGICAL_OR) {
+          _b.b.CreateCondBr(i2b(value), merge_block, rhs_block);
+        }
+        else {
+          _b.b.CreateCondBr(i2b(value), rhs_block, merge_block);
+        }
+        _b.b.SetInsertPoint(rhs_block);
+        _scopes.back().push_scope();
 
-    default: {}
-  }
-}
+        result(node, RESULT {
+          _scopes.back().pop_scope();
+          // Update in case we branched again.
+          auto last_rhs_block = _b.b.GetInsertBlock();
+          _scopes.back().metadata.pop();
 
-Value IrGenerator::after(const Node& node, const result_list& results)
-{
-  auto parent = _b.b.GetInsertBlock() ?
-      _b.b.GetInsertBlock()->getParent() : nullptr;
-  auto& fback = _scopes.back();
+          auto rhs = b2i(i2b(results[1]));
+          _b.b.CreateBr(merge_block);
+          _b.b.SetInsertPoint(merge_block);
+          llvm::Type* type = _b.int_type();
+          llvm::Value* constant = nullptr;
+          if (results[1].type.is_vector()) {
+            std::size_t n = results[1].type.vector_size();
+            constant = _b.constant_ivec(node.type == Node::LOGICAL_OR, n);
+            type = _b.ivec_type(n);
+          }
+          else {
+            constant = _b.constant_int(node.type == Node::LOGICAL_OR);
+          }
 
-  switch (node.type) {
-    case Node::TYPE_VOID:
-      return yang::Type::void_t();
-    case Node::TYPE_INT:
-      return node.int_value > 1 ?
-          yang::Type::ivec_t(node.int_value) : yang::Type::int_t();
-    case Node::TYPE_FLOAT:
-      return node.int_value > 1 ?
-          yang::Type::fvec_t(node.int_value) : yang::Type::float_t();
-    case Node::TYPE_FUNCTION:
-    {
-      type_function:
-      std::vector<yang::Type> args;
-      for (std::size_t i = 1; i < results.size(); ++i) {
-        args.push_back(results[i].type);
-      }
-      return yang::Type::function_t(results[0].type, args);
-    }
-
-    case Node::GLOBAL:
-      fback.dereference_scoped_locals(0);
-      _scopes.pop_back();
-      _b.b.CreateRetVoid();
-      return Value();
-    case Node::GLOBAL_ASSIGN:
-    {
-      auto function = (llvm::Function*)parent;
-      get_trampoline_function(results[1].type, false);
-      // Modifiers such as `export` are stored in int_value for now.
-      if (node.int_value & Node::MODIFIER_EXPORT) {
-        function->setLinkage(llvm::Function::ExternalLinkage);
-      }
-      function->setName(node.children[0]->string_value);
-      fback.symbol_table.add(node.children[0]->string_value, results[1]);
-      return results[1];
-    }
-    case Node::FUNCTION:
-    {
-      if (results[0].type.function_return().is_void()) {
-        fback.dereference_scoped_locals(0);
-        _b.b.CreateRetVoid();
-      }
-      else {
-        // In a function that passes the static check, control never reaches
-        // this point; but the block must have a terminator.
-        _b.b.CreateBr(_b.b.GetInsertBlock());
-      }
-      auto parent_block = fback.get_block(LexScope::PARENT_BLOCK);
-      _scopes.pop_back();
-
-      auto& fprev = _scopes.back();
-      if (!fprev.metadata.has(LexScope::FUNCTION)) {
-        return Value(results[0].type, parent);
-      }
-      // If this was a nested function, set the insert point back to the last
-      // block in the enclosing function and make the proper expression value.
-      _b.b.SetInsertPoint(parent_block);
-      // If the current function created a closure, we have to pass the new
-      // environment pointer (which has a parent pointer to the old one)
-      // instead. There is some potential for optimisation if an entire tree
-      // of inner functions never creates a closure, where we could instead
-      // dereference and pass only the closure scopes they actually access; it's
-      // kind of complicated and not really a huge optimisation, though.
-      auto closure = fprev.metadata[LexScope::CLOSURE_PTR];
-      return _b.function_value(
-          results[0].type, parent,
-          closure ? closure : fprev.metadata[LexScope::ENVIRONMENT_PTR]);
-    }
-    case Node::NAMED_EXPRESSION:
-      return results[0];
-      break;
-
-    case Node::BLOCK:
-    case Node::LOOP_AFTER_BLOCK:
-    {
-      auto after_block =
-          llvm::BasicBlock::Create(_b.b.getContext(), "after", parent);
-      _b.b.CreateBr(after_block);
-      _b.b.SetInsertPoint(after_block);
-      fback.pop_scope();
-      return Value();
-    }
-    case Node::EXPR_STMT:
-      return results[0];
-    case Node::RETURN_STMT:
-    {
-      auto dead_block =
-          llvm::BasicBlock::Create(_b.b.getContext(), "dead", parent);
-      fback.dereference_scoped_locals(0);
-      node.children.empty() ? _b.b.CreateRetVoid() : _b.b.CreateRet(results[0]);
-      _b.b.SetInsertPoint(dead_block);
-      return node.children.empty() ? Value() : results[0];
-    }
-    case Node::IF_STMT:
-    {
-      auto merge_block = fback.get_block(LexScope::MERGE_BLOCK);
-
-      _b.b.CreateBr(merge_block);
-      _b.b.SetInsertPoint(merge_block);
-      fback.pop_scope();
-      return results[0];
-    }
-    case Node::FOR_STMT:
-    {
-      auto after_block = fback.get_block(LexScope::LOOP_AFTER_BLOCK);
-      auto merge_block = fback.get_block(LexScope::MERGE_BLOCK);
-      fback.pop_scope(true);
-
-      _b.b.CreateBr(after_block);
-      _b.b.SetInsertPoint(merge_block);
-      fback.pop_scope();
-      return results[0];
-    }
-    case Node::WHILE_STMT:
-    {
-      auto cond_block = fback.get_block(LexScope::LOOP_COND_BLOCK);
-      auto merge_block = fback.get_block(LexScope::MERGE_BLOCK);
-      fback.pop_scope(true);
-
-      _b.b.CreateBr(cond_block);
-      _b.b.SetInsertPoint(merge_block);
-      fback.pop_scope();
-      return results[0];
-    }
-    case Node::DO_WHILE_STMT:
-    {
-      auto loop_block = fback.get_block(LexScope::LOOP_BODY_BLOCK);
-      auto merge_block = fback.get_block(LexScope::MERGE_BLOCK);
-      fback.pop_scope();
-      fback.pop_scope();
-
-      _b.b.CreateCondBr(i2b(results[1]), loop_block, merge_block);
-      _b.b.SetInsertPoint(merge_block);
-      return results[0];
-    }
-    case Node::BREAK_STMT:
-    case Node::CONTINUE_STMT:
-    {
-      fback.dereference_loop_locals();
-      auto dead_block =
-          llvm::BasicBlock::Create(_b.b.getContext(), "dead", parent);
-      _b.b.CreateBr(fback.get_block(
-          node.type == Node::BREAK_STMT ? LexScope::LOOP_BREAK_LABEL :
-                                          LexScope::LOOP_CONTINUE_LABEL));
-      _b.b.SetInsertPoint(dead_block);
-      return Value();
-    }
-
-    case Node::MEMBER_SELECTION:
-    {
-      llvm::Value* env = nullptr;
-      // Don't need to allocate anything for managed user-types: we already
-      // have a chunk.
-      if (results[0].type.is_managed_user_type()) {
-        env = results[0];
-      }
-      else {
-        env = _chunk.allocate_closure_struct(get_global_struct());
-        _chunk.memory_store(results[0], env, "object");
-      }
-      Value v = get_member_function(results[0].type, node.string_value);
-      v = _b.function_value(v.type, v, env);
-      fback.update_reference_count(v, 1);
-      fback.refcount_init(v);
-      return v;
-    }
-
-    case Node::IDENTIFIER:
-    {
-      // In type-context, we just want to return a user type.
-      if (fback.metadata.has(LexScope::TYPE_EXPR_CONTEXT)) {
-        return _context.type_lookup(node.string_value);
-      }
-
-      // Load the variable, if it's there. We must be careful to only return
-      // globals/functions *after* they have been defined, otherwise it might
-      // be a reference to a context function of the same name.
-      Value variable_ptr = get_variable_ptr(node.string_value);
-      if (variable_ptr) {
-        return variable_ptr.irval->getType()->isPointerTy() ?
-            fback.memory_load(variable_ptr.type, variable_ptr) : variable_ptr;
-      }
-
-      // It must be a context function.
-      const auto& t = _context.constructor_lookup(node.string_value);
-      if (!t.ctor.type.is_void()) {
-        Value v = get_constructor(node.string_value);
-        return _b.function_value(v.type, v, get_global_struct());
-      }
-      const auto& f = _context.function_lookup(node.string_value);
-      if (!f.type.is_void()) {
-        return _b.function_value(f);
-      }
-      // It's possible that nothing matches, when this is the identifier on the
-      // left of a variable declaration.
-      return Value();
-    }
-
-    case Node::EMPTY_EXPR:
-      return _b.constant_int(1);
-    case Node::INT_LITERAL:
-      return _b.constant_int(node.int_value);
-    case Node::FLOAT_LITERAL:
-      return _b.constant_float(node.float_value);
-    case Node::STRING_LITERAL:
-    {
-      StaticString* s = nullptr;
-      auto it = _string_literals.find(node.string_value);
-      if (it == _string_literals.end()) {
-        s = new StaticString(node.string_value);
-        _string_literals.emplace(node.string_value, _b.static_data.size());
-        _b.static_data.emplace_back(s);
-      }
-      else {
-        s = (StaticString*)_b.static_data[it->second].get();
-      }
-
-      // TODO: string literal keep-alives the instance it was spawned from
-      // (get_global_struct()), when it really only needs to keep-alive the
-      // program.
-      llvm::Value* chunk = _chunk.allocate_closure_struct(get_global_struct());
-      _chunk.memory_store(_b.constant_ptr(s->value.c_str()), chunk, "object");
-      return Value(type_of<Ref<const char>>(),
-                   _b.b.CreateBitCast(chunk, _b.void_ptr_type()));
-    }
-
-    case Node::TERNARY:
-    {
-      if (results[0].type.is_vector()) {
-        // Vectorised ternary. Short-circuiting isn't possible.
-        return Value(
-            results[1].type,
-            _b.b.CreateSelect(i2b(results[0]), results[1], results[2]));
-      }
-      fback.pop_scope();
-      // Update in case we branched again.
-      fback.metadata[LexScope::IF_ELSE_BLOCK] = _b.b.GetInsertBlock();
-
-      auto then_block = fback.get_block(LexScope::IF_THEN_BLOCK);
-      auto else_block = fback.get_block(LexScope::IF_ELSE_BLOCK);
-      auto merge_block = fback.get_block(LexScope::MERGE_BLOCK);
-      fback.metadata.pop();
-      _b.b.CreateBr(merge_block);
-      _b.b.SetInsertPoint(merge_block);
-      auto phi = _b.b.CreatePHI(_b.get_llvm_type(results[1].type), 2);
-      phi->addIncoming(results[1], then_block);
-      phi->addIncoming(results[2], else_block);
-      return Value(results[1].type, phi);
-    }
-    case Node::CALL:
-    {
-      if (fback.metadata.has(LexScope::TYPE_EXPR_CONTEXT)) {
-        goto type_function;
-      }
-      std::vector<Value> args;
-      for (std::size_t i = 1; i < results.size(); ++i) {
-        args.push_back(results[i]);
-      }
-      Value r = create_call(results[0], args);
-      // Reference count the temporary.
-      if (r) {
-        fback.update_reference_count(r, 1);
-        fback.refcount_init(r);
-      }
-      return r;
-    }
-
-    case Node::LOGICAL_OR:
-    case Node::LOGICAL_AND:
-    {
-      if (results[0].type.is_vector()) {
-        // Short-circuiting isn't possible.
-        return binary(node, b2i(i2b(results[0])), b2i(i2b(results[1])));
-      }
-      fback.pop_scope();
-      // Update in case we branched again.
-      fback.metadata[LexScope::LOGICAL_OP_RHS_BLOCK] = _b.b.GetInsertBlock();
-
-      auto source_block = fback.get_block(LexScope::LOGICAL_OP_SOURCE_BLOCK);
-      auto rhs_block = fback.get_block(LexScope::LOGICAL_OP_RHS_BLOCK);
-      auto merge_block = fback.get_block(LexScope::MERGE_BLOCK);
-      fback.metadata.pop();
-
-      auto rhs = b2i(i2b(results[1]));
-      _b.b.CreateBr(merge_block);
-      _b.b.SetInsertPoint(merge_block);
-      llvm::Type* type = _b.int_type();
-      llvm::Value* constant = nullptr;
-      if (results[1].type.is_vector()) {
-        std::size_t n = results[1].type.vector_size();
-        constant = _b.constant_ivec(node.type == Node::LOGICAL_OR, n);
-        type = _b.ivec_type(n);
-      }
-      else {
-        constant = _b.constant_int(node.type == Node::LOGICAL_OR);
-      }
-
-      auto phi = _b.b.CreatePHI(type, 2);
-      phi->addIncoming(constant, source_block);
-      phi->addIncoming(rhs, rhs_block);
-      return Value(results[1].type, phi);
-    }
-
-    // Most binary operators map directly to (vectorisations of) LLVM IR
-    // instructions.
-    case Node::BITWISE_OR:
-    case Node::BITWISE_AND:
-    case Node::BITWISE_XOR:
-    case Node::BITWISE_LSHIFT:
-    case Node::BITWISE_RSHIFT:
-    case Node::POW:
-    case Node::MOD:
-    case Node::ADD:
-    case Node::SUB:
-    case Node::MUL:
-    case Node::DIV:
-      return binary(node, results[0], results[1]);
-    case Node::EQ:
-    case Node::NE:
-    case Node::GE:
-    case Node::LE:
-    case Node::GT:
-    case Node::LT:
-      return b2i(binary(node, results[0], results[1]));
-
-    case Node::FOLD_LOGICAL_OR:
-    case Node::FOLD_LOGICAL_AND:
-      return b2i(fold(node, results[0], true));
-
-    case Node::FOLD_BITWISE_OR:
-    case Node::FOLD_BITWISE_AND:
-    case Node::FOLD_BITWISE_XOR:
-    case Node::FOLD_BITWISE_LSHIFT:
-    case Node::FOLD_BITWISE_RSHIFT:
-      return fold(node, results[0]);
-
-    case Node::FOLD_POW:
-      // POW is the only right-associative fold operator.
-      return fold(node, results[0], false, false, true);
-    case Node::FOLD_MOD:
-    case Node::FOLD_ADD:
-    case Node::FOLD_SUB:
-    case Node::FOLD_MUL:
-    case Node::FOLD_DIV:
-      return fold(node, results[0]);
-
-    case Node::FOLD_EQ:
-    case Node::FOLD_NE:
-    case Node::FOLD_GE:
-    case Node::FOLD_LE:
-    case Node::FOLD_GT:
-    case Node::FOLD_LT:
-      return b2i(fold(node, results[0], false, true));
-
-    case Node::LOGICAL_NEGATION:
-    {
-      Value v = _b.default_for_type(results[0].type);
-      v.irval = _b.b.CreateICmpEQ(results[0], v);
-      return b2i(v);
-    }
-    case Node::BITWISE_NEGATION:
-    {
-      Value v = _b.default_for_type(results[0].type, 0u - 1);
-      v.irval = _b.b.CreateXor(results[0], v);
-      return v;
-    }
-    case Node::ARITHMETIC_NEGATION:
-    {
-      Value v = _b.default_for_type(results[0].type);
-      v.irval = results[0].type.is_int() || results[0].type.is_ivec() ?
-          _b.b.CreateSub(v, results[0]) : _b.b.CreateFSub(v, results[0]);
-      return v;
-    }
-    case Node::INCREMENT:
-    case Node::DECREMENT:
-    {
-      Value v = _b.default_for_type(
-          results[0].type, node.type == Node::INCREMENT ? 1 : -1);
-      v.irval = results[0].type.is_int() || results[0].type.is_ivec() ?
-          _b.b.CreateAdd(results[0], v) : _b.b.CreateFAdd(results[0], v);
-      if (node.children[0]->type == Node::IDENTIFIER) {
-        const std::string& s = node.children[0]->string_value;
-        fback.memory_store(v, get_variable_ptr(s));
-      }
-      return v;
-    }
-
-    case Node::ASSIGN:
-    case Node::ASSIGN_LOGICAL_OR:
-    case Node::ASSIGN_LOGICAL_AND:
-    case Node::ASSIGN_BITWISE_OR:
-    case Node::ASSIGN_BITWISE_AND:
-    case Node::ASSIGN_BITWISE_XOR:
-    case Node::ASSIGN_BITWISE_LSHIFT:
-    case Node::ASSIGN_BITWISE_RSHIFT:
-    case Node::ASSIGN_POW:
-    case Node::ASSIGN_MOD:
-    case Node::ASSIGN_ADD:
-    case Node::ASSIGN_SUB:
-    case Node::ASSIGN_MUL:
-    case Node::ASSIGN_DIV:
-    {
-      const std::string& s = node.children[0]->string_value;
-      Value v = node.type == Node::ASSIGN ?
-          results[1] : binary(node, results[0], results[1]);
-      fback.memory_store(v, get_variable_ptr(s));
-      return v;
-    }
+          auto phi = _b.b.CreatePHI(type, 2);
+          phi->addIncoming(constant, source_block);
+          phi->addIncoming(rhs, last_rhs_block);
+          return Value(results[1].type, phi);
+        });
+      });
 
     case Node::ASSIGN_VAR:
     case Node::ASSIGN_CONST:
-    {
-      const std::string& s = node.children[0]->string_value;
-      // In a global block, rather than allocating anything we simply store into
-      // the prepared fields of the global structure. Also enter the symbol now
-      // with a null value so we can distinguish it from top-level functions.
-      if (fback.metadata.has(LexScope::GLOBAL_INIT_FUNCTION) &&
-          fback.symbol_table.size() <= 2) {
-        _scopes[0].symbol_table.add(s, Value(results[1].type));
-        _scopes[0].memory_store(results[1], get_variable_ptr(s));
+      // See static.cpp for details on the immediate left assign hack.
+      if (node.children[1]->type == Node::FUNCTION) {
+        _immediate_left_assign = node.children[0]->string_value;
+      }
+      result(node, RESULT {
+        const std::string& s = node.children[0]->string_value;
+        // In a global block, rather than allocating anything we simply store
+        // into the prepared fields of the global structure. Also enter the
+        // symbol now with a null value so we can distinguish it from top-level
+        // functions.
+        if (_scopes.back().metadata.has(LexScope::GLOBAL_INIT_FUNCTION) &&
+            _scopes.back().symbol_table.size() <= 2) {
+          _scopes[0].symbol_table.add(s, Value(results[1].type));
+          _scopes[0].memory_store(results[1], get_variable_ptr(s));
+          return results[1];
+        }
+
+        const std::string& unique_name =
+            s + "/" + std::to_string(node.static_info.scope_number);
+
+        llvm::Value* storage = nullptr;
+        if (_scopes.back().symbol_table.has(unique_name)) {
+          storage = _scopes.back().symbol_table[unique_name];
+          _scopes.back().value_to_unique_name_map.emplace(storage, unique_name);
+        }
+        else {
+          // Optimisation passes such as mem2reg work much better when memory
+          // locations are declared in the entry block (so they are guaranteed to
+          // execute once).
+          auto llvm_function =
+              (llvm::Function*)_b.b.GetInsertPoint()->getParent();
+          auto& entry_block = llvm_function->getEntryBlock();
+          llvm::IRBuilder<> entry(&entry_block, entry_block.begin());
+          storage =
+              entry.CreateAlloca(_b.get_llvm_type(results[1].type), nullptr);
+          _scopes.back().memory_init(entry, storage);
+          _scopes.back().refcount_init(Value(results[1].type, storage));
+        }
+
+        _scopes.back().memory_store(results[1], storage);
+        _scopes.back().symbol_table.add(s, Value(results[1].type, storage));
         return results[1];
+      });
+      break;
+
+    case Node::CALL:
+      if (_scopes.back().metadata.has(LexScope::TYPE_EXPR_CONTEXT)) {
+        goto type_function;
       }
+      result(node, RESULT {
+        std::vector<Value> args;
+        for (std::size_t i = 1; i < results.size(); ++i) {
+          args.push_back(results[i]);
+        }
+        Value r = create_call(results[0], args);
+        // Reference count the temporary.
+        if (r) {
+          _scopes.back().update_reference_count(r, 1);
+          _scopes.back().refcount_init(r);
+        }
+        return r;
+      });
+      break;
 
-      const std::string& unique_name =
-          s + "/" + std::to_string(node.static_info.scope_number);
-
-      llvm::Value* storage = nullptr;
-      if (fback.symbol_table.has(unique_name)) {
-        storage = fback.symbol_table[unique_name];
-        fback.value_to_unique_name_map.emplace(storage, unique_name);
-      }
-      else {
-        // Optimisation passes such as mem2reg work much better when memory
-        // locations are declared in the entry block (so they are guaranteed to
-        // execute once).
-        auto llvm_function =
-            (llvm::Function*)_b.b.GetInsertPoint()->getParent();
-        auto& entry_block = llvm_function->getEntryBlock();
-        llvm::IRBuilder<> entry(&entry_block, entry_block.begin());
-        storage =
-            entry.CreateAlloca(_b.get_llvm_type(results[1].type), nullptr);
-        fback.memory_init(entry, storage);
-        fback.refcount_init(Value(results[1].type, storage));
-      }
-
-      fback.memory_store(results[1], storage);
-      fback.symbol_table.add(s, Value(results[1].type, storage));
-      return results[1];
-    }
-
-    case Node::INT_CAST:
-      return f2i(results[0]);
-    case Node::FLOAT_CAST:
-      return i2f(results[0]);
-
-    case Node::VECTOR_CONSTRUCT:
-    {
-      Value v = results[0].type.is_int() ? _b.constant_ivec(0, results.size()) :
-                                           _b.constant_fvec(0, results.size());
-      for (std::size_t i = 0; i < results.size(); ++i) {
-        v.irval = _b.b.CreateInsertElement(
-            v.irval, results[i], _b.constant_int(i));
-      }
-      return v;
-    }
-    case Node::VECTOR_INDEX:
-    {
-      // Indexing out-of-bounds produces constant zero.
-      Value v = results[0].type.is_ivec() ?
-          _b.constant_int(0) : _b.constant_float(0);
-      auto ge = _b.b.CreateICmpSGE(results[1], _b.constant_int(0));
-      auto lt = _b.b.CreateICmpSLT(
-          results[1], _b.constant_int(results[0].type.vector_size()));
-
-      auto in = _b.b.CreateAnd(ge, lt);
-      v.irval =_b.b.CreateSelect(
-          in, _b.b.CreateExtractElement(results[0], results[1]), v);
-      return v;
-    }
-
-    default:
-      return Value();
+    default: {}
   }
+#undef RESULT
+}
+
+Value IrGenerator::after(const Node&, const result_list&)
+{
+  return {};
 }
 
 llvm::Value* IrGenerator::get_parent_struct(
@@ -996,13 +905,13 @@ void IrGenerator::create_function(
   auto eptr = --function->arg_end();
   eptr->setName("env");
   _scopes.emplace_back(_scopes.back().next_lex_scope());
-  auto& fback = _scopes.back();
+  auto& back = _scopes.back();
 
   // The code for Node::TYPE_FUNCTION in after() ensures it takes an environment
   // pointer.
-  fback.metadata.add(LexScope::ENVIRONMENT_PTR, &*eptr);
-  fback.metadata.add(LexScope::FUNCTION, function);
-  fback.metadata.add(LexScope::PARENT_BLOCK, &*_b.b.GetInsertPoint());
+  back.metadata.add(LexScope::ENVIRONMENT_PTR, &*eptr);
+  back.metadata.add(LexScope::FUNCTION, function);
+  back.metadata.add(LexScope::PARENT_BLOCK, &*_b.b.GetInsertPoint());
 
   auto block = llvm::BasicBlock::Create(_b.b.getContext(), "entry", function);
   _b.b.SetInsertPoint(block);
@@ -1015,14 +924,14 @@ void IrGenerator::create_function(
   // the sets of enclosing variables they access are disjoint, we could allocate
   // separate structures for each (and potentially return unused memory sooner).
   if (!node.static_info.closed_environment.empty()) {
-    fback.init_structure_type(
+    back.init_structure_type(
         "closure", node.static_info.closed_environment, false);
 
-    llvm::Value* v = fback.allocate_closure_struct(&*eptr);
-    fback.metadata[LexScope::CLOSURE_PTR] = v;
+    llvm::Value* v = back.allocate_closure_struct(&*eptr);
+    back.metadata[LexScope::CLOSURE_PTR] = v;
     // Refcounting on closure pointer.
-    fback.update_reference_count(nullptr, v, 1);
-    fback.refcount_init(_b.function_value(
+    back.update_reference_count(nullptr, v, 1);
+    back.refcount_init(_b.function_value(
         yang::Type::function_t(yang::Type::void_t(), {}),
         _b.constant_ptr(nullptr), v));
   }
@@ -1036,9 +945,9 @@ void IrGenerator::create_function(
     std::string unique_name =
         name + "/" + std::to_string(node.static_info.scope_number + scope_mod);
 
-    if (fback.symbol_table.has(unique_name)) {
-      llvm::Value* v = fback.symbol_table[unique_name];
-      fback.value_to_unique_name_map.emplace(v, unique_name);
+    if (back.symbol_table.has(unique_name)) {
+      llvm::Value* v = back.symbol_table[unique_name];
+      back.value_to_unique_name_map.emplace(v, unique_name);
       return v;
     }
     // Rather than reference argument values directly, we create an alloca
@@ -1046,8 +955,8 @@ void IrGenerator::create_function(
     // can emit the same IR code when referencing local variables or
     // function arguments.
     llvm::Value* v = _b.b.CreateAlloca(_b.get_llvm_type(type), nullptr);
-    fback.refcount_init(Value(type, v));
-    fback.memory_init(_b.b, v);
+    back.refcount_init(Value(type, v));
+    back.memory_init(_b.b, v);
     return v;
   };
 
@@ -1058,13 +967,13 @@ void IrGenerator::create_function(
     // The identifier is registered one scope above the function argument scope.
     llvm::Value* storage =
         assign_storage(function_type, _immediate_left_assign, -1);
-    fback.memory_store(
+    back.memory_store(
         _b.function_value(function_type, function, eptr), storage);
-    fback.symbol_table.add(
+    back.symbol_table.add(
         _immediate_left_assign, Value(function_type, storage));
     _immediate_left_assign.clear();
   }
-  fback.symbol_table.push();
+  back.symbol_table.push();
 
   // Set up the arguments.
   std::size_t arg_num = 0;
@@ -1079,8 +988,8 @@ void IrGenerator::create_function(
     // It's possible refcounting isn't necessary on arguments, since they're
     // const and will usually be referenced somewhere up the call stack. I'm not
     // convinced, though.
-    fback.memory_store(Value(arg, &*it), storage);
-    fback.symbol_table.add(name, Value(arg, storage));
+    back.memory_store(Value(arg, &*it), storage);
+    back.symbol_table.add(name, Value(arg, storage));
   }
 
   // Inform the optimiser that the eptr will never be null. This allows a lot
@@ -1225,13 +1134,9 @@ Value IrGenerator::create_call(const Value& f, const std::vector<Value>& args)
   llvm_args.push_back(eptr);
 
   // Switch on the presence of a trampoline function pointer.
-  auto parent = _b.b.GetInsertBlock()->getParent();
-  auto cpp_block =
-      llvm::BasicBlock::Create(_b.b.getContext(), "cpp", parent);
-  auto yang_block =
-      llvm::BasicBlock::Create(_b.b.getContext(), "yang", parent);
-  auto merge_block =
-      llvm::BasicBlock::Create(_b.b.getContext(), "merge", parent);
+  auto cpp_block = _scopes.back().create_block("cpp");
+  auto yang_block = _scopes.back().create_block("yang");
+  auto merge_block = _scopes.back().create_block("merge");
 
   llvm::Value* cmp = _b.b.CreateIsNull(eptr);
   _b.b.CreateCondBr(cmp, cpp_block, yang_block);

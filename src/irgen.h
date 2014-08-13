@@ -45,7 +45,6 @@ public:
 protected:
 
   void before(const Node& node) override;
-  void infix(const Node& node, const result_list& results) override;
   Value after(const Node& node, const result_list& results) override;
 
 private:

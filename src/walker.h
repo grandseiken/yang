@@ -32,21 +32,19 @@ public:
   // Implements an algorithm such that after() will be called for each node in
   // the AST, with the passed result_list containing the results of the calls
   // to after() for each of the node's children.
-  // Furthermore, for each node, preorder() will be called before any children
-  // are visited, and infix() will be called in-between visiting each child,
-  // with a partial result list.
+  // Furthermore, for each node, before() will be called before any children
+  // are visited.
   T walk(N& node);
 
 protected:
 
   virtual void before(N& node) = 0;
-  virtual void infix(N& node, const result_list& results) = 0;
   virtual T after(N& node, const result_list& results) = 0;
 
+  // Register callbacks.
   void call_after(N& node, const std::function<void(const result_list&)>& cb);
   void call_after(N& node, const std::function<void()>& cb);
   void result(N& node, const std::function<T(const result_list&)>& cb);
-  void result(N& node, const std::function<T()>& cb);
   void call_after_result(N& node, const std::function<void(const T&)>& cb);
 
 private:
@@ -54,8 +52,7 @@ private:
   struct callback {
     std::function<void(const result_list&)> call_after_args;
     std::function<void()> call_after;
-    std::function<T(const result_list&)> result_args;
-    std::function<T()> result;
+    std::function<T(const result_list&)> result;
     std::function<void(const T&)> call_after_result;
   };
   std::unordered_map<N*, std::vector<callback>> _callbacks;
@@ -81,9 +78,6 @@ T AstWalkerBase<T, Const>::walk(N& node)
     // duplicating the last before() and after() on others.
     if (elem.it == elem.n->children.begin()) {
       before(*elem.n);
-    }
-    else if (elem.it != elem.n->children.end()) {
-      infix(*elem.n, elem.results);
     }
 
     if (elem.it == elem.n->children.end()) {
@@ -122,14 +116,6 @@ void AstWalkerBase<T, Const>::result(
     N& node, const std::function<T(const result_list&)>& cb)
 {
   _callbacks[&node].emplace_back();
-  _callbacks[&node].back().result_args = cb;
-}
-
-template<typename T, bool Const>
-void AstWalkerBase<T, Const>::result(
-    N& node, const std::function<T()>& cb)
-{
-  _callbacks[&node].emplace_back();
   _callbacks[&node].back().result = cb;
 }
 
@@ -148,12 +134,8 @@ T AstWalkerBase<T, Const>::handle_after(N& node, const result_list& results)
   bool have_result = false;
   auto copy = _callbacks[&node];
   for (auto it = copy.rbegin(); it != copy.rend(); ++it) {
-    if (!have_result && it->result_args) {
-      result = it->result_args(results);
-      have_result = true;
-    }
     if (!have_result && it->result) {
-      result = it->result();
+      result = it->result(results);
       have_result = true;
     }
 
