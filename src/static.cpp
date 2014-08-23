@@ -18,6 +18,11 @@ namespace std {
   };
 }
 
+// TODO: is there a sensible more general version of warn_reads which propagates
+// tags and ensures every symbol (or even every individual assignment)
+// eventually has some external effect (a return, passed to parameter, global
+// assignment, depends on it)? Not sure how to deal with closures, and maybe
+// it's a bit of a rabbit hole to go down, but it could work.
 namespace yang {
 namespace internal {
 namespace {
@@ -206,9 +211,14 @@ void StaticChecker::before(const Node& node)
   CONSTANT_FOR(TYPE_INT) {return numeric_type(false, node.int_value);};
   CONSTANT_FOR(TYPE_FLOAT) {return numeric_type(true, node.int_value);};
   RESULT_FOR(NAMED_EXPRESSION) {return results[0];};
-  CONSTANT_FOR(EXPR_STMT) {return Type(true);};
+  RESULT_FOR(EXPR_STMT) {
+    if (node.children[0]->type == Node::IDENTIFIER) {
+      load(results[0]);
+    }
+    return Type(true);
+  };
   RESULT_FOR(RETURN_STMT) {
-    Type t = node.children.empty() ? Type() : results[0];
+    Type t = node.children.empty() ? Type() : load(results[0]);
     // If we're not in a function, we must be in a global block.
     if (!inside_function()) {
       error(node, "return statement inside `global`");
@@ -222,19 +232,19 @@ void StaticChecker::before(const Node& node)
     return current_return_type();
   };
   RESULT_FOR(MEMBER_SELECTION) {
-    if (!results[0].user_type()) {
+    auto t = load(results[0]);
+    if (!t.user_type()) {
       error(node, "member function access on " + str(results[0]));
       return Type(true);
     }
-    if (results[0].is_error()) {
+    if (t.is_error()) {
       return Type(true);
     }
 
-    const auto& m =
-        _context.member_lookup(results[0].external(), node.string_value);
+    const auto& m = _context.member_lookup(t.external(), node.string_value);
     if (m.type.is_void()) {
       error(node, "undeclared member function `" +
-                  results[0].string(_context, false) +
+                  t.string(_context, false) +
                   "::" + node.string_value + "`");
       return Type(true);
     }
@@ -280,23 +290,29 @@ void StaticChecker::before(const Node& node)
                i < t.ctor.type.function_num_args(); ++i) {
             args.push_back(t.ctor.type.function_arg(i));
           }
-          return yang::Type::function_t(
+          Type r = yang::Type::function_t(
               t.ctor.type.function_return().make_managed(true), args);
+          return r.make_const(true).make_lvalue(true);
         }
 
         const auto& f = _context.function_lookup(node.string_value);
         if (!f.type.is_void()) {
-          return f.type;
+          return Type(f.type).make_const(true).make_lvalue(true);
         }
 
-        error(node, "undeclared identifier `" + node.string_value + "`");
+        if (!_context.type_lookup(node.string_value).is_void()) {
+          error(node, "unexpected typename `" + node.string_value + "`");
+        }
+        else {
+          error(node, "undeclared identifier `" + node.string_value + "`");
+        }
         add_symbol(node, node.string_value, Type(true), false);
         it = _scopes.rbegin();
         break;
       }
     }
 
-    auto& symbol = it->symbol_table[node.string_value];
+    auto& symbol = *it->symbol_table[node.string_value];
     // If this is a reference to variable in an enclosing function, make
     // sure it's added to that function's closed environment.
     if (it != _scopes.rbegin() && it != --_scopes.rend()) {
@@ -310,11 +326,7 @@ void StaticChecker::before(const Node& node)
           node.string_value + "/" + std::to_string(symbol.scope_number),
           symbol.type.external());
     }
-
-    // Update read/write warnings.
-    (is_assignment(*node.parent) && node.get_parent_index() == 0 ?
-         symbol.warn_writes : symbol.warn_reads) = false;
-    return symbol.type;
+    return symbol.type.make_lvalue(true).add_tag(&symbol);
   };
   CONSTANT_FOR(EMPTY_EXPR) {return yang::Type::int_t();};
   CONSTANT_FOR(INT_LITERAL) {return yang::Type::int_t();};
@@ -325,31 +337,35 @@ void StaticChecker::before(const Node& node)
                  node.type == Node::MUL || node.type == Node::DIV) {
     // Takes two integers or floats and produces a value of the same type,
     // with vectorisation.
-    if (!results[0].is_binary_match(results[1]) ||
-        (!(results[0].is_int() && results[1].is_int()) &&
-         !(results[0].is_float() && results[1].is_float()))) {
+    auto left = load(results[0]);
+    auto right = load(results[1]);
+    if (!left.is_binary_match(right) ||
+        (!(left.is_int() && right.is_int()) &&
+         !(left.is_float() && right.is_float()))) {
       error(node, str(node) + " applied to " +
-                  str(results[0]) + " and " + str(results[1]));
+                  str(left) + " and " + str(right));
       return Type(true);
     }
-    return binary_type(results[0], results[1], results[0].is_float());
+    return binary_type(left, right, left.is_float());
   };
   RESULT_FOR_ANY(node.type == Node::EQ || node.type == Node::NE ||
                  node.type == Node::GE || node.type == Node::LE ||
                  node.type == Node::GT || node.type == Node::LT) {
     // Takes two integers or floats and produces an integer, with
     // vectorisation.
-    if (!results[0].is_binary_match(results[1])) {
+    auto left = load(results[0]);
+    auto right = load(results[1]);
+    if (!left.is_binary_match(right)) {
       error(node, str(node) + " applied to " +
-                  str(results[0]) + " and " + str(results[1]));
+                  str(left) + " and " + str(right));
       return Type(true);
     }
-    else if (!(results[0].is_int() && results[1].is_int()) &&
-             !(results[0].is_float() && results[1].is_float())) {
+    else if (!(left.is_int() && right.is_int()) &&
+             !(left.is_float() && right.is_float())) {
       error(node, str(node) + " applied to " +
-                  str(results[0]) + " and " + str(results[1]));
+                  str(left) + " and " + str(right));
     }
-    return binary_type(results[0], results[1], false);
+    return binary_type(left, right, false);
   };
   RESULT_FOR_ANY(node.type == Node::FOLD_LOGICAL_OR ||
                  node.type == Node::FOLD_LOGICAL_AND ||
@@ -358,61 +374,64 @@ void StaticChecker::before(const Node& node)
                  node.type == Node::FOLD_BITWISE_XOR ||
                  node.type == Node::FOLD_BITWISE_LSHIFT ||
                  node.type == Node::FOLD_BITWISE_RSHIFT) {
-    if (!results[0].is_vector() || !results[0].is_int()) {
-      error(node, str(node) + " applied to " + str(results[0]));
+    auto t = load(results[0]);
+    if (!t.is_vector() || !t.is_int()) {
+      error(node, str(node) + " applied to " + str(t));
     }
     return yang::Type::int_t();
   };
   RESULT_FOR_ANY(node.type == Node::FOLD_POW || node.type == Node::FOLD_MOD ||
                  node.type == Node::FOLD_ADD || node.type == Node::FOLD_SUB ||
                  node.type == Node::FOLD_MUL || node.type == Node::FOLD_DIV) {
-    if (!results[0].is_vector() ||
-        !(results[0].is_int() || results[0].is_float())) {
-      error(node, str(node) + " applied to " + str(results[0]));
+    auto t = load(results[0]);
+    if (!t.is_vector() || !(t.is_int() || t.is_float())) {
+      error(node, str(node) + " applied to " + str(t));
       return Type(true);
     }
-    return element_type(results[0]);
+    return element_type(t);
   };
   RESULT_FOR_ANY(node.type == Node::FOLD_EQ || node.type == Node::FOLD_NE ||
                  node.type == Node::FOLD_GE || node.type == Node::FOLD_LE ||
                  node.type == Node::FOLD_GT || node.type == Node::FOLD_LT) {
-    if (!results[0].is_vector() ||
-        !(results[0].is_int() || results[0].is_float())) {
-      error(node, str(node) + " applied to " + str(results[0]));
+    auto t = load(results[0]);
+    if (!t.is_vector() || !(t.is_int() || t.is_float())) {
+      error(node, str(node) + " applied to " + str(t));
     }
     return yang::Type::int_t();
   };
   RESULT_FOR_ANY(node.type == Node::LOGICAL_NEGATION ||
                  node.type == Node::BITWISE_NEGATION) {
-    if (!results[0].is_int()) {
-      error(node, str(node) + " applied to " + str(results[0]));
+    auto t = load(results[0]);
+    if (!t.is_int()) {
+      error(node, str(node) + " applied to " + str(t));
     }
-    return numeric_type(false, results[0].external().vector_size());
+    return numeric_type(false, t.external().vector_size());
   };
   RESULT_FOR(ARITHMETIC_NEGATION) {
-    if (!(results[0].is_int() || results[0].is_float())) {
-      error(node, str(node) + " applied to " + str(results[0]));
+    auto t = load(results[0]);
+    if (!(t.is_int() || t.is_float())) {
+      error(node, str(node) + " applied to " + str(t));
       return Type(true);
     }
-    return results[0];
+    return t;
   };
   RESULT_FOR_ANY(node.type == Node::INCREMENT || node.type == Node::DECREMENT) {
-    if (!(results[0].is_int() || results[0].is_float())) {
-      error(node, str(node) + " applied to " + str(results[0]));
+    Type t = results[0];
+    for (void* tag : t.tags()) {
+      auto sym = (symbol_t*)tag;
+      sym->warn_writes = false;
+    }
+    if (!(t.is_int() || t.is_float())) {
+      error(node, str(node) + " applied to " + str(t));
       return Type(true);
     }
-    Type t = results[0];
-    if (node.children[0]->type == Node::IDENTIFIER) {
-      if (results[0].external().is_const()) {
-        error(node, str(node) + " applied to " + str(results[0]));
-        t = t.make_const(false);
-      }
-      std::string s = node.children[0]->string_value;
-      for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it) {
-        if (it->symbol_table.has(s)) {
-          it->symbol_table[s].warn_writes = false;
-        }
-      }
+    if (!t.is_lvalue()) {
+      error(node, str(node) + " applied to non-lvalue");
+      return t.make_lvalue(true);
+    }
+    if (t.external().is_const()) {
+      error(node, str(node) + " applied to " + str(t));
+      t = t.make_const(false);
     }
     return t;
   };
@@ -428,129 +447,112 @@ void StaticChecker::before(const Node& node)
       node.type == Node::ASSIGN_POW || node.type == Node::ASSIGN_MOD ||
       node.type == Node::ASSIGN_ADD || node.type == Node::ASSIGN_SUB ||
       node.type == Node::ASSIGN_MUL || node.type == Node::ASSIGN_DIV) {
-    if (node.children[0]->type != Node::IDENTIFIER) {
-      if (!results[0].is_error()) {
-        error(node, "assignments must be directly to an identifier");
-      }
-      return results[1];
+    auto left = results[0];
+    auto right = load(results[1]);
+    bool math =
+        node.type == Node::ASSIGN_POW || node.type == Node::ASSIGN_MOD ||
+        node.type == Node::ASSIGN_ADD || node.type == Node::ASSIGN_SUB ||
+        node.type == Node::ASSIGN_MUL || node.type == Node::ASSIGN_DIV;
+    for (void* tag : left.tags()) {
+      auto sym = (symbol_t*)tag;
+      sym->warn_writes = false;
     }
 
-    const std::string& ident = node.children[0]->string_value;
-    for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it) {
-      if (!it->symbol_table.has(ident)) {
-        continue;
-      }
-      Type t = it->symbol_table[ident].type;
-
-      if (!is_tree_root(node)) {
-        it->symbol_table[ident].warn_reads = false;
-      }
-
-      if (node.type != Node::ASSIGN) {
-        bool math =
-            node.type == Node::ASSIGN_POW ||
-            node.type == Node::ASSIGN_MOD ||
-            node.type == Node::ASSIGN_ADD ||
-            node.type == Node::ASSIGN_SUB ||
-            node.type == Node::ASSIGN_MUL ||
-            node.type == Node::ASSIGN_DIV;
-
-        if (!t.is_assign_binary_match(results[1])) {
-          error(node, str(node) + " applied to " +
-                      str(t) + " and " + str(results[1]));
-          return Type(true);
-        }
-        if (!math && (!t.is_int() || !results[1].is_int())) {
-          error(node, str(node) + " applied to " +
-                      str(t) + " and " + str(results[1]));
-          return binary_type(t, results[1], false);
-        }
-        if (math && !(t.is_int() && results[1].is_int()) &&
-            !(t.is_float() && results[1].is_float())) {
-          error(node, str(node) + " applied to " +
-                      str(t) + " and " + str(results[1]));
-          return binary_type(t, results[1], results[0].is_float());
-        }
-      }
-      if (node.type == Node::ASSIGN && !t.is(results[1])) {
-        error(node, str(results[1]) + " assigned to `" + ident +
-                    "` of type " + str(t));
+    // TODO: in all error cases, propagate tags so that unused warnings are
+    // suppresed. The same for other lvalue-propagating nodes. Maybe have some
+    // more useful attribute-propagation member functions.
+    auto err = str(node) + " applied to " + str(left) + " and " + str(right);
+    if (node.type != Node::ASSIGN) {
+      if (!left.is_assign_binary_match(right)) {
+        error(node, err);
         return Type(true);
       }
-      if (t.external().is_const()) {
-        error(node, "assignment to `" + ident + "` of type " + str(t));
+      if (!math && (!left.is_int() || !right.is_int())) {
+        error(node, err);
+        return binary_type(left, right, false).make_lvalue(true);
       }
-      return t;
+      if (math && !(left.is_int() && right.is_int()) &&
+          !(left.is_float() && right.is_float())) {
+        error(node, err);
+        return Type(true);
+      }
+    }
+    else if (!left.make_const(false).make_lvalue(false).is(right)) {
+      error(node, err);
+      return Type(true);
     }
 
-    if (!_context.function_lookup(ident).type.is_void()) {
-      error(node, "cannot assign to context function `" + ident + "`");
+    if (!left.is_lvalue()) {
+      error(node, "assignment to non-lvalue");
+      return left.make_lvalue(true);
     }
-    else if (!_context.constructor_lookup(ident).ctor.type.is_void()) {
-      error(node, "cannot assign to context constructor `" + ident + "`");
+    if (left.external().is_const()) {
+      error(node, "assignment to " + str(left));
+      left = left.make_const(false);
     }
-    else if (!_context.type_lookup(ident).is_void()) {
-      error(node, "cannot assign to context type `" + ident + "`");
-    }
-    else {
-      error(node, "undeclared identifier `" + ident + "`");
-    }
-    add_symbol(node, ident, results[1], false, false);
-    return results[1];
+    return left;
   };
   RESULT_FOR(INT_CAST) {
-    if (!results[0].is_float()) {
-      error(node, str(node) + " applied to " + str(results[0]));
+    auto t = load(results[0]);
+    if (!t.is_float()) {
+      error(node, str(node) + " applied to " + str(t));
     }
-    return numeric_type(false, results[0].external().vector_size());
+    return numeric_type(false, t.external().vector_size());
   };
   RESULT_FOR(FLOAT_CAST) {
-    if (!results[0].is_int()) {
-      error(node, str(node) + " applied to " + str(results[0]));
+    auto t = load(results[0]);
+    if (!t.is_int()) {
+      error(node, str(node) + " applied to " + str(t));
     }
-    return numeric_type(true, results[0].external().vector_size());
+    return numeric_type(true, t.external().vector_size());
   };
   RESULT_FOR(VECTOR_CONSTRUCT) {
-    Type t = results[0];
+    Type t = load(results[0]);
     std::string ts;
     bool unify_error = false;
     std::unordered_set<Type> bad_types;
     for (std::size_t i = 0; i < results.size(); ++i) {
       if (node.children[i]->type == Node::NAMED_EXPRESSION) {
-        error(*node.children[i],
-              str(node) + ": named argument in vector construction");
+        error(*node.children[i], "named vector element");
       }
-      if (!results[i].primitive() && !bad_types.count(results[i])) {
+      Type u = load(results[i]);
+      if (!u.primitive() && !bad_types.count(u)) {
         // Store the bad types we saw already so as not to repeat the error.
         error(*node.children[i],
-              str(node) + ": element with non-primitive type " +
-              str(results[i]) + " in vector construction");
+              "vector element with non-primitive type " + str(u));
         t = Type(true);
-        bad_types.insert(results[i]);
+        bad_types.insert(u);
       }
       if (i) {
         bool error = t.is_error();
-        t = t.unify(results[i]);
+        t = t.unify(u);
         if (!error && t.is_error()) {
           unify_error = true;
         }
         ts += ", ";
       }
-      ts += str(results[i]);
+      ts += str(u);
     }
     if (unify_error) {
-      error(node, str(node) + " applied to different types " + ts);
+      error(node, "differing types " + ts + " in vector");
       return Type(true);
     }
     return numeric_type(t.is_float(), results.size());
   };
   RESULT_FOR(VECTOR_INDEX) {
-    if (!results[0].is_vector() || !results[1].is(yang::Type::int_t())) {
+    auto left = results[0];
+    auto right = load(results[1]);
+    if (!left.is_vector() || !right.is(yang::Type::int_t())) {
       error(node, str(node) + " applied to " +
-                  str(results[0]) + " and " + str(results[1]));
-      return results[0].is_vector() ? element_type(results[0]) : Type(true);
+                  str(left) + " and " + str(right));
+      return left.is_vector() ? element_type(left) : Type(true);
     }
-    return element_type(results[0]);
+    Type t = element_type(left).
+        make_lvalue(left.is_lvalue()).make_const(left.external().is_const());
+    for (void* tag : left.tags()) {
+      t = t.add_tag(tag);
+    }
+    return t;
   };
 
 #undef RESULT_FOR
@@ -583,7 +585,7 @@ void StaticChecker::before(const Node& node)
     case Node::PROGRAM:
       // Make sure to warn on unused top-level elements. This doesn't actually
       // pop anything, since it's the last frame.
-      call_after(node, [=]{pop_symbol_tables();});
+      call_after(node, [=]{warn_unreferenced_variables();});
       result(node, CONSTANT {return Type{};});
       break;
 
@@ -637,20 +639,20 @@ void StaticChecker::before(const Node& node)
       }
 
       result(node, RESULT {
-        Type t = results[1].make_const(node.type == Node::ASSIGN_CONST ||
-                                       node.type == Node::GLOBAL_ASSIGN);
+        Type t = load(results[1]).make_const(node.type == Node::ASSIGN_CONST ||
+                                             node.type == Node::GLOBAL_ASSIGN);
 
-        if (node.type == Node::GLOBAL_ASSIGN && !results[1].function()) {
+        if (node.type == Node::GLOBAL_ASSIGN && !t.function()) {
           error(node, "global assignment of type " + str(results[1]));
           t = Type(true);
         }
-        if (node.type != Node::GLOBAL_ASSIGN && !results[1].not_void()) {
+        if (node.type != Node::GLOBAL_ASSIGN && !t.not_void()) {
           error(node, "assignment of type " + str(results[1]));
           t = Type(true);
         }
         if (node.children[0]->type != Node::IDENTIFIER) {
-          error(node, "assignments must be directly to an identifier");
-          return results[1];
+          error(node, "expected identifer on declaration LHS");
+          return t.make_lvalue(true);
         }
         const std::string& s = node.children[0]->string_value;
 
@@ -673,18 +675,18 @@ void StaticChecker::before(const Node& node)
             _globals_output.emplace(s, t.external().make_exported(exported));
           }
           if (exported) {
-            sym[s].warn_writes = sym[s].warn_reads = false;
+            sym[s]->warn_writes = sym[s]->warn_reads = false;
           }
         }
 
         // Merge warnings for immediate assign hack.
         if (use_function_immediate_assign_hack(node)) {
-          sym[s].warn_reads &= _immediate_left_assign_warn_reads;
+          sym[s]->warn_reads &= _immediate_left_assign_warn_reads;
         }
-        sym[s].closed = sym[s].warn_closed =
+        sym[s]->closed = sym[s]->warn_closed =
             node.int_value & Node::MODIFIER_CLOSED;
-        if (global_scope && sym[s].closed) {
-          sym[s].warn_closed = false;
+        if (global_scope && sym[s]->closed) {
+          sym[s]->warn_closed = false;
           error(node, "`closed` modifier has no effect on global " +
                       node.string_value, false);
         }
@@ -694,9 +696,9 @@ void StaticChecker::before(const Node& node)
         if (node.type == Node::GLOBAL_ASSIGN && !t.is_error() &&
             node.int_value & Node::MODIFIER_EXPORT) {
           _functions_output.emplace(s, t.external().make_exported(true));
-          sym[s].warn_reads = false;
+          sym[s]->warn_reads = false;
         }
-        return results[1];
+        return t.make_lvalue(true).add_tag(sym[s]);
       });
       break;
 
@@ -713,11 +715,14 @@ void StaticChecker::before(const Node& node)
         _scopes.back().metadata.pop();
         // Make sure it's const so functions can't set themselves to different
         // values inside the body.
-        Type t = result.make_const(true);
+        Type t = result;
         if (!t.function()) {
           // Grammar no longer allows this, but leave it in for future-proofing.
           error(node, "function defined with non-function type " + str(t));
           t = Type(true);
+        }
+        else {
+          t = t.make_const(true);
         }
 
         // Functions need two symbol table frames: one for recursive hack, one
@@ -729,7 +734,7 @@ void StaticChecker::before(const Node& node)
         if (_immediate_left_assign.length()) {
           // Immediate left assigns are implicitly closed.
           add_symbol(node, _immediate_left_assign, t, false);
-          _scopes.back().symbol_table[_immediate_left_assign].closed = true;
+          _scopes.back().symbol_table[_immediate_left_assign]->closed = true;
           _immediate_left_assign = "";
         }
 
@@ -758,7 +763,7 @@ void StaticChecker::before(const Node& node)
             add_symbol(*ptr, name, u, false);
             // TODO: arguments are implicitly closed so far, since it's a bit
             // tricky to allow closed on arglists in the parser. Fix that maybe.
-            _scopes.back().symbol_table[name].closed = true;
+            _scopes.back().symbol_table[name]->closed = true;
             arg_names.insert(name);
             ++elem;
           }
@@ -775,14 +780,18 @@ void StaticChecker::before(const Node& node)
         }
         pop_symbol_tables();
         pop_symbol_tables();
-        // We don't pop the last symbol table (containing only the recursive
-        // hack): instead we just want to merge its unreferenced warning
-        // information with the symbol about to be added in the enclosing scope.
-        std::vector<std::pair<std::string, symbol_t>> symbols;
+        // The last symbol table contains only the recursive hack: we just want
+        // to merge its unreferenced warning information with the symbol about
+        // to be added in the enclosing scope.
+        std::vector<std::pair<std::string, symbol_t*>> symbols;
         _scopes.back().symbol_table.get_symbols(symbols, 0, 2);
         for (const auto& pair : symbols) {
-          _immediate_left_assign_warn_reads = pair.second.warn_reads;
+          _immediate_left_assign_warn_reads = pair.second->warn_reads;
+          pair.second->warn_reads = false;
         }
+
+        // Symbol reference warnings.
+        warn_unreferenced_variables();
         _scopes.pop_back();
       });
       break;
@@ -817,9 +826,10 @@ void StaticChecker::before(const Node& node)
       push_symbol_tables();
       call_after(node, [=]{pop_symbol_tables();});
       result(node, RESULT {
-        if (!results[0].is(yang::Type::int_t())) {
+        auto t = load(results[0]);
+        if (!t.is(yang::Type::int_t())) {
           error(*node.children[0],
-                str(node) + " branching on " + str(results[0]));
+                str(node) + " branching on " + str(t));
         }
         auto& body = results.size() > 2 ? node.children[2] : node.children[1];
         if (body->type == Node::EXPR_STMT &&
@@ -849,7 +859,7 @@ void StaticChecker::before(const Node& node)
       }
       result(node, RESULT {
         std::size_t cond = node.type != Node::WHILE_STMT;
-        if (!results[cond].is(yang::Type::int_t())) {
+        if (!load(results[cond]).is(yang::Type::int_t())) {
           error(*node.children[cond],
                 str(node) + " branching on " + str(results[cond]));
         }
@@ -878,25 +888,45 @@ void StaticChecker::before(const Node& node)
         // (a, b) ? (c, d) : e equivalent to (a, b) ? (c, d) : (e, e).
         // But, this is odd and confusing, so it's not allowed.
         bool err = false;
-        if (!results[1].is(results[2])) {
+        auto cond = load(results[0]);
+        auto left = results[1].make_lvalue(false).make_const(false);
+        auto right = results[2].make_lvalue(false).make_const(false);
+        if (!left.is(right)) {
           error(node, str(node) + " applied to " +
-                      str(results[1]) + " and " + str(results[2]));
+                      str(left) + " and " + str(right));
           err = true;
         }
-        if (!results[0].is_int()) {
-          error(node, str(node) + " branching on " + str(results[0]));
+        if (!cond.is_int()) {
+          error(node, str(node) + " branching on " + str(cond));
           err = true;
         }
 
-        if (results[0].is_vector() && !err &&
-            (!results[1].is_vector() || results[0].external().vector_size() !=
-                                        results[1].external().vector_size())) {
+        if (cond.is_vector() && !err &&
+            (!left.is_vector() || cond.external().vector_size() !=
+                                  left.external().vector_size())) {
           error(node, "length-" +
-                      std::to_string(results[0].external().vector_size()) +
+                      std::to_string(cond.external().vector_size()) +
                       " vectorised branch applied to " +
-                      str(results[1]) + " and " + str(results[2]));
+                      str(left) + " and " + str(right));
         }
-        return results[1].unify(results[2]);
+        Type t = left.unify(right);
+        t = t.make_const(results[1].external().is_const() ||
+                         results[2].external().is_const());
+        if (results[1].is_lvalue() && results[2].is_lvalue()) {
+          t = t.make_lvalue(true);
+        }
+        else {
+          t = t.make_lvalue(false);
+          load(results[1]);
+          load(results[2]);
+        }
+        for (void* tag : results[1].tags()) {
+          t = t.add_tag(tag);
+        }
+        for (void* tag : results[2].tags()) {
+          t = t.add_tag(tag);
+        }
+        return t;
       });
       break;
 
@@ -905,6 +935,10 @@ void StaticChecker::before(const Node& node)
         goto type_function;
       }
       result(node, RESULT {
+        auto t = load(results[0]);
+        for (std::size_t i = 1; i < results.size(); ++i) {
+          load(results[i]);
+        }
         // The grammar doesn't distinguish function-type construction from
         // call-expressions in all contexts, so we need to check here.
         for (std::size_t i = 1; i < results.size(); ++i) {
@@ -913,25 +947,25 @@ void StaticChecker::before(const Node& node)
                   str(node) + ": named argument in function call");
           }
         }
-        if (!results[0].function()) {
-          error(node, str(node) + " applied to " + str(results[0]));
+        if (!t.function()) {
+          error(node, str(node) + " applied to " + str(t));
           return Type(true);
         }
-        if (!results[0].element_size(results.size())) {
-          error(node, str(results[0]) + " called with " +
+        if (!t.element_size(results.size())) {
+          error(node, str(t) + " called with " +
                       std::to_string(results.size() - 1) + " argument(s)");
         }
         else {
           for (std::size_t i = 1; i < results.size(); ++i) {
-            if (!results[0].element_is(i, results[i])) {
+            auto u = load(results[i]);
+            if (!t.element_is(i, u)) {
               error(*node.children[i],
-                    str(results[0]) + " called with " + str(results[i]) +
+                    str(t) + " called with " + str(u) +
                     " in position " + std::to_string(i - 1));
             }
           }
         }
-        return results[0].is_error() ?
-            Type(true) : results[0].external().function_return();
+        return t.is_error() ? Type(true) : t.external().function_return();
       });
       break;
 
@@ -952,17 +986,19 @@ void StaticChecker::before(const Node& node)
     case Node::BITWISE_LSHIFT:
     case Node::BITWISE_RSHIFT:
       result(node, RESULT {
+        auto left = load(results[0]);
+        auto right = load(results[1]);
         // Takes two integers and produces an integer, with vectorisation.
-        if (!results[0].is_binary_match(results[1])) {
+        if (!left.is_binary_match(right)) {
           error(node, str(node) + " applied to " +
-                      str(results[0]) + " and " + str(results[1]));
+                      str(left) + " and " + str(right));
           return Type(true);
         }
-        else if (!results[0].is_int() || !results[1].is_int()) {
+        else if (!left.is_int() || !right.is_int()) {
           error(node, str(node) + " applied to " +
-                      str(results[0]) + " and " + str(results[1]));
+                      str(left) + " and " + str(right));
         }
-        return binary_type(results[0], results[1], false);
+        return binary_type(left, right, false);
       });
       break;
 
@@ -1012,46 +1048,49 @@ void StaticChecker::push_symbol_tables()
 void StaticChecker::pop_symbol_tables()
 {
   _scopes.back().scope_numbering.pop_back();
-  typedef std::pair<std::string, symbol_t> pair;
-  std::vector<pair> symbols;
-  std::size_t size = _scopes.back().symbol_table.size();
-  _scopes.back().symbol_table.get_symbols(symbols, size - 1, size);
+  _scopes.back().symbol_table.pop();
+}
 
-  for (const auto& p : symbols) {
-    if (p.second.warn_writes && p.second.warn_reads) {
-      error(*p.second.declaration,
-            "symbol `" + p.first + "` is never referenced", false);
+void StaticChecker::warn_unreferenced_variables()
+{
+  for (const auto& sym : _scopes.back().symbols) {
+    if (sym.warn_writes && sym.warn_reads) {
+      error(*sym.declaration,
+            "symbol `" + sym.name + "` is never referenced", false);
     }
-    else if (p.second.warn_closed) {
-      error(*p.second.declaration,
-            "symbol `" + p.first + "` is never closed over", false);
+    else if (sym.warn_closed) {
+      error(*sym.declaration,
+            "symbol `" + sym.name + "` is never closed over", false);
     }
-    else if (p.second.warn_writes) {
-      error(*p.second.declaration,
-            "symbol `" + p.first + "` is never written to", false);
+    else if (sym.warn_writes) {
+      error(*sym.declaration,
+            "symbol `" + sym.name + "` is never written to", false);
     }
-    else if (p.second.warn_reads) {
-      error(*p.second.declaration,
-            "symbol `" + p.first + "` is never read", false);
+    else if (sym.warn_reads) {
+      error(*sym.declaration,
+            "symbol `" + sym.name + "` is never read", false);
     }
   }
-  _scopes.back().symbol_table.pop();
 }
 
 void StaticChecker::add_symbol(
     const Node& node, const std::string& name, const Type& type,
     bool global, bool unreferenced_warning)
 {
-  symbol_t sym;
+  auto& scope = global ? _scopes[0] : _scopes.back();
+  scope.symbols.emplace_back();
+  auto& sym = scope.symbols.back();
+
   sym.type = type;
   sym.scope_number = global ? 0 : _scopes.back().scope_numbering.back();
   sym.declaration = &node;
+  sym.name = name;
   // We don't care if there are no writes to a const symbol, so we just set
   // warn_writes to false.
   unreferenced_warning = unreferenced_warning && !type.is_error();
   sym.warn_writes = unreferenced_warning && !type.external().is_const();
   sym.warn_reads = unreferenced_warning;
-  (global ? _scopes[0] : _scopes.back()).symbol_table.add(name, sym);
+  scope.symbol_table.add(name, &sym);
 }
 
 void StaticChecker::add_symbol_checking_collision(
@@ -1062,13 +1101,25 @@ void StaticChecker::add_symbol_checking_collision(
   if (table.has(name, table.size() - 1)) {
     // Skipping on error is debatable as to whether it really skips
     // unnecessary messages, or rather hides real name collisions.
-    if (!table.get(name, table.size() - 1).type.is_error()) {
+    if (!table.get(name, table.size() - 1)->type.is_error()) {
       error(node, (global ? "global " : "symbol ") +
                   ("`" + name + "` redefined"));
     }
     table.remove(name, table.size() - 1);
   }
   add_symbol(node, name, type, global, unreferenced_warning);
+}
+
+Type StaticChecker::load(const Type& a)
+{
+  if (!a.is_lvalue()) {
+    return a;
+  }
+  for (void* tag : a.tags()) {
+    auto sym = (symbol_t*)tag;
+    sym->warn_reads = false;
+  }
+  return a.make_lvalue(false).make_const(false).clear_tags();
 }
 
 void StaticChecker::error(
@@ -1113,7 +1164,7 @@ StaticChecker::lex_scope_t::lex_scope_t(
   : function(function)
   , name(name)
   , metadata(Type())
-  , symbol_table(symbol_t())
+  , symbol_table(nullptr)
   , scope_numbering{0}
   , scope_numbering_next(1)
 {

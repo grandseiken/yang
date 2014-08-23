@@ -12,12 +12,14 @@
 namespace yang {
 namespace internal {
 struct ContextInternals;
+struct Symbol;
 
 // Type together with an error flag, for expressions containing an error
 // where the type cannot be determined. Further errors involving a value
 // of this type are suppressed (to avoid cascading error messages).
 //
-// It might be nice to name this something different to yang::Type.
+// It might be nice to name this something different to yang::Type, and clean
+// it up, especially now that it stores lvalue-ness and tags as well.
 class Type {
 public:
 
@@ -31,6 +33,12 @@ public:
   std::string string(const ContextInternals& context, bool quote = true) const;
   // Change constness.
   Type make_const(bool is_const) const;
+  // Change lvalueness.
+  Type make_lvalue(bool is_lvalue) const;
+  // Change tags.
+  Type add_tag(void* tag) const;
+  Type clear_tags() const;
+  const std::vector<void*>& tags() const;
 
   // Raw equality comparisons (ignoring ERROR). Don't use for type-checking.
   bool operator==(const Type& t) const;
@@ -39,6 +47,8 @@ public:
   // All of the following functions also return true if the error bit of any
   // type involved is set.
   bool is_error() const;
+  bool is_lvalue() const;
+  bool not_lvalue() const;
   bool is_void() const;
   bool not_void() const;
   bool primitive() const;
@@ -64,6 +74,10 @@ private:
   friend struct std::hash<Type>;
   yang::Type _wrap;
   bool _error;
+  bool _lvalue;
+  // Stored pointers to symbols so that they can be propagated for warning
+  // purposes.
+  std::vector<void*> _tags;
 
 };
 

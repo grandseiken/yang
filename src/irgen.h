@@ -56,6 +56,7 @@ private:
   Value get_member_function(const yang::Type& type, const std::string& name);
   Value get_constructor(const std::string& type);
   Value create_call(const Value& f, const std::vector<Value>& args);
+  Value load(const Value& ptr);
 
   Value i2b(const Value& v);
   Value b2i(const Value& v);

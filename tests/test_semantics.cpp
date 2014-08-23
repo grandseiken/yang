@@ -86,6 +86,35 @@ global {
   EXPECT_EQ(10, inst.get_global<int_t>("ten"));
 }
 
+TEST_F(SemanticsTest, Lvalues)
+{
+  auto inst = instance(R"(
+export lvalues = int()
+{
+  var a = 1;
+  --var b = 5;
+
+  (a = 2) *= 2;
+  ++--++b *= 2;
+
+  const c = (true ? var a = 50 : var a = 0) *= 2;
+
+  var d = 100;
+  var e = 1;
+  (true ? d : e) = 1;
+  d += d == 0 ? const x = 0 :
+       d == 1 ? const x = 1 :
+                (var x = 1) += 1;
+
+  const f = (3, 2, 1);
+  var g = (1, 2, 3);
+  ++(g[3] = 2);
+
+  return --a + ++b + c + d + e + f[-1] + $+g;
+})");
+  EXPECT_EQ(126, inst.call<int_t>("lvalues"));
+}
+
 TEST_F(SemanticsTest, Shadowing)
 {
   auto inst = instance(R"(
@@ -234,8 +263,8 @@ export edit = int()()
   {
     const val = ff();
     ff = step == 0 ? int() {return 1;} :
-         step == ++0 ? int() {return step;} :
-         step == ++++0 ? edit() : ff;
+         step == 1 + 0 ? int() {return step;} :
+         step == 2 + 0 ? edit() : ff;
     ++step;
     return val;
   };

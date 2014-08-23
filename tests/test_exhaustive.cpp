@@ -324,7 +324,7 @@ export adiv5 = int() {return $+[(vv /= t.)];}
 
 export pfix0 = int() {++u; return --u;}
 export pfix1 = int() {++uu; return $+--++--uu;}
-export pfix2 = int() {return [++v - --v];}
+export pfix2 = int() {return [++v + 0. - --v];}
 export pfix3 = int() {++vv; return $+[--++--vv];}
 
 export to_int0 = int() {return [v];}

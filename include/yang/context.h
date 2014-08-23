@@ -32,10 +32,6 @@
 // can exist as well to get the current program instance as an interface value.
 //
 // Misc stuff:
-// TODO: better assignment with lvalues. E.g. a[i] and ++i should both be
-// assignable-to. This should make type-checking substantially easier, but
-// code-gen will need to keep pointers and dereference when lvalues are
-// converted.
 // TODO: code hot-swapping. Careful with pointer values (e.g. functions) in
 // global data struct which probably need to be left as default values.
 // TODO: make sure everything is (possibly optionally?) thread-safe.

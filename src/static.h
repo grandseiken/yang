@@ -5,6 +5,7 @@
 #ifndef YANG_SRC_STATIC_H
 #define YANG_SRC_STATIC_H
 
+#include <list>
 #include <map>
 #include <string>
 #include <unordered_map>
@@ -42,11 +43,13 @@ private:
   // Symbol table management that also tracks unreferenced symbols for warnings.
   void push_symbol_tables();
   void pop_symbol_tables();
+  void warn_unreferenced_variables();
   void add_symbol(const Node& node, const std::string& name, const Type& type,
                   bool global, bool unreferenced_warning = true);
   void add_symbol_checking_collision(
       const Node& node, const std::string& name,
       const Type& type, bool global, bool unreferenced_warning = true);
+  Type load(const Type& a);
 
   void error(const Node& node, const std::string& message, bool error = true);
   std::string str(const Node& node) const;
@@ -75,6 +78,7 @@ private:
 
     // We also store a few bits indicating whether a symbol has been referenced
     // since it was defined, for the purposes of warning about unused variables.
+    std::string name;
     const Node* declaration;
     bool warn_writes;
     bool warn_reads;
@@ -87,7 +91,8 @@ private:
     std::string name;
 
     SymbolTable<metadata_t, Type> metadata;
-    SymbolTable<std::string, symbol_t> symbol_table;
+    SymbolTable<std::string, symbol_t*> symbol_table;
+    std::list<symbol_t> symbols;
 
     // For each function, we also need to number its scopes uniquely, so that we
     // can distinguish identically-named variables in the closure structure.

@@ -10,12 +10,14 @@ namespace internal {
 Type::Type(const yang::Type& type)
   : _wrap(type)
   , _error(false)
+  , _lvalue(false)
 {
 }
 
 Type::Type(bool error)
   : _wrap(yang::Type::void_t())
   , _error(error)
+  , _lvalue(false)
 {
 }
 
@@ -32,12 +34,50 @@ std::string Type::string(const ContextInternals& context, bool quote) const
 
 Type Type::make_const(bool is_const) const
 {
-  return _error ? *this : external().make_const(is_const);
+  Type t = *this;
+  t._wrap = external().make_const(is_const);
+  return _error ? *this : t;
+}
+
+Type Type::make_lvalue(bool is_lvalue) const
+{
+  Type t = *this;
+  t._lvalue = is_lvalue;
+  return t;
+}
+
+Type Type::add_tag(void* tag) const
+{
+  Type t = *this;
+  t._tags.push_back(tag);
+  return t;
+}
+
+Type Type::clear_tags() const
+{
+  Type t = *this;
+  t._tags.clear();
+  return t;
+}
+
+const std::vector<void*>& Type::tags() const
+{
+  return _tags;
 }
 
 bool Type::is_error() const
 {
   return _error;
+}
+
+bool Type::is_lvalue() const
+{
+  return is_error() || _lvalue;
+}
+
+bool Type::not_lvalue() const
+{
+  return is_error() || _lvalue;
 }
 
 bool Type::is_void() const
@@ -120,7 +160,7 @@ Type Type::unify(const Type& t) const
 
 bool Type::operator==(const Type& t) const
 {
-  if (_error != t._error) {
+  if (_error != t._error || _lvalue != t._lvalue) {
     return false;
   }
   if (_error) {

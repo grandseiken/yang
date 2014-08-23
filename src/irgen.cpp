@@ -167,10 +167,17 @@ void IrGenerator::before(const Node& node)
   RESULT_FOR(EXPR_STMT) {return results[0];};
   RESULT_FOR(RETURN_STMT) {
     auto dead_block = _scopes.back().create_block("dead");
+    if (node.children.empty()) {
+      _scopes.back().dereference_scoped_locals(0);
+      _b.b.CreateRetVoid();
+      _b.b.SetInsertPoint(dead_block);
+      return {};
+    }
+    Value v = load(results[0]);
     _scopes.back().dereference_scoped_locals(0);
-    node.children.empty() ? _b.b.CreateRetVoid() : _b.b.CreateRet(results[0]);
+    _b.b.CreateRet(v);
     _b.b.SetInsertPoint(dead_block);
-    return node.children.empty() ? Value() : results[0];
+    return v;
   };
   RESULT_FOR_ANY(node.type == Node::ASSIGN ||
                  node.type == Node::ASSIGN_LOGICAL_OR ||
@@ -186,11 +193,10 @@ void IrGenerator::before(const Node& node)
                  node.type == Node::ASSIGN_SUB ||
                  node.type == Node::ASSIGN_MUL ||
                  node.type == Node::ASSIGN_DIV) {
-    const std::string& s = node.children[0]->string_value;
     Value v = node.type == Node::ASSIGN ?
-        results[1] : binary(node, results[0], results[1]);
-    _scopes.back().memory_store(v, get_variable_ptr(s));
-    return v;
+        load(results[1]) : binary(node, load(results[0]), load(results[1]));
+    _scopes.back().memory_store(v, results[0]);
+    return results[0];
   };
   CONSTANT_FOR_ANY(node.type == Node::BREAK_STMT ||
                    node.type == Node::CONTINUE_STMT) {
@@ -207,11 +213,13 @@ void IrGenerator::before(const Node& node)
     // Don't need to allocate anything for managed user-types: we already
     // have a chunk.
     if (results[0].type.is_managed_user_type()) {
-      env = results[0];
+      env = load(results[0]);
     }
     else {
+      // TODO: make sure the implicit closure is being optimised away when
+      // it is immediately called.
       env = _chunk.allocate_closure_struct(get_global_struct());
-      _chunk.memory_store(results[0], env, "object");
+      _chunk.memory_store(load(results[0]), env, "object");
     }
     Value v = get_member_function(results[0].type, node.string_value);
     v = _b.function_value(v.type, v, env);
@@ -230,9 +238,7 @@ void IrGenerator::before(const Node& node)
     // be a reference to a context function of the same name.
     Value variable_ptr = get_variable_ptr(node.string_value);
     if (variable_ptr) {
-      return variable_ptr.irval->getType()->isPointerTy() ?
-          _scopes.back().memory_load(variable_ptr.type, variable_ptr) :
-          variable_ptr;
+      return variable_ptr;
     }
 
     // It must be a context function.
@@ -282,16 +288,16 @@ void IrGenerator::before(const Node& node)
                  node.type == Node::POW || node.type == Node::MOD ||
                  node.type == Node::ADD || node.type == Node::SUB ||
                  node.type == Node::MUL || node.type == Node::DIV) {
-    return binary(node, results[0], results[1]);
+    return binary(node, load(results[0]), load(results[1]));
   };
   RESULT_FOR_ANY(node.type == Node::EQ || node.type == Node::NE ||
                  node.type == Node::GE || node.type == Node::LE ||
                  node.type == Node::GT || node.type == Node::LT) {
-    return b2i(binary(node, results[0], results[1]));
+    return b2i(binary(node, load(results[0]), load(results[1])));
   };
   RESULT_FOR_ANY(node.type == Node::FOLD_LOGICAL_OR ||
                  node.type == Node::FOLD_LOGICAL_AND) {
-    return b2i(fold(node, results[0], true));
+    return b2i(fold(node, load(results[0]), true));
   };
   RESULT_FOR_ANY(node.type == Node::FOLD_BITWISE_OR ||
                  node.type == Node::FOLD_BITWISE_OR ||
@@ -299,71 +305,73 @@ void IrGenerator::before(const Node& node)
                  node.type == Node::FOLD_BITWISE_XOR ||
                  node.type == Node::FOLD_BITWISE_LSHIFT ||
                  node.type == Node::FOLD_BITWISE_RSHIFT) {
-    return fold(node, results[0]);
+    return fold(node, load(results[0]));
   };
   RESULT_FOR(FOLD_POW) {
     // POW is the only right-associative fold operator.
-    return fold(node, results[0], false, false, true);
+    return fold(node, load(results[0]), false, false, true);
   };
   RESULT_FOR_ANY(node.type == Node::FOLD_MOD ||
                  node.type == Node::FOLD_ADD || node.type == Node::FOLD_SUB ||
                  node.type == Node::FOLD_MUL || node.type == Node::FOLD_DIV) {
-    return fold(node, results[0]);
+    return fold(node, load(results[0]));
   };
   RESULT_FOR_ANY(node.type == Node::FOLD_EQ || node.type == Node::FOLD_NE ||
                  node.type == Node::FOLD_GE || node.type == Node::FOLD_LE ||
                  node.type == Node::FOLD_GT || node.type == Node::FOLD_LT) {
-    return b2i(fold(node, results[0], false, true));
+    return b2i(fold(node, load(results[0]), false, true));
   };
   RESULT_FOR(LOGICAL_NEGATION) {
     Value v = _b.default_for_type(results[0].type);
-    v.irval = _b.b.CreateICmpEQ(results[0], v);
+    v.irval = _b.b.CreateICmpEQ(load(results[0]), v);
     return b2i(v);
   };
   RESULT_FOR(BITWISE_NEGATION) {
     Value v = _b.default_for_type(results[0].type, 0u - 1);
-    v.irval = _b.b.CreateXor(results[0], v);
+    v.irval = _b.b.CreateXor(load(results[0]), v);
     return v;
   };
   RESULT_FOR(ARITHMETIC_NEGATION) {
     Value v = _b.default_for_type(results[0].type);
     v.irval = results[0].type.is_int() || results[0].type.is_ivec() ?
-        _b.b.CreateSub(v, results[0]) : _b.b.CreateFSub(v, results[0]);
+        _b.b.CreateSub(v, load(results[0])) :
+        _b.b.CreateFSub(v, load(results[0]));
     return v;
   };
   RESULT_FOR_ANY(node.type == Node::INCREMENT || node.type == Node::DECREMENT) {
     Value v = _b.default_for_type(
         results[0].type, node.type == Node::INCREMENT ? 1 : -1);
     v.irval = results[0].type.is_int() || results[0].type.is_ivec() ?
-        _b.b.CreateAdd(results[0], v) : _b.b.CreateFAdd(results[0], v);
-    if (node.children[0]->type == Node::IDENTIFIER) {
-      const std::string& s = node.children[0]->string_value;
-      _scopes.back().memory_store(v, get_variable_ptr(s));
-    }
-    return v;
+        _b.b.CreateAdd(load(results[0]), v) :
+        _b.b.CreateFAdd(load(results[0]), v);
+    _scopes.back().memory_store(v, results[0]);
+    return results[0];
   };
-  RESULT_FOR(INT_CAST) {return f2i(results[0]);};
-  RESULT_FOR(FLOAT_CAST) {return i2f(results[0]);};
+  RESULT_FOR(INT_CAST) {return f2i(load(results[0]));};
+  RESULT_FOR(FLOAT_CAST) {return i2f(load(results[0]));};
   RESULT_FOR(VECTOR_CONSTRUCT) {
     Value v = results[0].type.is_int() ? _b.constant_ivec(0, results.size()) :
                                          _b.constant_fvec(0, results.size());
     for (std::size_t i = 0; i < results.size(); ++i) {
       v.irval = _b.b.CreateInsertElement(
-          v.irval, results[i], _b.constant_int(i));
+          v.irval, load(results[i]), _b.constant_int(i));
     }
     return v;
   };
   RESULT_FOR(VECTOR_INDEX) {
-    // Indexing out-of-bounds produces constant zero.
+    // Indexing out-of-bounds wraps around.
+    llvm::Value* index =
+        mod(load(results[1]), _b.constant_int(results[0].type.vector_size()));
     Value v = results[0].type.is_ivec() ?
-        _b.constant_int(0) : _b.constant_float(0);
-    auto ge = _b.b.CreateICmpSGE(results[1], _b.constant_int(0));
-    auto lt = _b.b.CreateICmpSLT(
-        results[1], _b.constant_int(results[0].type.vector_size()));
-
-    auto in = _b.b.CreateAnd(ge, lt);
-    v.irval =_b.b.CreateSelect(
-        in, _b.b.CreateExtractElement(results[0], results[1]), v);
+        yang::Type::int_t() : yang::Type::float_t();
+    if (results[0].lvalue) {
+      std::vector<llvm::Value*> indices{_b.constant_int(0), index};
+      v.irval = _b.b.CreateGEP(results[0], indices);
+      v.lvalue = true;
+    }
+    else {
+      v.irval = _b.b.CreateExtractElement(load(results[0]), index);
+    }
     return v;
   };
 #undef RESULT_FOR
@@ -444,8 +452,8 @@ void IrGenerator::before(const Node& node)
         }
         function->setName(node.children[0]->string_value);
         _scopes.back().symbol_table.add(
-            node.children[0]->string_value, results[1]);
-        return results[1];
+            node.children[0]->string_value, load(results[1]));
+        return load(results[1]);
       });
       break;
 
@@ -522,7 +530,7 @@ void IrGenerator::before(const Node& node)
 
       call_after_result(*node.children[0], [=](const Value& value)
       {
-        _b.b.CreateCondBr(i2b(value), then_block,
+        _b.b.CreateCondBr(i2b(load(value)), then_block,
                           has_else ? else_block : merge_block);
         _b.b.SetInsertPoint(then_block);
       });
@@ -554,7 +562,7 @@ void IrGenerator::before(const Node& node)
       call_after_result(*node.children[1], [=](const Value& value)
       {
         auto clean_block = _scopes.back().create_block("clean");
-        _b.b.CreateCondBr(i2b(value), loop_block, clean_block);
+        _b.b.CreateCondBr(i2b(load(value)), loop_block, clean_block);
         _b.b.SetInsertPoint(clean_block);
         _scopes.back().dereference_scoped_locals();
         _b.b.CreateBr(merge_block);
@@ -591,7 +599,7 @@ void IrGenerator::before(const Node& node)
       call_after_result(*node.children[0], [=](const Value& value)
       {
         auto clean_block = _scopes.back().create_block("clean");
-        _b.b.CreateCondBr(i2b(value), loop_block, clean_block);
+        _b.b.CreateCondBr(i2b(load(value)), loop_block, clean_block);
         _b.b.SetInsertPoint(clean_block);
         _scopes.back().dereference_scoped_locals();
         _b.b.CreateBr(merge_block);
@@ -630,7 +638,7 @@ void IrGenerator::before(const Node& node)
       result(node, RESULT {
         _scopes.back().pop_scope();
         _scopes.back().pop_scope();
-        _b.b.CreateCondBr(i2b(results[1]), loop_block, merge_block);
+        _b.b.CreateCondBr(i2b(load(results[1])), loop_block, merge_block);
         _b.b.SetInsertPoint(merge_block);
         return results[0];
       });
@@ -643,9 +651,8 @@ void IrGenerator::before(const Node& node)
         // Vectorised ternary can't short-circuit.
         if (value.type.is_vector()) {
           result(node, RESULT {
-            return Value(
-                results[1].type,
-                _b.b.CreateSelect(i2b(results[0]), results[1], results[2]));
+            return Value(results[1].type, _b.b.CreateSelect(
+                i2b(load(results[0])), load(results[1]), load(results[2])));
           });
           return;
         }
@@ -656,15 +663,13 @@ void IrGenerator::before(const Node& node)
         auto merge_block = _scopes.back().create_block("merge");
 
         _scopes.back().metadata.push();
-        _b.b.CreateCondBr(i2b(value), then_block, else_block);
+        _b.b.CreateCondBr(i2b(load(value)), then_block, else_block);
         _b.b.SetInsertPoint(then_block);
         _scopes.back().push_scope();
 
         call_after(*node.children[1], [=]
         {
           _scopes.back().pop_scope();
-          _b.b.CreateBr(merge_block);
-
           // Save the last block so we can add it as a predecessor.
           _scopes.back().metadata.add(
               LexScope::OTHER_SOURCE_BLOCK, _b.b.GetInsertBlock());
@@ -678,12 +683,28 @@ void IrGenerator::before(const Node& node)
               _scopes.back().get_block(LexScope::OTHER_SOURCE_BLOCK);
           auto last_else_block = _b.b.GetInsertBlock();
           _scopes.back().metadata.pop();
+          bool lvalue = results[1].lvalue && results[2].lvalue;
+
+          _b.b.SetInsertPoint(last_then_block);
+          Value left = lvalue ? results[1] : load(results[1]);
           _b.b.CreateBr(merge_block);
+
+          _b.b.SetInsertPoint(last_else_block);
+          Value right = lvalue ? results[2] : load(results[2]);
+          _b.b.CreateBr(merge_block);
+
           _b.b.SetInsertPoint(merge_block);
-          auto phi = _b.b.CreatePHI(_b.get_llvm_type(results[1].type), 2);
-          phi->addIncoming(results[1], last_then_block);
-          phi->addIncoming(results[2], last_else_block);
-          return Value(results[1].type, phi);
+          auto type = left.type;
+          auto llvm_type = _b.get_llvm_type(left.type);
+          if (lvalue) {
+            llvm_type = llvm::PointerType::get(llvm_type, 0);
+          }
+          auto phi = _b.b.CreatePHI(llvm_type, 2);
+          phi->addIncoming(left, last_then_block);
+          phi->addIncoming(right, last_else_block);
+          Value v(type, phi);
+          v.lvalue = lvalue;
+          return v;
         });
       });
       break;
@@ -700,7 +721,8 @@ void IrGenerator::before(const Node& node)
         if (value.type.is_vector()) {
           // Short-circuiting isn't possible.
           result(node, RESULT {
-            return binary(node, b2i(i2b(results[0])), b2i(i2b(results[1])));
+            return binary(node, b2i(i2b(load(results[0]))),
+                                b2i(i2b(load(results[1]))));
           });
           return;
         }
@@ -710,10 +732,10 @@ void IrGenerator::before(const Node& node)
         auto merge_block = _scopes.back().create_block("merge");
 
         if (node.type == Node::LOGICAL_OR) {
-          _b.b.CreateCondBr(i2b(value), merge_block, rhs_block);
+          _b.b.CreateCondBr(i2b(load(value)), merge_block, rhs_block);
         }
         else {
-          _b.b.CreateCondBr(i2b(value), rhs_block, merge_block);
+          _b.b.CreateCondBr(i2b(load(value)), rhs_block, merge_block);
         }
         _b.b.SetInsertPoint(rhs_block);
         _scopes.back().push_scope();
@@ -724,7 +746,7 @@ void IrGenerator::before(const Node& node)
           auto last_rhs_block = _b.b.GetInsertBlock();
           _scopes.back().metadata.pop();
 
-          auto rhs = b2i(i2b(results[1]));
+          auto rhs = b2i(i2b(load(results[1])));
           _b.b.CreateBr(merge_block);
           _b.b.SetInsertPoint(merge_block);
           llvm::Type* type = _b.int_type();
@@ -760,8 +782,10 @@ void IrGenerator::before(const Node& node)
         if (_scopes.back().metadata.has(LexScope::GLOBAL_INIT_FUNCTION) &&
             _scopes.back().symbol_table.size() <= 2) {
           _scopes[0].symbol_table.add(s, Value(results[1].type));
-          _scopes[0].memory_store(results[1], get_variable_ptr(s));
-          return results[1];
+          Value v = get_variable_ptr(s);
+          _scopes[0].memory_store(load(results[1]), v);
+          v.lvalue = true;
+          return v;
         }
 
         const std::string& unique_name =
@@ -786,9 +810,11 @@ void IrGenerator::before(const Node& node)
           _scopes.back().refcount_init(Value(results[1].type, storage));
         }
 
-        _scopes.back().memory_store(results[1], storage);
-        _scopes.back().symbol_table.add(s, Value(results[1].type, storage));
-        return results[1];
+        _scopes.back().memory_store(load(results[1]), storage);
+        Value v(results[1].type, storage);
+        _scopes.back().symbol_table.add(s, v);
+        v.lvalue = true;
+        return v;
       });
       break;
 
@@ -799,9 +825,9 @@ void IrGenerator::before(const Node& node)
       result(node, RESULT {
         std::vector<Value> args;
         for (std::size_t i = 1; i < results.size(); ++i) {
-          args.push_back(results[i]);
+          args.push_back(load(results[i]));
         }
-        Value r = create_call(results[0], args);
+        Value r = create_call(load(results[0]), args);
         // Reference count the temporary.
         if (r) {
           _scopes.back().update_reference_count(r, 1);
@@ -854,7 +880,9 @@ Value IrGenerator::get_variable_ptr(const std::string& name)
   auto it = _scopes.rbegin();
   // Local variables.
   if (it->symbol_table.has(name)) {
-    return it->symbol_table[name];
+    Value v = it->symbol_table[name];
+    v.lvalue = true;
+    return v;
   }
   // Nonlocal variables.
   for (++it; ; ++it) {
@@ -875,9 +903,8 @@ Value IrGenerator::get_variable_ptr(const std::string& name)
   llvm::Value* cast = _b.b.CreateBitCast(struct_ptr, it->structure().type);
 
   if (it == --_scopes.rend()) {
-    // Global variables.
-    // If the symbol table entry is non-null it's a top-level function and has
-    // to be handled separately.
+    // Global variables. If the symbol table entry is non-null it's a top-level
+    // function and has to be handled separately.
     if (it->symbol_table[name]) {
       const auto& sym = it->symbol_table[name];
       return _b.function_value(sym.type, sym, cast);
@@ -890,8 +917,9 @@ Value IrGenerator::get_variable_ptr(const std::string& name)
     // _value_to_unique_name_map to [std::string unique_identifier].
     unique_name = it->value_to_unique_name_map[it->symbol_table[name]];
   }
-  return Value(
-      it->symbol_table[name].type, it->structure_ptr(cast, unique_name));
+  Value v(it->symbol_table[name].type, it->structure_ptr(cast, unique_name));
+  v.lvalue = true;
+  return v;
 }
 
 void IrGenerator::create_function(
@@ -1174,6 +1202,11 @@ Value IrGenerator::create_call(const Value& f, const std::vector<Value>& args)
     return phi;
   }
   return Value();
+}
+
+Value IrGenerator::load(const Value& ptr)
+{
+  return ptr.lvalue ? _scopes.back().memory_load(ptr.type, ptr) : ptr;
 }
 
 Value IrGenerator::i2b(const Value& v)

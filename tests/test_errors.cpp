@@ -229,16 +229,20 @@ ERROR(VarP, "x = void() {var a = 0; a += 1.;}", "+=");
 ERROR(VarQ, "x = void() {var a = 0; a += (1, 1);}", "+=");
 ERROR(VarR, "x = void() {var a = 0; a += void() {};}", "+=");
 ERROR(VarS, "x = void() {const a = 0; ++a;}", "++");
-ERROR(VarT, "x = void() {var a = 0; ++a = 1;}", "=");
-ERROR(VarU, "x = void() {const a = 0; void() {a;};}", "a");
-ERROR(VarV, "x = void() {var a = 0; void() {a += 1;};}", "a");
-ERROR(VarW, "x = void() {closed const a = 0; void() {--a;};}", "--");
-ERROR(VarX, "x = void() {a + var a = 1;}", "a");
-ERROR(VarY, "x = void() {var a = a;}", "a");
-ERROR(VarZ, "x = void() {var a + 1 = 0;}", "a", "=");
-ERROR(Var0, "x = void() {0 && (var a = 0); a;}", "a");
-ERROR(Var1, "x = void() {0 ? (var a = 0) : (var b = 0); a; b;}", "a", "b");
-ERROR(Var2, "global const x = 0; x = void() {}", "=");
+ERROR(VarT, "x = void() {const a = 0; void() {a;};}", "a");
+ERROR(VarU, "x = void() {var a = 0; void() {a += 1;};}", "a");
+ERROR(VarV, "x = void() {closed const a = 0; void() {--a;};}", "--");
+ERROR(VarW, "x = void() {a + var a = 1;}", "a");
+ERROR(VarX, "x = void() {var a = a;}", "a");
+ERROR(VarY, "x = void() {var a + 1 = 0;}", "a", "=");
+ERROR(VarZ, "x = void() {0 && (var a = 0); a;}", "a");
+ERROR(Var0, "x = void() {0 ? (var a = 0) : (var b = 0); a; b;}", "a", "b");
+ERROR(Var1, "global const x = 0; x = void() {}", "=");
+ERROR(Var2, "x = void() {MuserType = MuserType;}", "=");
+ERROR(Var3, "x = void() {get_user_type = get_user_type;}", "=");
+ERROR(Var4, "x = void() {var a = 0; (true ? a : a + 1) = 1;}", "=");
+ERROR(Var5, "x = void() {(true ? const a = 1 : const a = 1) = 1;}", "=");
+ERROR(Var6, "x = void() {(true ? const a = 1 : var a = 1) = 1;}", "=");
 
 // Name resolution / scope errors.
 ERROR(ScopeA, "x = void() {y;}", "y");
@@ -285,13 +289,15 @@ WARNING(AvoidWarningA, "export x = void(int) {}", "");
 WARNING(AvoidWarningB, "export x = void(int a) {a;}", "");
 WARNING(AvoidWarningC, "export x = void() {const a = 0; a;}", "");
 WARNING(AvoidWarningD, "export x = void() {var a = 0; a = a;}", "");
-WARNING(AvoidWarningE, "export x = void() {var a = 0; ++a;}", "");
-WARNING(AvoidWarningF, "export global {var a = 0; const b = 0;}", "");
-WARNING(AvoidWarningG, "export global {var f = void() {};}", "");
-WARNING(AvoidWarningH, "global {const f = void() {f;};}", "");
-WARNING(AvoidWarningI, "global {const f = void() {}; f;}", "");
-WARNING(AvoidWarningJ, "export x = void() {var a = 0; while (a *= 1);}", "");
-WARNING(AvoidWarningK, "export x = void() {var a = 0; for (; a = 1;);}", "");
+WARNING(AvoidWarningE, "export global {var a = 0; const b = 0;}", "");
+WARNING(AvoidWarningF, "export global {var f = void() {};}", "");
+WARNING(AvoidWarningG, "global {const f = void() {f;};}", "");
+WARNING(AvoidWarningH, "global {const f = void() {}; f;}", "");
+WARNING(AvoidWarningI, "export x = void() {var a = 0; while (a *= 1);}", "");
+WARNING(AvoidWarningJ, "export x = void() {var a = 0; for (; a = 1;);}", "");
+WARNING(AvoidWarningK, "export x = int() {return true ? const x = 0 : 0;}", "");
+WARNING(AvoidWarningL,
+        "export x = int() {return true ? const x = 0 : const x = 1;}", "");
 
 // Variable warnings.
 WARNING(WarnVarA, "export x = void() {const a = 0;}", "=");
@@ -309,6 +315,7 @@ WARNING(WarnVarL, "global {const f = void() {};}", "=");
 WARNING(WarnVarM, "export x = void() {closed const a = 0;}", "=");
 WARNING(WarnVarN, "export x = void() {closed var a = 0; void() {a;}();}", "=");
 WARNING(WarnVarO, "global {closed const a = 0; void() {a;}();}", "=");
+WARNING(WarnVarP, "export x = void() {var a = 0; ++a;}", "=");
 
 // Whitespace warnings.
 WARNING(WarnWhitespaceA, "\texport x = void() {}", "\t");

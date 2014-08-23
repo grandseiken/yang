@@ -49,19 +49,22 @@ Structure::Structure()
 }
 
 Value::Value()
-  : type(yang::Type::void_t())
+  : lvalue(false)
+  , type(yang::Type::void_t())
   , irval(nullptr)
 {
 }
 
 Value::Value(const yang::Type& type)
-  : type(type)
+  : lvalue(false)
+  , type(type)
   , irval(nullptr)
 {
 }
 
 Value::Value(const yang::Type& type, llvm::Value* irval)
-  : type(type)
+  : lvalue(false)
+  , type(type)
   , irval(irval)
 {
 }

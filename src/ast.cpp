@@ -257,6 +257,7 @@ std::string node_op_string(Node::node_type t)
       t == Node::ARITHMETIC_NEGATION ? "-" :
       t == Node::INCREMENT ? "++" :
       t == Node::DECREMENT ? "--" :
+      t == Node::ASSIGN ? "=" :
       t == Node::INT_CAST ? "[]" :
       t == Node::FLOAT_CAST ? "." :
       t == Node::VECTOR_CONSTRUCT ? "()" :

@@ -77,6 +77,7 @@ struct Value {
   Value(const yang::Type& type, llvm::Value* irval);
   operator llvm::Value*() const;
 
+  bool lvalue;
   yang::Type type;
   llvm::Value* irval;
 };
