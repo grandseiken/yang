@@ -43,7 +43,7 @@ Type Type::make_lvalue(bool is_lvalue) const
 {
   Type t = *this;
   t._lvalue = is_lvalue;
-  return t;
+  return _error ? *this : t;
 }
 
 Type Type::add_tag(void* tag) const
@@ -53,10 +53,12 @@ Type Type::add_tag(void* tag) const
   return t;
 }
 
-Type Type::clear_tags() const
+Type Type::add_tags(const Type& type) const
 {
   Type t = *this;
-  t._tags.clear();
+  for (void* tag : type.tags()) {
+    t._tags.push_back(tag);
+  }
   return t;
 }
 
@@ -71,11 +73,6 @@ bool Type::is_error() const
 }
 
 bool Type::is_lvalue() const
-{
-  return is_error() || _lvalue;
-}
-
-bool Type::not_lvalue() const
 {
   return is_error() || _lvalue;
 }
@@ -150,12 +147,18 @@ bool Type::is_assign_binary_match(const Type& t) const
 
 bool Type::is(const Type& t) const
 {
-  return *this == t || is_error() || t.is_error();
+  return is_error() || t.is_error() ||
+      _wrap.make_const(false) == t._wrap.make_const(false);
 }
 
 Type Type::unify(const Type& t) const
 {
-  return *this != t ? Type(true) : *this;
+  auto r = Type(true).add_tags(*this);
+  if (!is_error() && !t.is_error() && is(t)) {
+    r = make_const(external().is_const() || t.external().is_const());
+    r = r.make_lvalue(is_lvalue() && t.is_lvalue());
+  }
+  return r.add_tags(t);
 }
 
 bool Type::operator==(const Type& t) const

@@ -18,8 +18,11 @@ struct Symbol;
 // where the type cannot be determined. Further errors involving a value
 // of this type are suppressed (to avoid cascading error messages).
 //
-// It might be nice to name this something different to yang::Type, and clean
-// it up, especially now that it stores lvalue-ness and tags as well.
+// TODO: it might be nice to name this something different to yang::Type, and
+// clean it up, especially now that it stores lvalue-ness and tags as well.
+// Remove const-ness from external types (store a bool with globals instead)
+// since it's useless in every other situation and putting it here is nicer.
+// Similarly remove exported from externals.
 class Type {
 public:
 
@@ -37,7 +40,7 @@ public:
   Type make_lvalue(bool is_lvalue) const;
   // Change tags.
   Type add_tag(void* tag) const;
-  Type clear_tags() const;
+  Type add_tags(const Type& type) const;
   const std::vector<void*>& tags() const;
 
   // Raw equality comparisons (ignoring ERROR). Don't use for type-checking.
@@ -48,7 +51,6 @@ public:
   // type involved is set.
   bool is_error() const;
   bool is_lvalue() const;
-  bool not_lvalue() const;
   bool is_void() const;
   bool not_void() const;
   bool primitive() const;

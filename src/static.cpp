@@ -23,6 +23,8 @@ namespace std {
 // eventually has some external effect (a return, passed to parameter, global
 // assignment, depends on it)? Not sure how to deal with closures, and maybe
 // it's a bit of a rabbit hole to go down, but it could work.
+// Tag propagation could also avoid the extra unwritten-to warning in something
+// daft like "var a; a + 1 = a;".
 namespace yang {
 namespace internal {
 namespace {
@@ -419,11 +421,12 @@ void StaticChecker::before(const Node& node)
     Type t = results[0];
     for (void* tag : t.tags()) {
       auto sym = (symbol_t*)tag;
-      sym->warn_writes = false;
+      ((symbol_t*)tag)->warn_writes = false;
     }
+
     if (!(t.is_int() || t.is_float())) {
       error(node, str(node) + " applied to " + str(t));
-      return Type(true);
+      return Type(true).add_tags(t);
     }
     if (!t.is_lvalue()) {
       error(node, str(node) + " applied to non-lvalue");
@@ -458,28 +461,25 @@ void StaticChecker::before(const Node& node)
       sym->warn_writes = false;
     }
 
-    // TODO: in all error cases, propagate tags so that unused warnings are
-    // suppresed. The same for other lvalue-propagating nodes. Maybe have some
-    // more useful attribute-propagation member functions.
     auto err = str(node) + " applied to " + str(left) + " and " + str(right);
     if (node.type != Node::ASSIGN) {
       if (!left.is_assign_binary_match(right)) {
         error(node, err);
-        return Type(true);
+        return Type(true).add_tags(left);
       }
       if (!math && (!left.is_int() || !right.is_int())) {
         error(node, err);
-        return binary_type(left, right, false).make_lvalue(true);
+        return binary_type(left, right, false).make_lvalue(true).add_tags(left);
       }
       if (math && !(left.is_int() && right.is_int()) &&
           !(left.is_float() && right.is_float())) {
         error(node, err);
-        return Type(true);
+        return Type(true).add_tags(left);
       }
     }
-    else if (!left.make_const(false).make_lvalue(false).is(right)) {
+    else if (!left.is(right)) {
       error(node, err);
-      return Type(true);
+      return Type(true).add_tags(left);
     }
 
     if (!left.is_lvalue()) {
@@ -542,15 +542,13 @@ void StaticChecker::before(const Node& node)
   RESULT_FOR(VECTOR_INDEX) {
     auto left = results[0];
     auto right = load(results[1]);
+    Type t = element_type(left).
+        make_lvalue(left.is_lvalue()).
+        make_const(left.external().is_const()).add_tags(left);
     if (!left.is_vector() || !right.is(yang::Type::int_t())) {
       error(node, str(node) + " applied to " +
                   str(left) + " and " + str(right));
-      return left.is_vector() ? element_type(left) : Type(true);
-    }
-    Type t = element_type(left).
-        make_lvalue(left.is_lvalue()).make_const(left.external().is_const());
-    for (void* tag : left.tags()) {
-      t = t.add_tag(tag);
+      return left.is_vector() ? t : Type(true).add_tags(left);
     }
     return t;
   };
@@ -714,16 +712,8 @@ void StaticChecker::before(const Node& node)
         // Erase type context.
         _scopes.back().metadata.pop();
         // Make sure it's const so functions can't set themselves to different
-        // values inside the body.
-        Type t = result;
-        if (!t.function()) {
-          // Grammar no longer allows this, but leave it in for future-proofing.
-          error(node, "function defined with non-function type " + str(t));
-          t = Type(true);
-        }
-        else {
-          t = t.make_const(true);
-        }
+        // values inside the body. Grammar ensures this will be a function type.
+        Type t = result.make_const(true);
 
         // Functions need two symbol table frames: one for recursive hack, one
         // for the arguments, and one for the body.
@@ -889,11 +879,9 @@ void StaticChecker::before(const Node& node)
         // But, this is odd and confusing, so it's not allowed.
         bool err = false;
         auto cond = load(results[0]);
-        auto left = results[1].make_lvalue(false).make_const(false);
-        auto right = results[2].make_lvalue(false).make_const(false);
-        if (!left.is(right)) {
+        if (!results[1].is(results[2])) {
           error(node, str(node) + " applied to " +
-                      str(left) + " and " + str(right));
+                      str(results[1]) + " and " + str(results[2]));
           err = true;
         }
         if (!cond.is_int()) {
@@ -902,29 +890,16 @@ void StaticChecker::before(const Node& node)
         }
 
         if (cond.is_vector() && !err &&
-            (!left.is_vector() || cond.external().vector_size() !=
-                                  left.external().vector_size())) {
-          error(node, "length-" +
-                      std::to_string(cond.external().vector_size()) +
-                      " vectorised branch applied to " +
-                      str(left) + " and " + str(right));
+            (!results[1].is_vector() || cond.external().vector_size() !=
+                                        results[1].external().vector_size())) {
+          error(node, std::to_string(cond.external().vector_size()) +
+                      "-vectorised " + str(node) + " applied to " +
+                      str(results[1]) + " and " + str(results[2]));
         }
-        Type t = left.unify(right);
-        t = t.make_const(results[1].external().is_const() ||
-                         results[2].external().is_const());
-        if (results[1].is_lvalue() && results[2].is_lvalue()) {
-          t = t.make_lvalue(true);
-        }
-        else {
-          t = t.make_lvalue(false);
+        Type t = results[1].unify(results[2]);
+        if (!t.is_lvalue()) {
           load(results[1]);
           load(results[2]);
-        }
-        for (void* tag : results[1].tags()) {
-          t = t.add_tag(tag);
-        }
-        for (void* tag : results[2].tags()) {
-          t = t.add_tag(tag);
         }
         return t;
       });
@@ -1119,7 +1094,7 @@ Type StaticChecker::load(const Type& a)
     auto sym = (symbol_t*)tag;
     sym->warn_reads = false;
   }
-  return a.make_lvalue(false).make_const(false).clear_tags();
+  return a.is_error() ? a : a.external().make_const(false);
 }
 
 void StaticChecker::error(

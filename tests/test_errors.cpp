@@ -7,7 +7,7 @@
 namespace yang {
 
 struct ErrorTest : YangTest {
-  void assert_error(bool error, const std::string& str,
+  void assert_error(bool error, bool no_warnings, const std::string& str,
                     const std::vector<std::string>& texts)
   {
 #ifdef DEBUG
@@ -39,9 +39,7 @@ struct ErrorTest : YangTest {
 
     std::vector<std::string> t;
     for (const auto& s : texts) {
-      if (!s.empty()) {
-        t.push_back(s);
-      }
+      t.push_back(s);
     }
     EXPECT_EQ(t.size(), source.size()) <<
         "Should have " << t.size() <<
@@ -52,17 +50,25 @@ struct ErrorTest : YangTest {
           (error ? "Error #" : "Warning #") << (1 + i) <<
           " should reference given text:\n" << str << std::endl;
     }
+    if (error && no_warnings) {
+      EXPECT_TRUE(warnings.empty()) <<
+        "Should have 0 warning(s):\n" <<
+        str << '\n' << warnings_str << std::endl;
+    }
   };
 };
 
+#define ERROR_TEST(name, ...)\
+  TEST_F(ErrorTest, name) {assert_error(__VA_ARGS__);}\
+  void noop_requiring_semicolon()
 #define ERROR(name, program, ...)\
-  TEST_F(ErrorTest, name)\
-  {assert_error(true, program, std::vector<std::string>{__VA_ARGS__});}\
-  void noop_requiring_semicolon()
+  ERROR_TEST(name, true, false, program, {__VA_ARGS__})
+#define ERROR_NO_WARNING(name, program, ...)\
+  ERROR_TEST(name, true, true, program, {__VA_ARGS__})
 #define WARNING(name, program, ...)\
-  TEST_F(ErrorTest, name)\
-  {assert_error(false, program, std::vector<std::string>{__VA_ARGS__});}\
-  void noop_requiring_semicolon()
+  ERROR_TEST(name, false, false, program, {__VA_ARGS__})
+#define NO_WARNING(name, program)\
+  ERROR_TEST(name, false, false, program, {})
 
 // Miscellaneous syntax errors.
 ERROR(CommentEof, "/* comment", "t");
@@ -240,9 +246,10 @@ ERROR(Var0, "x = void() {0 ? (var a = 0) : (var b = 0); a; b;}", "a", "b");
 ERROR(Var1, "global const x = 0; x = void() {}", "=");
 ERROR(Var2, "x = void() {MuserType = MuserType;}", "=");
 ERROR(Var3, "x = void() {get_user_type = get_user_type;}", "=");
-ERROR(Var4, "x = void() {var a = 0; (true ? a : a + 1) = 1;}", "=");
-ERROR(Var5, "x = void() {(true ? const a = 1 : const a = 1) = 1;}", "=");
-ERROR(Var6, "x = void() {(true ? const a = 1 : var a = 1) = 1;}", "=");
+ERROR(Var4, "x = void() {(true ? const a = 1 : const a = 1) = 1;}", "=");
+ERROR(Var5, "x = void() {(true ? const a = 1 : var a = 1) = 1;}", "=");
+ERROR(Var6, "x = void() {var a = 0; (true ? a : a + 1) = 1;}", "=");
+ERROR(Var7, "x = void() {var a = x();}", "=");
 
 // Name resolution / scope errors.
 ERROR(ScopeA, "x = void() {y;}", "y");
@@ -285,19 +292,19 @@ ERROR(MultilineA, multiline_error_a, "int\n/**/()");
 ERROR(MultilineB, multiline_error_b, "+");
 
 // Avoid warnings.
-WARNING(AvoidWarningA, "export x = void(int) {}", "");
-WARNING(AvoidWarningB, "export x = void(int a) {a;}", "");
-WARNING(AvoidWarningC, "export x = void() {const a = 0; a;}", "");
-WARNING(AvoidWarningD, "export x = void() {var a = 0; a = a;}", "");
-WARNING(AvoidWarningE, "export global {var a = 0; const b = 0;}", "");
-WARNING(AvoidWarningF, "export global {var f = void() {};}", "");
-WARNING(AvoidWarningG, "global {const f = void() {f;};}", "");
-WARNING(AvoidWarningH, "global {const f = void() {}; f;}", "");
-WARNING(AvoidWarningI, "export x = void() {var a = 0; while (a *= 1);}", "");
-WARNING(AvoidWarningJ, "export x = void() {var a = 0; for (; a = 1;);}", "");
-WARNING(AvoidWarningK, "export x = int() {return true ? const x = 0 : 0;}", "");
-WARNING(AvoidWarningL,
-        "export x = int() {return true ? const x = 0 : const x = 1;}", "");
+NO_WARNING(AvoidWarningA, "export x = void(int) {}");
+NO_WARNING(AvoidWarningB, "export x = void(int a) {a;}");
+NO_WARNING(AvoidWarningC, "export x = void() {const a = 0; a;}");
+NO_WARNING(AvoidWarningD, "export x = void() {var a = 0; a = a;}");
+NO_WARNING(AvoidWarningE, "export global {var a = 0; const b = 0;}");
+NO_WARNING(AvoidWarningF, "export global {var f = void() {};}");
+NO_WARNING(AvoidWarningG, "global {const f = void() {f;};}");
+NO_WARNING(AvoidWarningH, "global {const f = void() {}; f;}");
+NO_WARNING(AvoidWarningI, "export x = void() {var a = 0; while (a *= 1);}");
+NO_WARNING(AvoidWarningJ, "export x = void() {var a = 0; for (; a = 1;);}");
+NO_WARNING(AvoidWarningK, "export x = int() {return true ? const x = 0 : 0;}");
+NO_WARNING(AvoidWarningL,
+        "export x = int() {return true ? const x = 0 : const x = 1;}");
 
 // Variable warnings.
 WARNING(WarnVarA, "export x = void() {const a = 0;}", "=");
@@ -328,7 +335,7 @@ WARNING(WarnWhitespaceE, "export x = void()\n{\n\treturn;  \n}", "\t", "  \n");
 WARNING(WarnEmptyIfA, "export x = void() {if (1);}", ";");
 WARNING(WarnEmptyIfB, "export x = void() {if (1) noop(); else;}", ";");
 WARNING(WarnEmptyIfC, "export x = void() {if (1); else;}", ";");
-WARNING(WarnEmptyIfD, "export x = void() {if (1); else noop();}", "");
+NO_WARNING(WarnEmptyIfD, "export x = void() {if (1); else noop();}");
 
 // Dead code.
 WARNING(WarnDeadCodeA, "export x = void() {return; noop();}", "noop();");
@@ -343,7 +350,7 @@ WARNING(WarnDeadCodeE,
 WARNING(WarnDeadCodeF,
         "export x = void() {if (1) return; else {return; return;} return;}",
         "return;", "return;");
-WARNING(WarnDeadCodeG, "export x = void() {if (1) return; return;}", "");
+NO_WARNING(WarnDeadCodeG, "export x = void() {if (1) return; return;}");
 
 // Operations with no effect.
 WARNING(WarnNoEffectA, "export x = void() {1;}", "1");
@@ -357,17 +364,35 @@ WARNING(WarnNoEffectH, "export x = void() {for(1; 0;);}", "1");
 WARNING(WarnNoEffectI, "export x = void() {for(; 0; 1);}", "1");
 WARNING(WarnNoEffectJ, "export x = void() {do 1; while(0);}", "1");
 WARNING(WarnNoEffectK, "export x = void() {void() {};}", "void()");
-WARNING(WarnNoEffectL, "export x = void() {void() {}();}", "");
-WARNING(WarnNoEffectM, "export x = void() {0 && 1;}", "1");
-WARNING(WarnNoEffectN, "export x = void() {0 && 0 && 1;}", "1");
-WARNING(WarnNoEffectO, "export x = int() {0 && x(); return 0;}", "");
-WARNING(WarnNoEffectP, "export x = int() {(x(), 1, x()); return 0;}", "1");
-WARNING(WarnNoEffectQ, "export x = int() {(x(), x()); return 0;}", "");
-WARNING(WarnNoEffectR, "export x = void() {0 ? 0 : 0;}", "?");
-WARNING(WarnNoEffectS, "export x = void() {0 ? 0 : 0 ? 0 : 0;}", "?");
-WARNING(WarnNoEffectT, "export x = void() {0 ? 0 ? 0 : 0 : 0;}", "?");
-WARNING(WarnNoEffectU, "export x = int() {0 ? 0 : x(); return 0;}", "");
-WARNING(WarnNoEffectV, "export x = int() {0 ? 0 : 0 ? 0 : x(); return 0;}", "");
+WARNING(WarnNoEffectL, "export x = void() {0 && 1;}", "1");
+WARNING(WarnNoEffectM, "export x = void() {0 && 0 && 1;}", "1");
+WARNING(WarnNoEffectN, "export x = int() {(x(), 1, x()); return 0;}", "1");
+WARNING(WarnNoEffectO, "export x = void() {0 ? 0 : 0;}", "?");
+WARNING(WarnNoEffectP, "export x = void() {0 ? 0 : 0 ? 0 : 0;}", "?");
+WARNING(WarnNoEffectQ, "export x = void() {0 ? 0 ? 0 : 0 : 0;}", "?");
+NO_WARNING(WarnNoEffectR, "export x = void() {void() {}();}");
+NO_WARNING(WarnNoEffectS, "export x = int() {0 && x(); return 0;}");
+NO_WARNING(WarnNoEffectT, "export x = int() {(x(), x()); return 0;}");
+NO_WARNING(WarnNoEffectU, "export x = int() {0 ? 0 : x(); return 0;}");
+NO_WARNING(WarnNoEffectV, "export x = int() {0 ? 0 : 0 ? 0 : x(); return 0;}");
+
+// Lvalue and tag propagation through errors.
+ERROR_NO_WARNING(LvalueA,
+                 "x = void(int b) {b; var a = void() {}; x(++a);}", "++");
+ERROR_NO_WARNING(LvalueB,
+                 "x = void(int b) {b; var a = 1; x(a *= (1, 1));}", "*=");
+ERROR_NO_WARNING(LvalueC, "x = void(int b) {b; var a = 1.; x(a &= 1.);}", "&=");
+ERROR_NO_WARNING(LvalueD, "x = void(int b) {b; var a = 1; x(a *= 1.);}", "*=");
+ERROR_NO_WARNING(LvalueE, "x = void(int b) {b; var a = 1; x(a = 1.);}", "=");
+ERROR_NO_WARNING(LvalueF, "x = void(int b) {b; var a = 1; x(a[1] = 1);}", "[");
+ERROR_NO_WARNING(LvalueG,
+                 "x = void(int b) {b; var a = 1; x((0 ? a : 0.) = 1);}", "?");
+ERROR_NO_WARNING(LvalueH, "global {--++0;}", "++");
+ERROR_NO_WARNING(LvalueI, "export global {--++const a = 0;}", "++");
+ERROR_NO_WARNING(LvalueJ, "global {--(0 = 0);}", "=");
+ERROR_NO_WARNING(LvalueK, "export global {--((const a = 0) = 0);}", "=");
+ERROR_NO_WARNING(LvalueL, "global {--(1[1]);}", "[");
+ERROR_NO_WARNING(LvalueM, "export global {--((const a = 1)[1]);}", "[");
 
 // End namespace yang.
 }
