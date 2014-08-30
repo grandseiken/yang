@@ -39,11 +39,11 @@ public:
   // If the forward argument doesn't match the function called, the return value
   // can be null.
   llvm::Function* get_trampoline_function(
-      const yang::Type& function_type, bool forward);
+      const Type& function_type, bool forward);
   llvm::Function* get_reverse_trampoline_function(
-      const yang::Type& function_type, bool forward);
+      const Type& function_type, bool forward);
 
-  typedef std::unordered_map<yang::Type, llvm::Function*> trampoline_map;
+  typedef std::unordered_map<Type, llvm::Function*> trampoline_map;
   const trampoline_map& get_trampoline_map() const;
   const trampoline_map& get_reverse_trampoline_map() const;
 
@@ -78,7 +78,7 @@ protected:
 class YangTrampolineGlobals {
 public:
 
-  static yang::void_fp get_trampoline_function(const yang::Type& function_type);
+  static void_fp get_trampoline_function(const Type& function_type);
 
 private:
 

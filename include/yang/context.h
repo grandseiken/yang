@@ -72,20 +72,20 @@ struct ContextInternals {
     GenericFunction dtor;
   };
 
-  const yang::Type& type_lookup(const std::string& name) const;
+  const Type& type_lookup(const std::string& name) const;
   const constructor& constructor_lookup(const std::string& name) const;
   const GenericFunction& function_lookup(const std::string& name) const;
   const GenericFunction& member_lookup(const std::string& name) const;
-  const GenericFunction& member_lookup(const yang::Type& t,
+  const GenericFunction& member_lookup(const Type& t,
                                        const std::string& name) const;
 
   // Using some real heirarchical data structures for namespaces rather than
   // this still somewhat string-based mess might be a little bit nicer.
   typedef std::unordered_set<std::string> namespace_set;
-  typedef std::unordered_map<std::string, yang::Type> type_map;
+  typedef std::unordered_map<std::string, Type> type_map;
   typedef std::unordered_map<std::string, constructor> constructor_map;
   typedef std::unordered_map<std::string, GenericFunction> function_map;
-  typedef std::unordered_map<yang::Type, function_map> member_map;
+  typedef std::unordered_map<Type, function_map> member_map;
 
   namespace_set namespaces;
   type_map types;
@@ -155,7 +155,7 @@ private:
   void check_type(const std::string& name) const;
   void check_function(const std::string& name) const;
   void check_constructor(const std::string& name) const;
-  void check_member_function(const yang::Type& type,
+  void check_member_function(const Type& type,
                              const std::string& name) const;
   void check_identifier(const std::string& ident) const;
   void copy_internals();

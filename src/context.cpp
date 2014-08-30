@@ -8,9 +8,9 @@
 namespace yang {
 namespace internal {
 
-const yang::Type& ContextInternals::type_lookup(const std::string& name) const
+const Type& ContextInternals::type_lookup(const std::string& name) const
 {
-  static yang::Type none = yang::Type::void_t();
+  static Type none = Type::void_t();
   auto it = types.find(name);
   return it == types.end() ? none : it->second;
 }
@@ -45,7 +45,7 @@ const GenericFunction& ContextInternals::member_lookup(
 }
 
 const GenericFunction& ContextInternals::member_lookup(
-    const yang::Type& type, const std::string& name) const
+    const Type& type, const std::string& name) const
 {
   static GenericFunction none;
   auto member_it = members.find(type);
@@ -192,7 +192,7 @@ void Context::check_constructor(const std::string& name) const
   }
 }
 
-void Context::check_member_function(const yang::Type& type,
+void Context::check_member_function(const Type& type,
                                     const std::string& name) const
 {
   check_identifier(name);

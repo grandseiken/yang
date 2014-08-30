@@ -55,7 +55,7 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // single closure structure type with just a void pointer, and transform t.f
   // to (mem[T::f], env_mem(t)).
   symbol_frame user_type;
-  user_type.emplace("object", yang::Type::user_t<void>(false));
+  user_type.emplace("object", Type::user_t<void>(false));
   _chunk.init_structure_type("chunk", user_type, false);
 
   // We need to generate a reverse trampoline function for each function in the
@@ -106,8 +106,7 @@ void IrGenerator::emit_global_functions()
         llvm::FunctionType::get(t, scope.structure().type, false);
     auto getter = llvm::Function::Create(
         function_type, llvm::Function::ExternalLinkage, name, &_b.module);
-    get_trampoline_function(
-        yang::Type::function_t(pair.second.type, {}), false);
+    get_trampoline_function(Type::function_t(pair.second.type, {}), false);
 
     auto getter_block = llvm::BasicBlock::Create(
         _b.b.getContext(), "entry", getter);
@@ -122,8 +121,7 @@ void IrGenerator::emit_global_functions()
     auto setter = llvm::Function::Create(
         function_type, llvm::Function::ExternalLinkage, name, &_b.module);
     get_trampoline_function(
-        yang::Type::function_t(yang::Type::void_t(), {pair.second.type}),
-        false);
+        Type::function_t(Type::void_t(), {pair.second.type}), false);
 
     auto setter_block = llvm::BasicBlock::Create(
         _b.b.getContext(), "entry", setter);
@@ -158,11 +156,11 @@ void IrGenerator::before(const Node& node)
 #define CONSTANT_FOR_ANY(condition) if (condition) result_macro = CONSTANT
 #define CONSTANT_FOR(node_type) CONSTANT_FOR_ANY(node.type == Node::node_type)
 
-  CONSTANT_FOR(TYPE_VOID) {return yang::Type::void_t();};
+  CONSTANT_FOR(TYPE_VOID) {return Type::void_t();};
   CONSTANT_FOR(TYPE_INT) {return node.int_value > 1 ?
-      yang::Type::ivec_t(node.int_value) : yang::Type::int_t();};
+      Type::ivec_t(node.int_value) : Type::int_t();};
   CONSTANT_FOR(TYPE_FLOAT) {return node.int_value > 1 ?
-      yang::Type::fvec_t(node.int_value) : yang::Type::float_t();};
+      Type::fvec_t(node.int_value) : Type::float_t();};
   RESULT_FOR(NAMED_EXPRESSION) {return results[0];};
   RESULT_FOR(EXPR_STMT) {return results[0];};
   RESULT_FOR(RETURN_STMT) {
@@ -362,8 +360,7 @@ void IrGenerator::before(const Node& node)
     // Indexing out-of-bounds wraps around.
     llvm::Value* index =
         mod(load(results[1]), _b.constant_int(results[0].type.vector_size()));
-    Value v = results[0].type.is_ivec() ?
-        yang::Type::int_t() : yang::Type::float_t();
+    Value v = results[0].type.is_ivec() ? Type::int_t() : Type::float_t();
     if (results[0].lvalue) {
       std::vector<llvm::Value*> indices{_b.constant_int(0), index};
       v.irval = _b.b.CreateGEP(results[0], indices);
@@ -384,11 +381,11 @@ void IrGenerator::before(const Node& node)
     case Node::TYPE_FUNCTION:
       type_function:
       result(node, RESULT {
-        std::vector<yang::Type> args;
+        std::vector<Type> args;
         for (std::size_t i = 1; i < results.size(); ++i) {
           args.push_back(results[i].type);
         }
-        return yang::Type::function_t(results[0].type, args);
+        return Type::function_t(results[0].type, args);
       });
       break;
 
@@ -423,7 +420,7 @@ void IrGenerator::before(const Node& node)
         _scopes.back().metadata[LexScope::CLOSURE_PTR] = v;
         _scopes.back().update_reference_count(nullptr, v, 1);
         _scopes.back().refcount_init(_b.function_value(
-            yang::Type::function_t(yang::Type::void_t(), {}),
+            Type::function_t(Type::void_t(), {}),
             _b.constant_ptr(nullptr), v));
       }
 
@@ -855,7 +852,7 @@ llvm::Value* IrGenerator::get_parent_struct(
   llvm::Value* u = v;
   for (std::size_t i = 0; i < parent_steps; ++i) {
     u = _scopes.back().memory_load(
-        yang::Type::void_t(),
+        Type::void_t(),
         _scopes.back().structure_ptr(_b.b.CreateBitCast(u, void_ptr_ptr), 0));
   }
   return u;
@@ -922,8 +919,7 @@ Value IrGenerator::get_variable_ptr(const std::string& name)
   return v;
 }
 
-void IrGenerator::create_function(
-    const Node& node, const yang::Type& function_type)
+void IrGenerator::create_function(const Node& node, const Type& function_type)
 {
   // Linkage will be set later if necessary.
   auto llvm_type = _b.raw_function_type(function_type);
@@ -960,7 +956,7 @@ void IrGenerator::create_function(
     // Refcounting on closure pointer.
     back.update_reference_count(nullptr, v, 1);
     back.refcount_init(_b.function_value(
-        yang::Type::function_t(yang::Type::void_t(), {}),
+        Type::function_t(Type::void_t(), {}),
         _b.constant_ptr(nullptr), v));
   }
 
@@ -968,7 +964,7 @@ void IrGenerator::create_function(
   // are refcount-decremented on return statements (or end-of-function for void
   // returns).
   auto assign_storage = [&](
-      const yang::Type& type, const std::string& name, std::int32_t scope_mod)
+      const Type& type, const std::string& name, std::int32_t scope_mod)
   {
     std::string unique_name =
         name + "/" + std::to_string(node.static_info.scope_number + scope_mod);
@@ -1009,7 +1005,7 @@ void IrGenerator::create_function(
        it != --function->arg_end(); ++it, ++arg_num) {
     const std::string& name =
         node.children[0]->children[1 + arg_num]->string_value;
-    const yang::Type& arg = function_type.function_arg(arg_num);
+    const Type& arg = function_type.function_arg(arg_num);
     llvm::Value* storage = assign_storage(arg, name, 0);
     it->setName(name);
 
@@ -1038,7 +1034,7 @@ void IrGenerator::create_function(
 }
 
 Value IrGenerator::get_member_function(
-    const yang::Type& type, const std::string& name)
+    const Type& type, const std::string& name)
 {
   auto jt = _member_functions[type].find(name);
   if (jt != _member_functions[type].end()) {
@@ -1046,12 +1042,11 @@ Value IrGenerator::get_member_function(
   }
 
   const auto& cf = _context.member_lookup(type, name);
-  std::vector<yang::Type> args;
+  std::vector<Type> args;
   for (std::size_t i = 1; i < cf.type.function_num_args(); ++i) {
     args.push_back(cf.type.function_arg(i));
   }
-  yang::Type closed_type =
-      yang::Type::function_t(cf.type.function_return(), args);
+  Type closed_type = Type::function_t(cf.type.function_return(), args);
 
   auto llvm_type = _b.raw_function_type(closed_type);
   auto f = llvm::Function::Create(
@@ -1133,18 +1128,18 @@ Value IrGenerator::get_constructor(const std::string& type)
   llvm::Value* global = --f->arg_end();
   llvm::Value* chunk = _chunk.allocate_closure_struct(global);
   _chunk.memory_store(r, chunk, "object");
-  _chunk.memory_store(Value(yang::Type::void_t(), _b.constant_ptr(vtable)),
+  _chunk.memory_store(Value(Type::void_t(), _b.constant_ptr(vtable)),
                       _chunk.structure_ptr(chunk, Structure::VTABLE_PTR));
   _b.b.CreateRet(_b.b.CreateBitCast(chunk, _b.void_ptr_type()));
   _b.b.SetInsertPoint(prev);
 
   // Convert signature to return managed type.
-  std::vector<yang::Type> args;
+  std::vector<Type> args;
   for (std::size_t i = 0; i < ct.ctor.type.function_num_args(); ++i) {
     args.push_back(ct.ctor.type.function_arg(i));
   }
   const auto& ref_type = ct.ctor.type.function_return();
-  Value v(yang::Type::function_t(ref_type.make_managed(true), args), f);
+  Value v(Type::function_t(ref_type.make_managed(true), args), f);
   _constructors.emplace(type, v);
   return v;
 }
@@ -1190,7 +1185,7 @@ Value IrGenerator::create_call(const Value& f, const std::vector<Value>& args)
   }
 
   _b.b.SetInsertPoint(merge_block);
-  const yang::Type& return_t = f.type.function_return();
+  const Type& return_t = f.type.function_return();
   if (!return_t.is_void()) {
     auto phi_v = _b.b.CreatePHI(_b.get_llvm_type(return_t), 2);
     Value phi(return_t, phi_v);
@@ -1220,26 +1215,25 @@ Value IrGenerator::b2i(const Value& v)
 {
   if (v.type.is_vector()) {
     std::size_t size = v.type.vector_size();
-    return Value(yang::Type::ivec_t(size),
+    return Value(Type::ivec_t(size),
                  _b.b.CreateZExt(v, _b.ivec_type(size)));
   }
-  return Value(yang::Type::int_t(), _b.b.CreateZExt(v, _b.int_type()));
+  return Value(Type::int_t(), _b.b.CreateZExt(v, _b.int_type()));
 }
 
 Value IrGenerator::i2f(const Value& v)
 {
   if (v.type.is_vector()) {
     std::size_t size = v.type.vector_size();
-    return Value(yang::Type::fvec_t(size),
-                 _b.b.CreateSIToFP(v, _b.fvec_type(size)));
+    return Value(Type::fvec_t(size), _b.b.CreateSIToFP(v, _b.fvec_type(size)));
   }
-  return Value(yang::Type::float_t(), _b.b.CreateSIToFP(v, _b.float_type()));
+  return Value(Type::float_t(), _b.b.CreateSIToFP(v, _b.float_type()));
 }
 
 Value IrGenerator::f2i(const Value& v)
 {
-  yang::Type type = v.type.is_vector() ?
-      yang::Type::ivec_t(v.type.vector_size()) : yang::Type::int_t();
+  Type type = v.type.is_vector() ?
+      Type::ivec_t(v.type.vector_size()) : Type::int_t();
   Value zero = _b.default_for_type(v.type);
 
   // Mathematical floor. Implements the algorithm:
@@ -1340,14 +1334,13 @@ llvm::Value* IrGenerator::vectorise(
 {
   auto flt = [&](llvm::Value* t)
   {
-    Value tt(yang::Type::int_t(), t);
+    Value tt(Type::int_t(), t);
     return to_float ? i2f(tt) : tt;
   };
   if (!v.type.is_vector()) {
     llvm::Value* r =
         _b.b.CreateCall(f, std::vector<llvm::Value*>{flt(v), flt(u)});
-    return to_float && v.type.is_int() ?
-        f2i(Value(yang::Type::float_t(), r)) : r;
+    return to_float && v.type.is_int() ? f2i(Value(Type::float_t(), r)) : r;
   }
 
   std::size_t size = v.type.vector_size();
@@ -1367,7 +1360,7 @@ llvm::Value* IrGenerator::lsh(const Value& v, const Value& u)
 {
   std::vector<llvm::Type*> args{_b.int_type(), _b.int_type()};
   auto lsh_ptr = _b.get_native_function(
-      "lsh", (yang::void_fp)&::lsh,
+      "lsh", (void_fp)&::lsh,
       llvm::FunctionType::get(_b.int_type(), args, false));
   return vectorise(v, u, lsh_ptr);
 }
@@ -1376,7 +1369,7 @@ llvm::Value* IrGenerator::rsh(const Value& v, const Value& u)
 {
   std::vector<llvm::Type*> args{_b.int_type(), _b.int_type()};
   auto rsh_ptr = _b.get_native_function(
-      "rsh", (yang::void_fp)&::rsh,
+      "rsh", (void_fp)&::rsh,
       llvm::FunctionType::get(_b.int_type(), args, false));
   return vectorise(v, u, rsh_ptr);
 }
@@ -1385,7 +1378,7 @@ llvm::Value* IrGenerator::pow(const Value& v, const Value& u)
 {
   std::vector<llvm::Type*> args{_b.float_type(), _b.float_type()};
   auto pow_ptr = _b.get_native_function(
-      "pow", (yang::void_fp)&::pow,
+      "pow", (void_fp)&::pow,
       llvm::FunctionType::get(_b.float_type(), args, false));
   return vectorise(v, u, pow_ptr, true);
 }
@@ -1397,7 +1390,7 @@ llvm::Value* IrGenerator::mod(const Value& v, const Value& u)
   if (!v.type.is_int() && !v.type.is_ivec()) {
     std::vector<llvm::Type*> args{_b.float_type(), _b.float_type()};
     auto fmod_ptr = _b.get_native_function(
-        "fmod", (yang::void_fp)&::fmod,
+        "fmod", (void_fp)&::fmod,
         llvm::FunctionType::get(_b.float_type(), args, false));
     return vectorise(v, u, fmod_ptr);
   }
@@ -1469,8 +1462,7 @@ Value IrGenerator::binary(
 Value IrGenerator::fold(const Node& node, const Value& value,
                         bool to_bool, bool with_ands, bool right_assoc)
 {
-  yang::Type etype =
-      value.type.is_ivec() ? yang::Type::int_t() : yang::Type::float_t();
+  Type etype = value.type.is_ivec() ? Type::int_t() : Type::float_t();
 
   // Convert each argument to boolean, if necessary.
   std::vector<Value> elements;

@@ -33,7 +33,7 @@ StaticString::StaticString(const std::string& value)
 {
 }
 
-Structure::entry::entry(const yang::Type& type, std::size_t index)
+Structure::entry::entry(const Type& type, std::size_t index)
   : type(type)
   , index(index)
 {
@@ -50,19 +50,19 @@ Structure::Structure()
 
 Value::Value()
   : lvalue(false)
-  , type(yang::Type::void_t())
+  , type(Type::void_t())
   , irval(nullptr)
 {
 }
 
-Value::Value(const yang::Type& type)
+Value::Value(const Type& type)
   : lvalue(false)
   , type(type)
   , irval(nullptr)
 {
 }
 
-Value::Value(const yang::Type& type, llvm::Value* irval)
+Value::Value(const Type& type, llvm::Value* irval)
   : lvalue(false)
   , type(type)
   , irval(irval)
@@ -107,7 +107,7 @@ llvm::Type* Builder::fvec_type(std::size_t n) const
   return llvm::VectorType::get(float_type(), n);
 }
 
-llvm::FunctionType* Builder::raw_function_type(const yang::Type& type) const
+llvm::FunctionType* Builder::raw_function_type(const Type& type) const
 {
   std::vector<llvm::Type*> args;
   for (std::size_t i = 0; i < type.function_num_args(); ++i) {
@@ -138,31 +138,30 @@ llvm::Constant* Builder::constant_ptr(const void* ptr) const
 
 Value Builder::constant_int(yang::int_t value) const
 {
-  return Value(yang::Type::int_t(),
-               llvm::ConstantInt::getSigned(int_type(), value));
+  return Value(Type::int_t(), llvm::ConstantInt::getSigned(int_type(), value));
 }
 
 Value Builder::constant_float(yang::float_t value) const
 {
-  return Value(yang::Type::float_t(),
+  return Value(Type::float_t(),
                llvm::ConstantFP::get(b.getContext(), llvm::APFloat(value)));
 }
 
 Value Builder::constant_ivec(yang::int_t value, std::size_t n) const
 {
   auto constant = (llvm::Constant*)constant_int(value).irval;
-  return Value(yang::Type::ivec_t(n),
+  return Value(Type::ivec_t(n),
                llvm::ConstantVector::getSplat(n, constant));
 }
 
 Value Builder::constant_fvec(yang::float_t value, std::size_t n) const
 {
   auto constant = (llvm::Constant*)constant_float(value).irval;
-  return Value(yang::Type::fvec_t(n),
+  return Value(Type::fvec_t(n),
                llvm::ConstantVector::getSplat(n, constant));
 }
 
-Value Builder::function_value_null(const yang::Type& function_type) const
+Value Builder::function_value_null(const Type& function_type) const
 {
   std::vector<llvm::Constant*> values;
   values.push_back(llvm::ConstantPointerNull::get(void_ptr_type()));
@@ -171,7 +170,7 @@ Value Builder::function_value_null(const yang::Type& function_type) const
                llvm::ConstantStruct::get(gen_function_type(), values));
 }
 
-Value Builder::function_value(const yang::Type& function_type,
+Value Builder::function_value(const Type& function_type,
                               llvm::Value* fptr, llvm::Value* eptr)
 {
   Value v = function_value_null(function_type);
@@ -199,7 +198,7 @@ Value Builder::function_value(const GenericFunction& function)
   return function_value(function.type, constant_ptr(fptr), constant_ptr(eptr));
 }
 
-Value Builder::default_for_type(const yang::Type& type, int_t fill) const
+Value Builder::default_for_type(const Type& type, int_t fill) const
 {
   if (type.is_function()) {
     return function_value_null(type);
@@ -219,7 +218,7 @@ Value Builder::default_for_type(const yang::Type& type, int_t fill) const
   return Value(type, constant_ptr(nullptr));
 }
 
-llvm::Type* Builder::get_llvm_type(const yang::Type& type) const
+llvm::Type* Builder::get_llvm_type(const Type& type) const
 {
   if (type.is_function()) {
     return gen_function_type();
@@ -243,7 +242,7 @@ llvm::Type* Builder::get_llvm_type(const yang::Type& type) const
 }
 
 llvm::Function* Builder::get_native_function(
-    const std::string& name, yang::void_fp native_fp,
+    const std::string& name, void_fp native_fp,
     llvm::FunctionType* type) const
 {
   // We use special !-prefixed names for native functions so that they can't
@@ -424,8 +423,7 @@ void LexScope::init_structure_type(
   for (const auto& pair : _structure.table) {
     update_reference_count(memory_load(&*it, pair.first), -1);
   }
-  llvm::Value* parent = memory_load(
-      yang::Type::void_t(), structure_ptr(&*it, 0));
+  llvm::Value* parent = memory_load(Type::void_t(), structure_ptr(&*it, 0));
   if (global_data) {
     _b.b.CreateCall(_destroy_internals, parent);
   }
@@ -466,7 +464,7 @@ void LexScope::init_structure_type(
     }
   }
   if (!global_data) {
-    refout(memory_load(yang::Type::void_t(), structure_ptr(&*it, 0)));
+    refout(memory_load(Type::void_t(), structure_ptr(&*it, 0)));
   }
   _b.b.CreateRetVoid();
 
@@ -489,7 +487,7 @@ llvm::Value* LexScope::allocate_structure_value()
 
   _b.b.CreateCall(_cleanup_structures);
   auto malloc_ptr = _b.get_native_function(
-      "malloc", (yang::void_fp)&malloc,
+      "malloc", (void_fp)&malloc,
       llvm::FunctionType::get(_structure.type, llvm_size_t, false));
 
   // Compute sizeof(type) by indexing one past the null pointer.
@@ -501,10 +499,10 @@ llvm::Value* LexScope::allocate_structure_value()
   // Call malloc, make sure refcounted memory is initialised, and return the
   // pointer.
   llvm::Value* v = _b.b.CreateCall(malloc_ptr, size_of);
-  memory_store(Value(yang::Type::void_t(), _b.constant_ptr(nullptr)),
+  memory_store(Value(Type::void_t(), _b.constant_ptr(nullptr)),
                structure_ptr(v, Structure::PARENT_PTR));
   memory_store(_b.constant_int(0), structure_ptr(v, Structure::REF_COUNT));
-  memory_store(Value(yang::Type::void_t(), _b.constant_ptr(_structure.vtable)),
+  memory_store(Value(Type::void_t(), _b.constant_ptr(_structure.vtable)),
                structure_ptr(v, Structure::VTABLE_PTR));
 
   for (const auto& pair : _structure.table) {
@@ -521,7 +519,7 @@ llvm::Value* LexScope::allocate_closure_struct(llvm::Value* parent_ptr)
   // Store parent pointer in the first slot.
   auto parent_void_ptr =
       _b.b.CreateBitCast(parent_ptr, _b.void_ptr_type());
-  memory_store(Value(yang::Type::void_t(), parent_void_ptr),
+  memory_store(Value(Type::void_t(), parent_void_ptr),
                structure_ptr(closure_value, Structure::PARENT_PTR));
   update_reference_count(nullptr, parent_void_ptr, 1);
   // Set up the symbol-table for all the rest. If a closed variable "v"
@@ -563,7 +561,7 @@ llvm::BasicBlock* LexScope::get_block(metadata_t meta)
   return (llvm::BasicBlock*)metadata[meta];
 }
 
-Value LexScope::memory_load(const yang::Type& type, llvm::Value* ptr)
+Value LexScope::memory_load(const Type& type, llvm::Value* ptr)
 {
   // Loads out of the global data structure must be byte-aligned! I don't
   // entirely understand why, but leaving the default will segfault at random
@@ -589,7 +587,7 @@ void LexScope::memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr)
   if (elem->isStructTy()) {
     // Null Yang function. Passing void as type is OK since it isn't used.
     pos.CreateAlignedStore(
-        _b.function_value_null(yang::Type::void_t()), ptr, 1);
+        _b.function_value_null(Type::void_t()), ptr, 1);
   }
   else if (elem->isPointerTy()) {
     pos.CreateAlignedStore(_b.constant_ptr(nullptr), ptr, 1);

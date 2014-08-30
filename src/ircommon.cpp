@@ -84,7 +84,7 @@ void IrCommon::optimise_ir(llvm::Function* function) const
 }
 
 llvm::Function* IrCommon::get_trampoline_function(
-    const yang::Type& function_type, bool forward)
+    const Type& function_type, bool forward)
 {
   // Trampoline functions must be generated for every function type that might
   // be called externally or referenced by valid Function objects; reverse
@@ -126,13 +126,13 @@ llvm::Function* IrCommon::get_trampoline_function(
   // definitely going to work. Essentially, we unpack vectors into individual
   // values, and convert return values to pointer arguments; the trampoline
   // takes the actual function to be called as the final argument.
-  const yang::Type& return_t = function_type.function_return();
+  const Type& return_t = function_type.function_return();
   // Handle the transitive closure.
   if (return_t.is_function()) {
     get_trampoline_function(return_t, forward);
   }
   for (std::size_t i = 0; i < function_type.function_num_args(); ++i) {
-    yang::Type t = function_type.function_arg(i);
+    Type t = function_type.function_arg(i);
     if (t.is_function()) {
       get_reverse_trampoline_function(t, forward);
     }
@@ -167,7 +167,7 @@ llvm::Function* IrCommon::get_trampoline_function(
   }
 
   for (std::size_t i = 0; i < function_type.function_num_args(); ++i) {
-    const yang::Type& t = function_type.function_arg(i);
+    const Type& t = function_type.function_arg(i);
 
     if (t.is_vector()) {
       std::size_t size = t.vector_size();
@@ -225,19 +225,19 @@ llvm::Function* IrCommon::get_trampoline_function(
 }
 
 llvm::Function* IrCommon::get_reverse_trampoline_function(
-    const yang::Type& function_type, bool forward)
+    const Type& function_type, bool forward)
 {
   auto it = _reverse_trampoline_map.find(function_type.erase_user_types());
   if (it != _reverse_trampoline_map.end()) {
     return it->second;
   }
   // Handle transitive closure.
-  const yang::Type& return_t = function_type.function_return();
+  const Type& return_t = function_type.function_return();
   if (return_t.is_function()) {
     get_reverse_trampoline_function(return_t, forward);
   }
   for (std::size_t i = 0; i < function_type.function_num_args(); ++i) {
-    yang::Type t = function_type.function_arg(i);
+    Type t = function_type.function_arg(i);
     if (t.is_function()) {
       get_trampoline_function(t, forward);
     }
@@ -248,7 +248,7 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
   // Trampolines on the C++ side have been populated by template instantiations.
   // We may be providing a null pointer here, if C++ never uses this type, so
   // don't generate the function which will be unlinkable.
-  yang::void_fp external_trampoline_ptr =
+  void_fp external_trampoline_ptr =
       get_cpp_trampoline_lookup_map()[function_type.erase_user_types()];
   if (!external_trampoline_ptr) {
     return nullptr;
@@ -419,15 +419,15 @@ llvm::FunctionType* IrCommon::get_trampoline_type(
   return llvm::FunctionType::get(_b.void_type(), args, false);
 }
 
-yang::void_fp YangTrampolineGlobals::get_trampoline_function(
-    const yang::Type& function_type)
+void_fp YangTrampolineGlobals::get_trampoline_function(
+    const Type& function_type)
 {
   auto& trampoline_map = get_instance()._trampoline_map;
   // We need an extra layer of caching to avoid optimising the function
   // every time we need it.
   auto it = trampoline_map.find(function_type.erase_user_types());
   if (it != trampoline_map.end()) {
-    return (yang::void_fp)(std::intptr_t)
+    return (void_fp)(std::intptr_t)
         get_instance()._engine->getPointerToFunction(it->second);
   }
 
@@ -435,7 +435,7 @@ yang::void_fp YangTrampolineGlobals::get_trampoline_function(
       get_instance()._common.get_trampoline_function(function_type, true);
   get_instance()._common.optimise_ir(function);
   trampoline_map[function_type.erase_user_types()] = function;
-  auto ptr = (yang::void_fp)(std::intptr_t)
+  auto ptr = (void_fp)(std::intptr_t)
       get_instance()._engine->getPointerToFunction(function);
   return ptr;
 }

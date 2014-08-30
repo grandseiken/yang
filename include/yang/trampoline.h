@@ -500,7 +500,7 @@ struct ReverseTrampolineCall<void(Args...), List<>, List<Brgs...>> {
 // compile-time by inspecting template arguments to Context::register_function,
 // Instance::get_function, and so on. Generate these and use static
 // initialisation trickery to generate a lookup table from Yang type.
-typedef std::unordered_map<yang::Type, yang::void_fp> cpp_trampoline_lookup_map;
+typedef std::unordered_map<Type, void_fp> cpp_trampoline_lookup_map;
 inline cpp_trampoline_lookup_map& get_cpp_trampoline_lookup_map()
 {
   static cpp_trampoline_lookup_map map;
@@ -512,7 +512,7 @@ struct ReverseTrampolineLookupGenerator {
   ReverseTrampolineLookupGenerator()
   {
     auto& map = get_cpp_trampoline_lookup_map();
-    yang::void_fp ptr = (yang::void_fp)&internal::ReverseTrampolineCall<
+    void_fp ptr = (void_fp)&internal::ReverseTrampolineCall<
         R(Args...),
         typename internal::TrampolineReturn<R>::type,
         typename internal::TrampolineArgs<Args...>::type>::call;

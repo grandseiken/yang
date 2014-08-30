@@ -21,7 +21,7 @@ namespace internal {
 
 struct Prefix;
 struct GenericFunction;
-typedef std::unordered_map<std::string, yang::Type> symbol_frame;
+typedef std::unordered_map<std::string, Type> symbol_frame;
 
 struct Vtable : StaticDataEntry {
   Vtable();
@@ -50,9 +50,9 @@ struct Structure {
   };
 
   struct entry {
-    entry(const yang::Type& type = yang::Type::void_t(), std::size_t index = 0);
+    entry(const Type& type = Type::void_t(), std::size_t index = 0);
 
-    yang::Type type;
+    Type type;
     std::size_t index;
   };
   typedef std::unordered_map<std::string, entry> table_t;
@@ -73,12 +73,12 @@ struct Structure {
 // instead of a raw LLVM type.
 struct Value {
   Value();
-  Value(const yang::Type& type);
-  Value(const yang::Type& type, llvm::Value* irval);
+  Value(const Type& type);
+  Value(const Type& type, llvm::Value* irval);
   operator llvm::Value*() const;
 
   bool lvalue;
-  yang::Type type;
+  Type type;
   llvm::Value* irval;
 };
 
@@ -93,7 +93,7 @@ struct Builder {
   llvm::Type* fvec_type(std::size_t n) const;
 
   // Functions.
-  llvm::FunctionType* raw_function_type(const yang::Type& type) const;
+  llvm::FunctionType* raw_function_type(const Type& type) const;
   llvm::StructType* gen_function_type() const;
 
   // Value construction.
@@ -104,20 +104,20 @@ struct Builder {
   Value constant_fvec(yang::float_t value, std::size_t n) const;
 
   // Functions.
-  Value function_value_null(const yang::Type& function_type) const;
-  Value function_value(const yang::Type& function_type,
+  Value function_value_null(const Type& function_type) const;
+  Value function_value(const Type& function_type,
                        llvm::Value* fptr, llvm::Value* ptr);
   Value function_value(const GenericFunction& function);
 
   // Default value for a given type.
-  Value default_for_type(const yang::Type& type, int_t fill = 0) const;
+  Value default_for_type(const Type& type, int_t fill = 0) const;
 
   // Convert from Yang type to LLVM type.
-  llvm::Type* get_llvm_type(const yang::Type& t) const;
+  llvm::Type* get_llvm_type(const Type& t) const;
 
   // Get an LLVM function pointer to a native function.
   llvm::Function* get_native_function(
-      const std::string& name, yang::void_fp native_fp,
+      const std::string& name, void_fp native_fp,
       llvm::FunctionType* type) const;
 
   // Create a vtable.
@@ -172,7 +172,7 @@ public:
   llvm::BasicBlock* get_block(metadata_t meta);
 
   // Storing to some structure (global data or closure) with refcounting.
-  Value memory_load(const yang::Type& type, llvm::Value* ptr);
+  Value memory_load(const Type& type, llvm::Value* ptr);
   void memory_store(const Value& value, llvm::Value* ptr);
   void memory_init(llvm::IRBuilder<>& pos, llvm::Value* ptr);
   void refcount_init(const Value& value);

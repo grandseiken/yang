@@ -27,7 +27,7 @@ bool GenericFunction::operator!=(const GenericFunction& other) const
   return !operator==(other);
 }
 
-yang::void_fp get_global_trampoline_function(const yang::Type& type)
+void_fp get_global_trampoline_function(const Type& type)
 {
   return YangTrampolineGlobals::get_trampoline_function(type);
 }

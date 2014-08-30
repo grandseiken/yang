@@ -13,8 +13,8 @@ namespace yang {
 class Context;
 
 namespace internal {
+class Category;
 class ContextInternals;
-class Type;
 
 // Static member is guaranteed to have a different address per template
 // instantiation.
@@ -96,7 +96,7 @@ private:
   friend struct std::hash<Type>;
   // For ContextInternals& string function.
   friend class Instance;
-  friend class internal::Type;
+  friend class internal::Category;
 
   Type();
   std::string string(const internal::ContextInternals& context) const;
@@ -120,7 +120,7 @@ private:
 
 };
 
-typedef std::unordered_map<std::string, yang::Type> symbol_table;
+typedef std::unordered_map<std::string, Type> symbol_table;
 
 template<typename T>
 Type Type::user_t(bool managed)

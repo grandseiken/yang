@@ -24,49 +24,49 @@ struct TypeInfoImpl {
   static_assert(sizeof(T) != sizeof(T), "use of unsupported type");
 
   // Avoid extra unnecessary error messages (beyond static assert above).
-  yang::Type operator()() const
+  Type operator()() const
   {
-    return yang::Type::void_t();
+    return Type::void_t();
   }
 };
 
 template<>
 struct TypeInfoImpl<void> {
-  yang::Type operator()() const
+  Type operator()() const
   {
-    return yang::Type::void_t();
+    return Type::void_t();
   }
 };
 
 template<>
 struct TypeInfoImpl<int_t> {
-  yang::Type operator()() const
+  Type operator()() const
   {
-    return yang::Type::int_t();
+    return Type::int_t();
   }
 };
 
 template<>
 struct TypeInfoImpl<float_t> {
-  yang::Type operator()() const
+  Type operator()() const
   {
-    return yang::Type::float_t();
+    return Type::float_t();
   }
 };
 
 template<std::size_t N>
 struct TypeInfoImpl<ivec_t<N>> {
-  yang::Type operator()() const
+  Type operator()() const
   {
-    return yang::Type::ivec_t(N);
+    return Type::ivec_t(N);
   }
 };
 
 template<std::size_t N>
 struct TypeInfoImpl<fvec_t<N>> {
-  yang::Type operator()() const
+  Type operator()() const
   {
-    return yang::Type::fvec_t(N);
+    return Type::fvec_t(N);
   }
 };
 
@@ -87,11 +87,11 @@ template<typename...>
 struct ArgsTypeInfo {};
 template<>
 struct ArgsTypeInfo<> {
-  void operator()(const std::vector<yang::Type>&) const {}
+  void operator()(const std::vector<Type>&) const {}
 };
 template<typename A, typename... Args>
 struct ArgsTypeInfo<A, Args...> {
-  void operator()(std::vector<yang::Type>& output) const
+  void operator()(std::vector<Type>& output) const
   {
     output.push_back(TypeInfo<A>()());
     ArgsTypeInfo<Args...>()(output);
@@ -100,34 +100,34 @@ struct ArgsTypeInfo<A, Args...> {
 
 template<typename R, typename... Args>
 struct TypeInfoImpl<Function<R(Args...)>> {
-  yang::Type operator()() const
+  Type operator()() const
   {
-    std::vector<yang::Type> args;
+    std::vector<Type> args;
     ArgsTypeInfo<Args...>()(args);
-    return yang::Type::function_t(TypeInfo<R>()(), args);
+    return Type::function_t(TypeInfo<R>()(), args);
   }
 };
 
 template<typename T>
 struct TypeInfoImpl<T*> {
-  yang::Type operator()() const
+  Type operator()() const
   {
-    return yang::Type::user_t<T>(false);
+    return Type::user_t<T>(false);
   }
 };
 
 template<typename T>
 struct TypeInfoImpl<Ref<T>> {
-  yang::Type operator()() const
+  Type operator()() const
   {
-    return yang::Type::user_t<T>(true);
+    return Type::user_t<T>(true);
   }
 };
 
 // Wrapper for other modifiers.
 template<typename T>
 struct TypeInfoBase {
-  yang::Type operator()() const
+  Type operator()() const
   {
     return TypeInfoImpl<T>()();
   }

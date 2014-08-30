@@ -52,8 +52,8 @@ private:
   llvm::Value* get_parent_struct(std::size_t parent_steps, llvm::Value* v);
   llvm::Value* get_global_struct();
   Value get_variable_ptr(const std::string& name);
-  void create_function(const Node& node, const yang::Type& function_type);
-  Value get_member_function(const yang::Type& type, const std::string& name);
+  void create_function(const Node& node, const Type& function_type);
+  Value get_member_function(const Type& type, const std::string& name);
   Value get_constructor(const std::string& type);
   Value create_call(const Value& f, const std::vector<Value>& args);
   Value load(const Value& ptr);
@@ -91,7 +91,7 @@ private:
   LexScope _chunk;
 
   typedef std::unordered_map<std::string, Value> value_map;
-  std::unordered_map<yang::Type, value_map> _member_functions;
+  std::unordered_map<Type, value_map> _member_functions;
   value_map _constructors;
 
   // String literal uniquing.

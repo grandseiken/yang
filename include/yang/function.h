@@ -219,11 +219,11 @@ using make_fn_type = yang::Function<typename GetSignature<T>::type>;
 // Dynamic storage of an abitrary Function.
 struct GenericFunction {
   GenericFunction()
-    : type(yang::Type::void_t())
+    : type(Type::void_t())
     , ptr(nullptr)
   {}
 
-  yang::Type type;
+  Type type;
   std::shared_ptr<FunctionBase> ptr;
 
   bool operator==(const GenericFunction& other) const;
@@ -231,18 +231,18 @@ struct GenericFunction {
 };
 
 // Avoid including unnecessary files in this header.
-yang::void_fp get_global_trampoline_function(const yang::Type& type);
+void_fp get_global_trampoline_function(const Type& type);
 
 // Call a Yang function via global trampolines.
 template<typename R, typename... Args>
-R call_via_trampoline(yang::void_fp target, void* env, const Args&... args)
+R call_via_trampoline(void_fp target, void* env, const Args&... args)
 {
-  yang::Type type = type_of<Function<R(Args...)>>().erase_user_types();
-  yang::void_fp trampoline = get_global_trampoline_function(type);
+  Type type = type_of<Function<R(Args...)>>().erase_user_types();
+  void_fp trampoline = get_global_trampoline_function(type);
   // Generate the C++ side of the trampoline at compile-time.
   internal::GenerateForwardTrampolineLookupTable<Function<R(Args...)>>()();
 
-  typedef internal::TrampolineCall<R, Args..., void*, yang::void_fp> call_type;
+  typedef internal::TrampolineCall<R, Args..., void*, void_fp> call_type;
   auto trampoline_expanded = (typename call_type::fp_type)trampoline;
   return call_type()(trampoline_expanded, args..., env, target);
 }
@@ -317,7 +317,7 @@ R Function<R(Args...)>::operator()(const Args&... args) const
 
   // For yang functions, call via the trampoline machinery.
   return internal::call_via_trampoline<R>(
-      (yang::void_fp)(std::intptr_t)_function, _env, args...);
+      (void_fp)(std::intptr_t)_function, _env, args...);
 }
 
 template<typename R, typename... Args>

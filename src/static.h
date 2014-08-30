@@ -11,7 +11,7 @@
 #include <unordered_map>
 
 #include <yang/type.h>
-#include "internal_type.h"
+#include "category.h"
 #include "table.h"
 #include "walker.h"
 
@@ -20,10 +20,10 @@ namespace internal {
 struct ContextInternals;
 struct ParseData;
 
-class StaticChecker : public ConstAstWalker<Type> {
+class StaticChecker : public ConstAstWalker<Category> {
 public:
 
-  typedef std::unordered_map<std::string, yang::Type> symbol_frame;
+  typedef std::unordered_map<std::string, Type> symbol_frame;
   StaticChecker(const ContextInternals& context, ParseData& data,
                 symbol_frame& functions_output, symbol_frame& globals_output);
   ~StaticChecker();
@@ -31,7 +31,7 @@ public:
 protected:
 
   void before(const Node& node) override;
-  Type after(const Node& node, const result_list& results) override;
+  Category after(const Node& node, const result_list& results) override;
 
 private:
 
@@ -44,16 +44,17 @@ private:
   void push_symbol_tables();
   void pop_symbol_tables();
   void warn_unreferenced_variables();
-  void add_symbol(const Node& node, const std::string& name, const Type& type,
+  void add_symbol(const Node& node,
+                  const std::string& name, const Category& category,
                   bool global, bool unreferenced_warning = true);
   void add_symbol_checking_collision(
       const Node& node, const std::string& name,
-      const Type& type, bool global, bool unreferenced_warning = true);
-  Type load(const Type& a);
+      const Category& type, bool global, bool unreferenced_warning = true);
+  Category load(const Category& a);
 
   void error(const Node& node, const std::string& message, bool error = true);
   std::string str(const Node& node) const;
-  std::string str(const Type& type) const;
+  std::string str(const Category& category) const;
 
   std::string _immediate_left_assign;
   bool _immediate_left_assign_warn_reads;
@@ -72,7 +73,7 @@ private:
   // disambiguating identically-named closed variables in different subscopes.
   struct symbol_t {
     symbol_t();
-    Type type;
+    Category category;
     bool closed;
     std::size_t scope_number;
 
@@ -90,7 +91,7 @@ private:
     const Node& function;
     std::string name;
 
-    SymbolTable<metadata_t, Type> metadata;
+    SymbolTable<metadata_t, Category> metadata;
     SymbolTable<std::string, symbol_t*> symbol_table;
     std::list<symbol_t> symbols;
 
