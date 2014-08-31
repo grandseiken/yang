@@ -18,37 +18,38 @@ struct Symbol;
 // where the type cannot be determined. Further errors involving a value
 // of this type are suppressed (to avoid cascading error messages).
 //
-// TODO: still needs a little bit more cleaning up. Static constructors; use
-// unify() for everything when static-checking; get rid of make_managed().
+// TODO: use unify() for everything when static-checking.
 class Category {
 public:
 
-  // Convert from external type.
-  Category(const Type& type);
-  // Construct void or error type.
-  explicit Category(bool error = false);
-  // Convert to external type.
+  // Create from external type or create error category.
+  Category(const Type& type = Type::void_t());
+  static Category error();
+
+  // Retrieve external type and tags.
   const Type& type() const;
-  // Return a string representation of the type.
-  std::string string(const ContextInternals& context, bool quote = true) const;
-  // Change constness.
-  Category make_const(bool is_const) const;
-  // Change lvalueness.
-  Category make_lvalue(bool is_lvalue) const;
-  // Change tags.
-  Category add_tag(void* tag) const;
-  Category add_tags(const Category& category) const;
   const std::vector<void*>& tags() const;
 
+  // Return a new category that's identical except for the given change.
+  Category make_const(bool is_const) const;
+  Category make_lvalue(bool is_lvalue) const;
+  Category add_tag(void* tag) const;
+  Category add_tags(const Category& category) const;
+
+  // Unify returns t if is(t), and otherwise an error category; it also merges
+  // tags, lvalue-ness and const-ness.
+  Category unify(const Category& c) const;
+
   // All of the following functions also return true if the error bit of any
-  // type involved is set.
+  // category involved is set.
+  bool is(const Category& c) const;
+
   bool is_error() const;
   bool is_lvalue() const;
   bool not_const() const;
 
   bool is_void() const;
   bool not_void() const;
-  bool primitive() const;
   bool is_vector() const;
   bool is_int() const;
   bool is_float() const;
@@ -56,19 +57,13 @@ public:
   bool user_type() const;
   bool element_size(std::size_t num_elements) const;
   bool element_is(std::size_t index, const Category& category) const;
-  // True if the vector element-counts of these types allow for interaction;
-  // that is, either the element-counts are the same (and they can interact
-  // point-wise), or either element-count is 1 (and the value can be implicitly
-  // vectorised).
+
+  // True if the vector element-counts of these categories allow for
+  // interaction; that is, either the element-counts are the same (and they can
+  // interact point-wise), or either element-count is 1 (and the value can be
+  // implicitly vectorised if necessary).
   bool is_binary_match(const Category& c) const;
   bool is_assign_binary_match(const Category& c) const;
-  // Unify returns t if is(t), and otherwise an error type.
-  bool is(const Category& c) const;
-  Category unify(const Category& c) const;
-
-  // Raw equality comparisons (ignoring ERROR). Don't use for type-checking.
-  bool operator==(const Category& c) const;
-  bool operator!=(const Category& c) const;
 
 private:
 

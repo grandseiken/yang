@@ -59,7 +59,7 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // single closure structure type with just a void pointer, and transform t.f
   // to (mem[T::f], env_mem(t)).
   type_table user_type;
-  user_type.emplace("object", Type::user_t<void>(false));
+  user_type.emplace("object", Type::raw_user_t<void>());
   _chunk.init_structure_type("chunk", user_type, false);
 
   // We need to generate a reverse trampoline function for each function in the
@@ -1143,7 +1143,7 @@ Value IrGenerator::get_constructor(const std::string& type)
     args.push_back(ct.ctor.type.function_arg(i));
   }
   const auto& ref_type = ct.ctor.type.function_return();
-  Value v(Type::function_t(ref_type.make_managed(true), args), f);
+  Value v(Type::function_t(Type::managed_user_t(ref_type), args), f);
   _constructors.emplace(type, v);
   return v;
 }

@@ -13,8 +13,8 @@ namespace yang {
 class Context;
 
 namespace internal {
-class Category;
 class ContextInternals;
+class StaticChecker;
 
 // Static member is guaranteed to have a different address per template
 // instantiation.
@@ -60,12 +60,13 @@ public:
 
   // User types.
   bool is_user_type() const;
+  bool is_raw_user_type() const;
   bool is_managed_user_type() const;
 
   bool operator==(const Type& t) const;
   bool operator!=(const Type& t) const;
 
-  // Static type constructors.
+  // Static constructors.
   static Type void_t();
   static Type int_t();
   static Type float_t();
@@ -74,20 +75,21 @@ public:
   static Type function_t(
       const Type& return_t, const std::vector<Type>& args);
   template<typename>
-  static Type user_t(bool managed);
-
-  // Return a new type that's identical except managed/unmanaged.
-  Type make_managed(bool managed) const;
-  // Return a new type with user types erased; that is, all user types replaced
-  // by a single placeholder managed or unmanaged user type.
-  Type erase_user_types() const;
+  static Type raw_user_t();
+  static Type raw_user_t(const Type& user_type);
+  template<typename>
+  static Type managed_user_t();
+  static Type managed_user_t(const Type& user_type);
+  // Constructs a new type with all user types erased (replaced by a single
+  // placeholder raw or managed user type).
+  static Type erased_t(const Type& type);
 
 private:
 
   friend struct std::hash<Type>;
   // For ContextInternals& string function.
   friend class Instance;
-  friend class internal::Category;
+  friend class internal::StaticChecker;
 
   Type();
   std::string string(const internal::ContextInternals& context) const;
@@ -97,15 +99,14 @@ private:
     INT,
     FLOAT,
     FUNCTION,
-    USER_TYPE,
+    RAW_USER_TYPE,
+    MANAGED_USER_TYPE,
   };
 
   type_base _base;
   std::size_t _count;
   std::vector<Type> _elements;
   const void* _user_type_uid;
-  bool _managed_user_type;
-  static Type void_type;
 
 };
 
@@ -120,12 +121,20 @@ typedef std::unordered_map<std::string, Type> type_table;
 typedef type_table function_table;
 
 template<typename T>
-Type Type::user_t(bool managed)
+Type Type::raw_user_t()
 {
   Type t;
-  t._base = USER_TYPE;
+  t._base = RAW_USER_TYPE;
   t._user_type_uid = internal::type_uid<T>();
-  t._managed_user_type = managed;
+  return t;
+}
+
+template<typename T>
+Type Type::managed_user_t()
+{
+  Type t;
+  t._base = MANAGED_USER_TYPE;
+  t._user_type_uid = internal::type_uid<T>();
   return t;
 }
 

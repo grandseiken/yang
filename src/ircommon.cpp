@@ -111,7 +111,7 @@ llvm::Function* IrCommon::get_trampoline_function(
   //
   // It might be possible to further erase function pointers to minimise the
   // number of functions needed.
-  auto it = _trampoline_map.find(function_type.erase_user_types());
+  auto it = _trampoline_map.find(Type::erased_t(function_type));
   if (it != _trampoline_map.end()) {
     return it->second;
   }
@@ -220,14 +220,14 @@ llvm::Function* IrCommon::get_trampoline_function(
     _b.b.CreateStore(result, function->arg_begin());
   }
   _b.b.CreateRetVoid();
-  _trampoline_map.emplace(function_type.erase_user_types(), function);
+  _trampoline_map.emplace(Type::erased_t(function_type), function);
   return function;
 }
 
 llvm::Function* IrCommon::get_reverse_trampoline_function(
     const Type& function_type, bool forward)
 {
-  auto it = _reverse_trampoline_map.find(function_type.erase_user_types());
+  auto it = _reverse_trampoline_map.find(Type::erased_t(function_type));
   if (it != _reverse_trampoline_map.end()) {
     return it->second;
   }
@@ -249,7 +249,7 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
   // We may be providing a null pointer here, if C++ never uses this type, so
   // don't generate the function which will be unlinkable.
   void_fp external_trampoline_ptr =
-      get_cpp_trampoline_lookup_map()[function_type.erase_user_types()];
+      get_cpp_trampoline_lookup_map()[Type::erased_t(function_type)];
   if (!external_trampoline_ptr) {
     return nullptr;
   }
@@ -349,7 +349,7 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
 
     _b.b.CreateRet(_b.b.CreateLoad(r));
   }
-  _reverse_trampoline_map.emplace(function_type.erase_user_types(), function);
+  _reverse_trampoline_map.emplace(Type::erased_t(function_type), function);
   return function;
 }
 
@@ -425,7 +425,7 @@ void_fp YangTrampolineGlobals::get_trampoline_function(
   auto& trampoline_map = get_instance()._trampoline_map;
   // We need an extra layer of caching to avoid optimising the function
   // every time we need it.
-  auto it = trampoline_map.find(function_type.erase_user_types());
+  auto it = trampoline_map.find(Type::erased_t(function_type));
   if (it != trampoline_map.end()) {
     return (void_fp)(std::intptr_t)
         get_instance()._engine->getPointerToFunction(it->second);
@@ -434,7 +434,7 @@ void_fp YangTrampolineGlobals::get_trampoline_function(
   llvm::Function* function =
       get_instance()._common.get_trampoline_function(function_type, true);
   get_instance()._common.optimise_ir(function);
-  trampoline_map[function_type.erase_user_types()] = function;
+  trampoline_map[Type::erased_t(function_type)] = function;
   auto ptr = (void_fp)(std::intptr_t)
       get_instance()._engine->getPointerToFunction(function);
   return ptr;

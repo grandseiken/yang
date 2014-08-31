@@ -33,7 +33,7 @@ export takes_user_type_f = void(void(UserType)) {}
       runtime_error);
 }
 
-TEST_F(UserTypesTest, UnmanagedObjectPassing)
+TEST_F(UserTypesTest, RawObjectPassing)
 {
   auto ctxt = context();
   ctxt.register_member_function("set_id", make_fn([](user_type* u, int_t id)
@@ -67,7 +67,7 @@ export takes_user_type = void(UserType u)
   EXPECT_EQ(0, inst.get_global<user_type*>("v")->id);
 }
 
-TEST_F(UserTypesTest, UnmanagedMemberFunctions)
+TEST_F(UserTypesTest, RawMemberFunctions)
 {
   auto ctxt = context();
   int_t extract_value = 0;
@@ -103,7 +103,7 @@ export extract_uu = void()
   EXPECT_EQ(64, extract_value);
 }
 
-TEST_F(UserTypesTest, UnmanagedStealMemberFunction)
+TEST_F(UserTypesTest, RawStealMemberFunction)
 {
   auto inst = instance(R"(
 export global var f = int() {return -1;};
@@ -197,7 +197,7 @@ export get_count_closure = int()()
   EXPECT_EQ(0, get_managed_count());
 }
 
-TEST_F(UserTypesTest, UnmanagedTypedefs)
+TEST_F(UserTypesTest, RawTypedefs)
 {
   user_type u{0};
   auto ctxt = context(false);

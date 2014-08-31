@@ -237,7 +237,7 @@ void_fp get_global_trampoline_function(const Type& type);
 template<typename R, typename... Args>
 R call_via_trampoline(void_fp target, void* env, const Args&... args)
 {
-  Type type = type_of<Function<R(Args...)>>().erase_user_types();
+  Type type = Type::erased_t(type_of<Function<R(Args...)>>());
   void_fp trampoline = get_global_trampoline_function(type);
   // Generate the C++ side of the trampoline at compile-time.
   internal::GenerateForwardTrampolineLookupTable<Function<R(Args...)>>()();

@@ -60,22 +60,29 @@ std::size_t Type::function_num_args() const
 
 const Type& Type::function_return() const
 {
-  return _elements.empty() ? void_type : _elements[0];
+  static Type v = void_t();
+  return _elements.empty() ? v : _elements[0];
 }
 
 const Type& Type::function_arg(std::size_t index) const
 {
-  return 1 + index >= _elements.size() ? void_type : _elements[1 + index];
+  static Type v = void_t();
+  return 1 + index >= _elements.size() ? v : _elements[1 + index];
 }
 
 bool Type::is_user_type() const
 {
-  return _base == USER_TYPE;
+  return _base == RAW_USER_TYPE || _base == MANAGED_USER_TYPE;
+}
+
+bool Type::is_raw_user_type() const
+{
+  return _base == RAW_USER_TYPE;
 }
 
 bool Type::is_managed_user_type() const
 {
-  return _managed_user_type;
+  return _base == MANAGED_USER_TYPE;
 }
 
 bool Type::operator==(const Type& t) const
@@ -89,7 +96,6 @@ bool Type::operator==(const Type& t) const
     }
   }
   return _user_type_uid == t._user_type_uid &&
-      _managed_user_type == t._managed_user_type &&
       _base == t._base && _count == t._count;
 }
 
@@ -150,19 +156,32 @@ Type Type::function_t(const Type& return_t, const std::vector<Type>& args)
   return t;
 }
 
-Type Type::make_managed(bool managed) const
+Type Type::raw_user_t(const Type& user_type)
 {
-  Type t = *this;
-  t._managed_user_type = t._base == USER_TYPE && managed;
+  if (!user_type.is_user_type()) {
+    throw runtime_error("raw user type converted from non-user type");
+  }
+  Type t = user_type;
+  t._base = RAW_USER_TYPE;
   return t;
 }
 
-Type Type::erase_user_types() const
+Type Type::managed_user_t(const Type& user_type)
 {
-  Type t = *this;
+  if (!user_type.is_user_type()) {
+    throw runtime_error("managed user type converted from non-user type");
+  }
+  Type t = user_type;
+  t._base = MANAGED_USER_TYPE;
+  return t;
+}
+
+Type Type::erased_t(const Type& type)
+{
+  Type t = type;
   t._user_type_uid = nullptr;
   for (auto& u : t._elements) {
-    u = u.erase_user_types();
+    u = erased_t(u);
   }
   return t;
 }
@@ -171,14 +190,13 @@ Type::Type()
   : _base(VOID)
   , _count(1)
   , _user_type_uid(nullptr)
-  , _managed_user_type(false)
 {
 }
 
 std::string Type::string(const internal::ContextInternals& context) const
 {
   std::string s;
-  if (_base == USER_TYPE) {
+  if (_base == RAW_USER_TYPE || _base == MANAGED_USER_TYPE) {
     // Find the name(s) of this type with the fewest namespace prefixes.
     bool first = true;
     std::size_t scope_min = 0;
@@ -216,7 +234,7 @@ std::string Type::string(const internal::ContextInternals& context) const
       }
       s = "{" + s + "}";
     }
-    s += (_managed_user_type ? "&" : "*");
+    s += (_base == RAW_USER_TYPE ? "*" : "&");
   }
   else if (_base == FUNCTION) {
     s += _elements[0].string(context) + "(";
@@ -239,8 +257,6 @@ std::string Type::string(const internal::ContextInternals& context) const
   }
   return s;
 }
-
-Type Type::void_type;
 
 Global::Global(const Type& type, bool is_const, bool is_exported)
   : type(type)
@@ -270,7 +286,6 @@ namespace std {
       hash_combine(seed, operator()(t));
     }
     hash_combine(seed, (std::intptr_t)type._user_type_uid);
-    hash_combine(seed, type._managed_user_type);
     return seed;
   }
 }

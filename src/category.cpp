@@ -15,12 +15,11 @@ Category::Category(const Type& type)
 {
 }
 
-Category::Category(bool error)
-  : _type(Type::void_t())
-  , _error(error)
-  , _lvalue(false)
-  , _const(false)
+Category Category::error()
 {
+  Category c;
+  c._error = true;
+  return c;
 }
 
 const Type& Category::type() const
@@ -28,10 +27,9 @@ const Type& Category::type() const
   return _type;
 }
 
-std::string Category::string(const ContextInternals& context, bool quote) const
+const std::vector<void*>& Category::tags() const
 {
-  return _error ? "<error>" :
-      quote ? "`" + _type.string(context) + "`" : _type.string(context);
+  return _tags;
 }
 
 Category Category::make_const(bool is_const) const
@@ -64,9 +62,19 @@ Category Category::add_tags(const Category& category) const
   return c;
 }
 
-const std::vector<void*>& Category::tags() const
+Category Category::unify(const Category& c) const
 {
-  return _tags;
+  auto r = error().add_tags(*this);
+  if (!is_error() && !c.is_error() && is(c)) {
+    r = make_const(_const || c._const);
+    r = r.make_lvalue(is_lvalue() && c.is_lvalue());
+  }
+  return r.add_tags(c);
+}
+
+bool Category::is(const Category& c) const
+{
+  return is_error() || c.is_error() || _type == c._type;
 }
 
 bool Category::is_error() const
@@ -92,11 +100,6 @@ bool Category::is_void() const
 bool Category::not_void() const
 {
   return is_error() || !_type.is_void();
-}
-
-bool Category::primitive() const
-{
-  return is_error() || _type.is_int() || _type.is_float();
 }
 
 bool Category::is_vector() const
@@ -133,9 +136,9 @@ bool Category::element_size(std::size_t num_elements) const
 
 bool Category::element_is(std::size_t index, const Category& category) const
 {
-  return is_error() || category.is_error() ||
-      (!index && Category(_type.function_return()) == category) ||
-      (index && Category(_type.function_arg(index - 1)) == category);
+  return is_error() ||
+      (!index && category.is(_type.function_return())) ||
+      (index && category.is(_type.function_arg(index - 1)));
 }
 
 bool Category::is_binary_match(const Category& c) const
@@ -150,34 +153,6 @@ bool Category::is_assign_binary_match(const Category& c) const
   return is_error() || c.is_error() ||
       _type.vector_size() == c._type.vector_size() ||
       c._type.vector_size() == 1;
-}
-
-bool Category::is(const Category& c) const
-{
-  return is_error() || c.is_error() || _type == c._type;
-}
-
-Category Category::unify(const Category& c) const
-{
-  auto r = Category(true).add_tags(*this);
-  if (!is_error() && !c.is_error() && is(c)) {
-    r = make_const(_const || c._const);
-    r = r.make_lvalue(is_lvalue() && c.is_lvalue());
-  }
-  return r.add_tags(c);
-}
-
-bool Category::operator==(const Category& c) const
-{
-  if (_error != c._error || _lvalue != c._lvalue) {
-    return false;
-  }
-  return _error || _type == c._type;
-}
-
-bool Category::operator!=(const Category& c) const
-{
-  return !(*this == c);
 }
 
 // End namespace yang::internal.

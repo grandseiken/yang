@@ -112,7 +112,7 @@ template<typename T>
 struct TypeInfoImpl<T*> {
   Type operator()() const
   {
-    return Type::user_t<T>(false);
+    return Type::raw_user_t<T>();
   }
 };
 
@@ -120,7 +120,7 @@ template<typename T>
 struct TypeInfoImpl<Ref<T>> {
   Type operator()() const
   {
-    return Type::user_t<T>(true);
+    return Type::managed_user_t<T>();
   }
 };
 

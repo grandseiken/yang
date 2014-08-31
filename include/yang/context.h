@@ -135,7 +135,7 @@ public:
                      const Function<T*(Args...)>& constructor,
                      const Function<void(T*)>& destructor);
 
-  // Add a member function to a user type. Unmanaged types must use the first
+  // Add a member function to a user type. Raw types must use the first
   // overload, and managed types must use the second.
   template<typename T, typename R, typename... Args>
   void register_member_function(
@@ -174,7 +174,8 @@ void Context::register_type(const std::string& name, bool managed)
 {
   check_type(name);
   copy_internals();
-  _internals->types.emplace(name, Type::user_t<T>(managed));
+  _internals->types.emplace(
+      name, managed ? Type::managed_user_t<T>() : Type::raw_user_t<T>());
 }
 
 template<typename T, typename... Args>
@@ -205,7 +206,7 @@ template<typename T, typename R, typename... Args>
 void Context::register_member_function(
     const std::string& name, const Function<R(T*, Args...)>& f)
 {
-  Type t = Type::user_t<T>(false);
+  Type t = Type::raw_user_t<T>();
   check_member_function(t, name);
   copy_internals();
   _internals->members[t][name] = make_generic(f);
@@ -215,7 +216,7 @@ template<typename T, typename R, typename... Args>
 void Context::register_member_function(
     const std::string& name, const Function<R(Ref<T>, Args...)>& f)
 {
-  Type t = Type::user_t<T>(true);
+  Type t = Type::managed_user_t<T>();
   check_member_function(t, name);
   copy_internals();
   _internals->members[t][name] = make_generic(f);

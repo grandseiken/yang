@@ -40,8 +40,7 @@ Context YangTest::context(bool with_types)
     return context;
   }
 
-  // User type registed as both managed and unmanaged. Each one gets a
-  // different ID.
+  // User type registered as both raw and managed. Each one gets a different ID.
   context.register_type<user_type>("UserType");
   auto get_user_type = [this]
   {

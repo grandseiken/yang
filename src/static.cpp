@@ -127,9 +127,9 @@ const Node* get_no_effect_node(const Node& node)
 
 Category element_type(const Category& c)
 {
-  return c.is_error() ? Category(true) :
+  return c.is_error() ? Category::error() :
       c.is_int() ? Type::int_t() :
-      c.is_float() ? Type::float_t() : Category(true);
+      c.is_float() ? Type::float_t() : Category::error();
 }
 
 Category numeric_type(bool is_float, std::size_t num)
@@ -142,7 +142,7 @@ Category numeric_type(bool is_float, std::size_t num)
 Category binary_type(const Category& a, const Category& b, bool is_float)
 {
   if (a.is_error() || b.is_error()) {
-    return Category(true);
+    return Category::error();
   }
   std::size_t max = std::max(a.type().vector_size(), b.type().vector_size());
   return numeric_type(is_float, max);
@@ -216,7 +216,7 @@ void StaticChecker::before(const Node& node)
     if (node.children[0]->type == Node::IDENTIFIER) {
       load(results[0]);
     }
-    return Category(true);
+    return Category::error();
   };
   RESULT_FOR(RETURN_STMT) {
     Category t = node.children.empty() ? Category() : load(results[0]);
@@ -236,18 +236,17 @@ void StaticChecker::before(const Node& node)
     auto t = load(results[0]);
     if (!t.user_type()) {
       error(node, "member function access on " + str(results[0]));
-      return Category(true);
+      return Category::error();
     }
     if (t.is_error()) {
-      return Category(true);
+      return Category::error();
     }
 
     const auto& m = _context.member_lookup(t.type(), node.string_value);
     if (m.type.is_void()) {
       error(node, "undeclared member function `" +
-                  t.string(_context, false) +
-                  "::" + node.string_value + "`");
-      return Category(true);
+                  t.type().string(_context) + "::" + node.string_value + "`");
+      return Category::error();
     }
     // Omit the first argument (self). Unfortunately, the indirection here
     // makes errors when calling the returned function somewhat vague.
@@ -262,7 +261,7 @@ void StaticChecker::before(const Node& node)
     if (!_scopes.back().metadata.has(LOOP_BODY)) {
       error(node, str(node) + " outside of loop body");
     }
-    return Category(true);
+    return Category::error();
   };
   CONSTANT_FOR(IDENTIFIER) {
     // Look up user types in a type-context.
@@ -272,7 +271,7 @@ void StaticChecker::before(const Node& node)
         return t;
       }
       error(node, "undeclared type `" + node.string_value + "`");
-      return Category(true);
+      return Category::error();
     }
 
     // Regular symbols.
@@ -292,7 +291,7 @@ void StaticChecker::before(const Node& node)
             args.push_back(t.ctor.type.function_arg(i));
           }
           Category r = Type::function_t(
-              t.ctor.type.function_return().make_managed(true), args);
+              Type::managed_user_t(t.ctor.type.function_return()), args);
           return r.make_const(true).make_lvalue(true);
         }
 
@@ -307,7 +306,7 @@ void StaticChecker::before(const Node& node)
         else {
           error(node, "undeclared identifier `" + node.string_value + "`");
         }
-        add_symbol(node, node.string_value, Category(true), false);
+        add_symbol(node, node.string_value, Category::error(), false);
         it = _scopes.rbegin();
         break;
       }
@@ -345,7 +344,7 @@ void StaticChecker::before(const Node& node)
          !(left.is_float() && right.is_float()))) {
       error(node, str(node) + " applied to " +
                   str(left) + " and " + str(right));
-      return Category(true);
+      return Category::error();
     }
     return binary_type(left, right, left.is_float());
   };
@@ -359,7 +358,7 @@ void StaticChecker::before(const Node& node)
     if (!left.is_binary_match(right)) {
       error(node, str(node) + " applied to " +
                   str(left) + " and " + str(right));
-      return Category(true);
+      return Category::error();
     }
     else if (!(left.is_int() && right.is_int()) &&
              !(left.is_float() && right.is_float())) {
@@ -387,7 +386,7 @@ void StaticChecker::before(const Node& node)
     auto t = load(results[0]);
     if (!t.is_vector() || !(t.is_int() || t.is_float())) {
       error(node, str(node) + " applied to " + str(t));
-      return Category(true);
+      return Category::error();
     }
     return element_type(t);
   };
@@ -412,7 +411,7 @@ void StaticChecker::before(const Node& node)
     auto t = load(results[0]);
     if (!(t.is_int() || t.is_float())) {
       error(node, str(node) + " applied to " + str(t));
-      return Category(true);
+      return Category::error();
     }
     return t;
   };
@@ -425,7 +424,7 @@ void StaticChecker::before(const Node& node)
 
     if (!(t.is_int() || t.is_float())) {
       error(node, str(node) + " applied to " + str(t));
-      return Category(true).add_tags(t);
+      return Category::error().add_tags(t);
     }
     if (!t.is_lvalue()) {
       error(node, str(node) + " applied to non-lvalue");
@@ -464,7 +463,7 @@ void StaticChecker::before(const Node& node)
     if (node.type != Node::ASSIGN) {
       if (!left.is_assign_binary_match(right)) {
         error(node, err);
-        return Category(true).add_tags(left);
+        return Category::error().add_tags(left);
       }
       if (!math && (!left.is_int() || !right.is_int())) {
         error(node, err);
@@ -473,12 +472,12 @@ void StaticChecker::before(const Node& node)
       if (math && !(left.is_int() && right.is_int()) &&
           !(left.is_float() && right.is_float())) {
         error(node, err);
-        return Category(true).add_tags(left);
+        return Category::error().add_tags(left);
       }
     }
     else if (!left.is(right)) {
       error(node, err);
-      return Category(true).add_tags(left);
+      return Category::error().add_tags(left);
     }
 
     if (!left.is_lvalue()) {
@@ -515,11 +514,12 @@ void StaticChecker::before(const Node& node)
         error(*node.children[i], "named vector element");
       }
       Category u = load(results[i]);
-      if (!u.primitive() && !bad_types.count(u.type())) {
+      if (!u.is(Type::int_t()) && !u.is(Type::float_t()) &&
+          !bad_types.count(u.type())) {
         // Store the bad types we saw already so as not to repeat the error.
         error(*node.children[i],
               "vector element with non-primitive type " + str(u));
-        t = Category(true);
+        t = Category::error();
         bad_types.insert(u.type());
       }
       if (i) {
@@ -534,7 +534,7 @@ void StaticChecker::before(const Node& node)
     }
     if (unify_error) {
       error(node, "differing types " + ts + " in vector");
-      return Category(true);
+      return Category::error();
     }
     return numeric_type(t.is_float(), results.size());
   };
@@ -545,7 +545,7 @@ void StaticChecker::before(const Node& node)
     if (!left.is_vector() || !right.is(Type::int_t())) {
       error(node, str(node) + " applied to " +
                   str(left) + " and " + str(right));
-      return left.is_vector() ? t : Category(true).add_tags(left);
+      return left.is_vector() ? t : Category::error().add_tags(left);
     }
     return t;
   };
@@ -572,7 +572,8 @@ void StaticChecker::before(const Node& node)
           }
           args.push_back(results[i].type());
         }
-        return err ? Category(true) : Type::function_t(results[0].type(), args);
+        return err ? Category::error() :
+            Type::function_t(results[0].type(), args);
       });
       break;
 
@@ -639,11 +640,11 @@ void StaticChecker::before(const Node& node)
 
         if (node.type == Node::GLOBAL_ASSIGN && !t.function()) {
           error(node, "global assignment of type " + str(results[1]));
-          t = Category(true);
+          t = Category::error();
         }
         if (node.type != Node::GLOBAL_ASSIGN && !t.not_void()) {
           error(node, "assignment of type " + str(results[1]));
-          t = Category(true);
+          t = Category::error();
         }
         if (node.children[0]->type != Node::IDENTIFIER) {
           error(node, "expected identifer on declaration LHS");
@@ -702,7 +703,7 @@ void StaticChecker::before(const Node& node)
       _scopes.back().metadata.push();
       _scopes.back().metadata.add(TYPE_EXPR_CONTEXT, {});
       result(node, RESULT {
-        return results[0].function() ? results[0] : Category(true);
+        return results[0].function() ? results[0] : Category::error();
       });
 
       call_after_result(*node.children[0], [=,&node](const Category& result)
@@ -807,7 +808,7 @@ void StaticChecker::before(const Node& node)
             return t;
           }
         }
-        return Category(true);
+        return Category::error();
       });
       break;
 
@@ -828,8 +829,8 @@ void StaticChecker::before(const Node& node)
         // An IF_STMT definitely returns a value only if both branches
         // definitely return a value.
         Category left = results[1];
-        Category right = results.size() > 2 ? results[2] : Category(true);
-        return !left.is_error() && !right.is_error() ? left : Category(true);
+        Category right = results.size() > 2 ? results[2] : Category::error();
+        return !left.is_error() && !right.is_error() ? left : Category::error();
       });
       break;
 
@@ -852,7 +853,7 @@ void StaticChecker::before(const Node& node)
           error(*node.children[cond],
                 str(node) + " branching on " + str(results[cond]));
         }
-        return Category(true);
+        return Category::error();
       });
       break;
 
@@ -923,7 +924,7 @@ void StaticChecker::before(const Node& node)
         }
         if (!t.function()) {
           error(node, str(node) + " applied to " + str(t));
-          return Category(true);
+          return Category::error();
         }
         if (!t.element_size(results.size())) {
           error(node, str(t) + " called with " +
@@ -939,7 +940,7 @@ void StaticChecker::before(const Node& node)
             }
           }
         }
-        return t.is_error() ? Category(true) : t.type().function_return();
+        return t.is_error() ? Category::error() : t.type().function_return();
       });
       break;
 
@@ -966,7 +967,7 @@ void StaticChecker::before(const Node& node)
         if (!left.is_binary_match(right)) {
           error(node, str(node) + " applied to " +
                       str(left) + " and " + str(right));
-          return Category(true);
+          return Category::error();
         }
         else if (!left.is_int() || !right.is_int()) {
           error(node, str(node) + " applied to " +
@@ -981,7 +982,7 @@ void StaticChecker::before(const Node& node)
 
   // Type/expression context error result overrides any other result.
   if (context_err) {
-    result(node, CONSTANT {return Category(true);});
+    result(node, CONSTANT {return Category::error();});
   }
 #undef RESULT
 }
@@ -989,7 +990,7 @@ void StaticChecker::before(const Node& node)
 Category StaticChecker::after(const Node& node, const result_list&)
 {
   error(node, "unimplemented construct");
-  return Category(true);
+  return Category::error();
 }
 
 void StaticChecker::enter_function(const Type& return_type)
@@ -1120,7 +1121,8 @@ std::string StaticChecker::str(const Node& node) const
 
 std::string StaticChecker::str(const Category& category) const
 {
-  return category.string(_context);
+  return category.is_error() ? "<error>" :
+      "`" + category.type().string(_context) + "`";
 }
 
 StaticChecker::symbol_t::symbol_t()

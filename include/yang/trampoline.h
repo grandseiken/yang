@@ -516,7 +516,7 @@ struct ReverseTrampolineLookupGenerator {
         R(Args...),
         typename internal::TrampolineReturn<R>::type,
         typename internal::TrampolineArgs<Args...>::type>::call;
-    map.emplace(type_of<Function<R(Args...)>>().erase_user_types(), ptr);
+    map.emplace(Type::erased_t(type_of<Function<R(Args...)>>()), ptr);
   }
 
   void operator()() const
