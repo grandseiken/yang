@@ -31,7 +31,7 @@ class IrGenerator : public IrCommon, public ConstAstWalker<Value> {
 public:
 
   IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
-              StaticData& static_data, const symbol_frame& globals,
+              StaticData& static_data, const global_table& globals,
               const ContextInternals& context);
 
   // Emit functions for allocating, freeing, reading and writing to instances

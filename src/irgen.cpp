@@ -34,7 +34,7 @@ namespace internal {
 // Write benchmarks to show improvement.
 
 IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
-                         StaticData& static_data, const symbol_frame& globals,
+                         StaticData& static_data, const global_table& globals,
                          const ContextInternals& context)
   : IrCommon(module, engine, static_data)
   , _context(context)
@@ -46,7 +46,11 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // define a structure type with a field for each global variable. Each
   // function will take a pointer to the global data structure as an implicit
   // final parameter.
-  _scopes[0].init_structure_type("global_data", globals, true);
+  type_table global_types;
+  for (const auto& pair : globals) {
+    global_types.emplace(pair.first, pair.second.type);
+  }
+  _scopes[0].init_structure_type("global_data", global_types, true);
   // Suppose a user type T has a member R(A...) f. So that an expression t.f
   // can be used as a generic function value, it creates an implicit closure;
   // that is, "val = t.f;" is equivalent to:
@@ -54,7 +58,7 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // Rather than transforming the AST to do this, we do it manually: use a
   // single closure structure type with just a void pointer, and transform t.f
   // to (mem[T::f], env_mem(t)).
-  symbol_frame user_type;
+  type_table user_type;
   user_type.emplace("object", Type::user_t<void>(false));
   _chunk.init_structure_type("chunk", user_type, false);
 

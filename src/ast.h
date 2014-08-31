@@ -179,10 +179,9 @@ struct Node {
 
   // We mostly don't need to pass any type information between the static
   // checker and the IR generator, except for closure scope information.
-  typedef std::unordered_map<std::string, Type> symbol_frame;
   struct mutable_struct {
     std::size_t scope_number = 0;
-    symbol_frame closed_environment;
+    type_table closed_environment;
   };
   mutable mutable_struct static_info;
 };

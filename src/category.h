@@ -18,10 +18,8 @@ struct Symbol;
 // where the type cannot be determined. Further errors involving a value
 // of this type are suppressed (to avoid cascading error messages).
 //
-// TODO: it might be nice to clean this up, especially now that it stores
-// lvalue-ness and tags as well: remove const-ness from external types (store a
-// bool with globals instead), since it's useless in every other situation and
-// putting it here is nicer. Similarly remove exported from externals.
+// TODO: still needs a little bit more cleaning up. Static constructors; use
+// unify() for everything when static-checking; get rid of make_managed().
 class Category {
 public:
 
@@ -46,6 +44,8 @@ public:
   // type involved is set.
   bool is_error() const;
   bool is_lvalue() const;
+  bool not_const() const;
+
   bool is_void() const;
   bool not_void() const;
   bool primitive() const;
@@ -76,6 +76,7 @@ private:
   Type _type;
   bool _error;
   bool _lvalue;
+  bool _const;
   // Stored pointers to symbols so that they can be propagated for warning
   // purposes.
   std::vector<void*> _tags;

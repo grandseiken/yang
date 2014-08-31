@@ -44,8 +44,8 @@ public:
 
   // Convenience functions (equivalent to calling the same on the Program the
   // Instance was compiled from).
-  const symbol_table& get_functions() const;
-  const symbol_table& get_globals() const;
+  const function_table& get_functions() const;
+  const global_table& get_globals() const;
 
 private:
 

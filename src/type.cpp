@@ -13,16 +13,6 @@ std::string Type::string(const Context& context) const
   return string(*context._internals);
 }
 
-bool Type::is_exported() const
-{
-  return _exported;
-}
-
-bool Type::is_const() const
-{
-  return _const;
-}
-
 bool Type::is_void() const
 {
   return _base == VOID;
@@ -160,20 +150,6 @@ Type Type::function_t(const Type& return_t, const std::vector<Type>& args)
   return t;
 }
 
-Type Type::make_exported(bool exported) const
-{
-  Type t = *this;
-  t._exported = exported;
-  return t;
-}
-
-Type Type::make_const(bool is_const) const
-{
-  Type t = *this;
-  t._const = is_const;
-  return t;
-}
-
 Type Type::make_managed(bool managed) const
 {
   Type t = *this;
@@ -192,9 +168,7 @@ Type Type::erase_user_types() const
 }
 
 Type::Type()
-  : _exported(false)
-  , _const(false)
-  , _base(VOID)
+  : _base(VOID)
   , _count(1)
   , _user_type_uid(nullptr)
   , _managed_user_type(false)
@@ -263,10 +237,17 @@ std::string Type::string(const internal::ContextInternals& context) const
       s += std::to_string(_count);
     }
   }
-  return (_exported ? "export " : "") + s + (_const ? " const" : "");
+  return s;
 }
 
 Type Type::void_type;
+
+Global::Global(const Type& type, bool is_const, bool is_exported)
+  : type(type)
+  , is_const(is_const)
+  , is_exported(is_exported)
+{
+}
 
 // End namespace yang.
 }

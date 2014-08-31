@@ -23,9 +23,8 @@ struct ParseData;
 class StaticChecker : public ConstAstWalker<Category> {
 public:
 
-  typedef std::unordered_map<std::string, Type> symbol_frame;
   StaticChecker(const ContextInternals& context, ParseData& data,
-                symbol_frame& functions_output, symbol_frame& globals_output);
+                function_table& functions_output, global_table& globals_output);
   ~StaticChecker();
 
 protected:
@@ -105,8 +104,8 @@ private:
 
   const ContextInternals& _context;
   ParseData& _data;
-  symbol_frame& _functions_output;
-  symbol_frame& _globals_output;
+  function_table& _functions_output;
+  global_table& _globals_output;
 
 };
 

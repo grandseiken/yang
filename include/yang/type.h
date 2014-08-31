@@ -41,10 +41,6 @@ public:
   // Return a string representation of the type.
   std::string string(const Context& context) const;
 
-  // Type qualifiers.
-  bool is_exported() const;
-  bool is_const() const;
-
   // Singular types.
   bool is_void() const;
   bool is_int() const;
@@ -69,8 +65,7 @@ public:
   bool operator==(const Type& t) const;
   bool operator!=(const Type& t) const;
 
-  // Construct types. By default neither the exported bit nor the const bit is
-  // set on created Types.
+  // Static type constructors.
   static Type void_t();
   static Type int_t();
   static Type float_t();
@@ -81,10 +76,6 @@ public:
   template<typename>
   static Type user_t(bool managed);
 
-  // Return a new type that's identical except exported.
-  Type make_exported(bool exported = true) const;
-  // Return a new type that's identical except const.
-  Type make_const(bool is_const = true) const;
   // Return a new type that's identical except managed/unmanaged.
   Type make_managed(bool managed) const;
   // Return a new type with user types erased; that is, all user types replaced
@@ -109,8 +100,6 @@ private:
     USER_TYPE,
   };
 
-  bool _exported;
-  bool _const;
   type_base _base;
   std::size_t _count;
   std::vector<Type> _elements;
@@ -120,7 +109,15 @@ private:
 
 };
 
-typedef std::unordered_map<std::string, Type> symbol_table;
+struct Global {
+  Global(const Type& type, bool is_const, bool is_exported);
+  Type type;
+  bool is_const;
+  bool is_exported;
+};
+typedef std::unordered_map<std::string, Global> global_table;
+typedef std::unordered_map<std::string, Type> type_table;
+typedef type_table function_table;
 
 template<typename T>
 Type Type::user_t(bool managed)

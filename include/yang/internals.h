@@ -39,8 +39,8 @@ struct ProgramInternals {
   std::string name;
 
   StaticData static_data;
-  symbol_table functions;
-  symbol_table globals;
+  function_table functions;
+  global_table globals;
 
   typedef std::vector<ErrorInfo> error_list;
   error_list errors;

@@ -21,8 +21,6 @@ namespace internal {
 
 struct Prefix;
 struct GenericFunction;
-typedef std::unordered_map<std::string, Type> symbol_frame;
-
 struct Vtable : StaticDataEntry {
   Vtable();
   typedef void (*destructor_t)(Prefix*);
@@ -160,7 +158,7 @@ public:
 
   // Structure functions.
   void init_structure_type(
-      const std::string& name, const symbol_frame& symbols, bool global_data);
+      const std::string& name, const type_table& symbols, bool global_data);
 
   const Structure& structure() const;
   llvm::Value* allocate_structure_value();

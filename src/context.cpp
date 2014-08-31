@@ -124,7 +124,7 @@ void Context::register_namespace(const std::string& name,
     // friendship from Instance. A nice integration of yang::Value might make it
     // a lot better.
     auto& g = context._internals->functions[pair.first];
-    g.type = pair.second.make_exported(false);
+    g.type = pair.second;
     g.ptr = std::make_shared<Function<void()>>(
         internal::FunctionConstruct<Function<void()>>()(
             instance.get_native_fp(pair.first), instance._global_data));

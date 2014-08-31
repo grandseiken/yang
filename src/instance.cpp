@@ -53,12 +53,12 @@ Instance& Instance::operator=(const Instance& instance)
   return *this;
 }
 
-const symbol_table& Instance::get_functions() const
+const function_table& Instance::get_functions() const
 {
   return _internals->program->functions;
 }
 
-const symbol_table& Instance::get_globals() const
+const global_table& Instance::get_globals() const
 {
   return _internals->program->globals;
 }
@@ -90,18 +90,17 @@ void Instance::check_global(const std::string& name, const Type& type,
         _internals->program->name +
         ": requested global `" + name + "` does not exist");
   }
-  if (type != it->second) {
+  if (type != it->second.type) {
     throw runtime_error(
         _internals->program->name + ": global `" +
-        it->second.string(*_internals->program->context) + " " + name +
+        it->second.type.string(*_internals->program->context) + " " + name +
         "` accessed via incompatible type `" +
         type.string(*_internals->program->context) + "`");
   }
-  if (for_modification &&
-      (it->second.is_const() || !it->second.is_exported())) {
+  if (for_modification && (it->second.is_const || !it->second.is_exported)) {
     throw runtime_error(
         _internals->program->name + ": global `" +
-        it->second.string(*_internals->program->context) + " " + name +
+        it->second.type.string(*_internals->program->context) + " " + name +
         "` cannot be modified externally");
   }
 }

@@ -11,6 +11,7 @@ Category::Category(const Type& type)
   : _type(type)
   , _error(false)
   , _lvalue(false)
+  , _const(false)
 {
 }
 
@@ -18,6 +19,7 @@ Category::Category(bool error)
   : _type(Type::void_t())
   , _error(error)
   , _lvalue(false)
+  , _const(false)
 {
 }
 
@@ -35,7 +37,7 @@ std::string Category::string(const ContextInternals& context, bool quote) const
 Category Category::make_const(bool is_const) const
 {
   Category c = *this;
-  c._type = type().make_const(is_const);
+  c._const = is_const;
   return _error ? *this : c;
 }
 
@@ -75,6 +77,11 @@ bool Category::is_error() const
 bool Category::is_lvalue() const
 {
   return is_error() || _lvalue;
+}
+
+bool Category::not_const() const
+{
+  return is_error() || !_const;
 }
 
 bool Category::is_void() const
@@ -147,15 +154,14 @@ bool Category::is_assign_binary_match(const Category& c) const
 
 bool Category::is(const Category& c) const
 {
-  return is_error() || c.is_error() ||
-      _type.make_const(false) == c._type.make_const(false);
+  return is_error() || c.is_error() || _type == c._type;
 }
 
 Category Category::unify(const Category& c) const
 {
   auto r = Category(true).add_tags(*this);
   if (!is_error() && !c.is_error() && is(c)) {
-    r = make_const(type().is_const() || c.type().is_const());
+    r = make_const(_const || c._const);
     r = r.make_lvalue(is_lvalue() && c.is_lvalue());
   }
   return r.add_tags(c);

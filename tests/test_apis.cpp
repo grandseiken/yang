@@ -247,8 +247,6 @@ TEST_F(ApiTest, ProgramFunctions)
   EXPECT_EQ("f", it->first);
   auto type = it->second;
 
-  EXPECT_TRUE(type.is_const());
-  EXPECT_TRUE(type.is_exported());
   ASSERT_TRUE(type.is_function());
   ASSERT_EQ(1, type.function_num_args());
   EXPECT_TRUE(type.function_arg(0).is_int());
@@ -269,33 +267,33 @@ TEST_F(ApiTest, ProgramGlobals)
   ASSERT_NE(ct, prog.get_globals().end());
   ASSERT_NE(dt, prog.get_globals().end());
 
-  EXPECT_TRUE(at->second.is_vector());
-  EXPECT_TRUE(at->second.is_ivec());
-  EXPECT_FALSE(at->second.is_int());
-  EXPECT_EQ(3, at->second.vector_size());
-  EXPECT_TRUE(at->second.is_exported());
-  EXPECT_FALSE(at->second.is_const());
+  EXPECT_TRUE(at->second.type.is_vector());
+  EXPECT_TRUE(at->second.type.is_ivec());
+  EXPECT_FALSE(at->second.type.is_int());
+  EXPECT_EQ(3, at->second.type.vector_size());
+  EXPECT_TRUE(at->second.is_exported);
+  EXPECT_FALSE(at->second.is_const);
 
-  EXPECT_TRUE(bt->second.is_vector());
-  EXPECT_TRUE(bt->second.is_fvec());
-  EXPECT_FALSE(bt->second.is_float());
-  EXPECT_EQ(3, bt->second.vector_size());
-  EXPECT_TRUE(bt->second.is_exported());
-  EXPECT_TRUE(bt->second.is_const());
+  EXPECT_TRUE(bt->second.type.is_vector());
+  EXPECT_TRUE(bt->second.type.is_fvec());
+  EXPECT_FALSE(bt->second.type.is_float());
+  EXPECT_EQ(3, bt->second.type.vector_size());
+  EXPECT_TRUE(bt->second.is_exported);
+  EXPECT_TRUE(bt->second.is_const);
 
-  EXPECT_FALSE(ct->second.is_vector());
-  EXPECT_FALSE(ct->second.is_ivec());
-  EXPECT_FALSE(ct->second.is_float());
-  EXPECT_TRUE(ct->second.is_int());
-  EXPECT_FALSE(ct->second.is_const());
-  EXPECT_FALSE(ct->second.is_exported());
+  EXPECT_FALSE(ct->second.type.is_vector());
+  EXPECT_FALSE(ct->second.type.is_ivec());
+  EXPECT_FALSE(ct->second.type.is_float());
+  EXPECT_TRUE(ct->second.type.is_int());
+  EXPECT_FALSE(ct->second.is_const);
+  EXPECT_FALSE(ct->second.is_exported);
 
-  EXPECT_TRUE(dt->second.is_int());
-  EXPECT_FALSE(dt->second.is_function());
-  EXPECT_FALSE(dt->second.is_user_type());
-  EXPECT_FALSE(dt->second.is_fvec());
-  EXPECT_TRUE(dt->second.is_const());
-  EXPECT_FALSE(dt->second.is_exported());
+  EXPECT_TRUE(dt->second.type.is_int());
+  EXPECT_FALSE(dt->second.type.is_function());
+  EXPECT_FALSE(dt->second.type.is_user_type());
+  EXPECT_FALSE(dt->second.type.is_fvec());
+  EXPECT_TRUE(dt->second.is_const);
+  EXPECT_FALSE(dt->second.is_exported);
 }
 
 TEST_F(ApiTest, InstanceFunctionMissing)
@@ -377,6 +375,8 @@ TEST_F(ApiTest, InstanceGlobalExportConst)
   EXPECT_THROW(inst.set_global("b", fvec_t<3>(0., 1., 2.)), runtime_error);
 }
 
+// TODO: why is this the correct behaviour? Surely internal globals shouldn't
+// be guaranteed to even really exist.
 TEST_F(ApiTest, InstanceGlobalInternalVar)
 {
   auto inst = test_instance();

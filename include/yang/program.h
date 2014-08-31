@@ -44,8 +44,8 @@ public:
   std::string print_ast() const;
   std::string print_ir() const;
 
-  const symbol_table& get_functions() const;
-  const symbol_table& get_globals() const;
+  const function_table& get_functions() const;
+  const global_table& get_globals() const;
 
 private:
 

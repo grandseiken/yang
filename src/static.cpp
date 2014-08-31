@@ -153,7 +153,7 @@ Category binary_type(const Category& a, const Category& b, bool is_float)
 
 StaticChecker::StaticChecker(
     const ContextInternals& context, ParseData& data,
-    symbol_frame& functions_output, symbol_frame& globals_output)
+    function_table& functions_output, global_table& globals_output)
   : _context(context)
   , _data(data)
   , _functions_output(functions_output)
@@ -431,8 +431,8 @@ void StaticChecker::before(const Node& node)
       error(node, str(node) + " applied to non-lvalue");
       return t.make_lvalue(true);
     }
-    if (t.type().is_const()) {
-      error(node, str(node) + " applied to " + str(t));
+    if (!t.not_const()) {
+      error(node, str(node) + " applied to constant");
       t = t.make_const(false);
     }
     return t;
@@ -485,8 +485,8 @@ void StaticChecker::before(const Node& node)
       error(node, "assignment to non-lvalue");
       return left.make_lvalue(true);
     }
-    if (left.type().is_const()) {
-      error(node, "assignment to " + str(left));
+    if (!left.not_const()) {
+      error(node, "assignment to constant");
       left = left.make_const(false);
     }
     return left;
@@ -541,9 +541,7 @@ void StaticChecker::before(const Node& node)
   RESULT_FOR(VECTOR_INDEX) {
     auto left = results[0];
     auto right = load(results[1]);
-    Category t = element_type(left).
-        make_lvalue(left.is_lvalue()).
-        make_const(left.type().is_const()).add_tags(left);
+    Category t = element_type(left).unify(left);
     if (!left.is_vector() || !right.is(Type::int_t())) {
       error(node, str(node) + " applied to " +
                   str(left) + " and " + str(right));
@@ -669,7 +667,8 @@ void StaticChecker::before(const Node& node)
         if (global_scope && node.type != Node::GLOBAL_ASSIGN) {
           bool exported = _scopes.back().metadata.has(EXPORT_GLOBAL);
           if (!t.is_error()) {
-            _globals_output.emplace(s, t.type().make_exported(exported));
+            _globals_output.emplace(
+                s, Global(t.type(), !t.not_const(), exported));
           }
           if (exported) {
             sym[s]->warn_writes = sym[s]->warn_reads = false;
@@ -692,7 +691,7 @@ void StaticChecker::before(const Node& node)
         // are automatically assumed to be referenced.
         if (node.type == Node::GLOBAL_ASSIGN && !t.is_error() &&
             node.int_value & Node::MODIFIER_EXPORT) {
-          _functions_output.emplace(s, t.type().make_exported(true));
+          _functions_output.emplace(s, t.type());
           sym[s]->warn_reads = false;
         }
         return t.make_lvalue(true).add_tag(sym[s]);
@@ -747,8 +746,9 @@ void StaticChecker::before(const Node& node)
               error(*ptr, "duplicate argument name `" + name + "`");
             }
             // Arguments are implicitly const!
-            Category u = (elem ? t.type().function_arg(elem - 1) :
-                                 t.type().function_return()).make_const(true);
+            Category u = elem ? t.type().function_arg(elem - 1) :
+                                t.type().function_return();
+            u = u.make_const(true);
             add_symbol(*ptr, name, u, false);
             // TODO: arguments are implicitly closed so far, since it's a bit
             // tricky to allow closed on arglists in the parser. Fix that maybe.
@@ -1062,7 +1062,7 @@ void StaticChecker::add_symbol(
   // We don't care if there are no writes to a const symbol, so we just set
   // warn_writes to false.
   unreferenced_warning = unreferenced_warning && !category.is_error();
-  sym.warn_writes = unreferenced_warning && !category.type().is_const();
+  sym.warn_writes = unreferenced_warning && category.not_const();
   sym.warn_reads = unreferenced_warning;
   scope.symbol_table.add(name, &sym);
 }
@@ -1093,7 +1093,7 @@ Category StaticChecker::load(const Category& a)
     auto sym = (symbol_t*)tag;
     sym->warn_reads = false;
   }
-  return a.is_error() ? a : a.type().make_const(false);
+  return a.is_error() ? a : a.type();
 }
 
 void StaticChecker::error(

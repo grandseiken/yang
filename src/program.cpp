@@ -151,12 +151,12 @@ std::string Program::print_ir() const
   return output;
 }
 
-const symbol_table& Program::get_functions() const
+const function_table& Program::get_functions() const
 {
   return _internals->functions;
 }
 
-const symbol_table& Program::get_globals() const
+const global_table& Program::get_globals() const
 {
   return _internals->globals;
 }
