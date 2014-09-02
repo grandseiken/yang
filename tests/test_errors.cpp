@@ -214,6 +214,7 @@ ERROR(OpZ, "x = void() {var x = 1; x *= (1, 1);}", "*=");
 ERROR(Op0, "x = void() {var x = 1; x *= 1.;}", "*=");
 ERROR(Op1, "x = void() {\"foo\" + 2;}", "+");
 ERROR(Op2, "x = void() {var x = \"foo\"; ++foo;}", "foo");
+ERROR(Op3, "x = void() {(1, 1, 1 + 1.);}", "+");
 
 // Variable declaration and assignment errors.
 ERROR(VarA, "x = void() {var a;}", ";");

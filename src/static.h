@@ -34,11 +34,6 @@ protected:
 
 private:
 
-  void enter_function(const Type& return_type);
-  const Type& current_return_type() const;
-  bool inside_function() const;
-  bool inside_type_context() const;
-
   // Symbol table management that also tracks unreferenced symbols for warnings.
   void push_symbol_tables();
   void pop_symbol_tables();

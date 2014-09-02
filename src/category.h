@@ -14,11 +14,9 @@ namespace internal {
 struct ContextInternals;
 struct Symbol;
 
-// Type together with an error flag, for expressions containing an error
-// where the type cannot be determined. Further errors involving a value
-// of this type are suppressed (to avoid cascading error messages).
-//
-// TODO: use unify() for everything when static-checking.
+// Type together with some extra data which is useful during static checking.
+// Further errors involving an error category are suppressed to avoid cascading
+// error messages.
 class Category {
 public:
 
