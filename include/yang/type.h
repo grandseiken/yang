@@ -111,10 +111,9 @@ private:
 };
 
 struct Global {
-  Global(const Type& type, bool is_const, bool is_exported);
+  Global(const Type& type, bool is_const);
   Type type;
   bool is_const;
-  bool is_exported;
 };
 typedef std::unordered_map<std::string, Global> global_table;
 typedef std::unordered_map<std::string, Type> type_table;

@@ -97,11 +97,11 @@ void Instance::check_global(const std::string& name, const Type& type,
         "` accessed via incompatible type `" +
         type.string(*_internals->program->context) + "`");
   }
-  if (for_modification && (it->second.is_const || !it->second.is_exported)) {
+  if (for_modification && it->second.is_const) {
     throw runtime_error(
-        _internals->program->name + ": global `" +
+        _internals->program->name + ": constant global `" +
         it->second.type.string(*_internals->program->context) + " " + name +
-        "` cannot be modified externally");
+        "` cannot be modified");
   }
 }
 

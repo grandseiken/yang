@@ -49,7 +49,7 @@ public:
 
 private:
 
-  void generate_ir(bool optimise);
+  void generate_ir(bool optimise, const global_table& nonexported_globals);
 
   friend class Instance;
   std::shared_ptr<internal::ProgramInternals> _internals;

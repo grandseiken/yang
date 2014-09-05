@@ -89,8 +89,10 @@ Program::Program(const Context& context, const std::string& name,
     return;
   }
 
+  global_table nonexported_globals;
   internal::StaticChecker checker(
-      *_internals->context, data, _internals->functions, _internals->globals);
+      *_internals->context, data, _internals->functions,
+      _internals->globals, nonexported_globals);
   checker.walk(*output);
   if (log_errors()) {
     _internals->functions.clear();
@@ -102,7 +104,7 @@ Program::Program(const Context& context, const std::string& name,
   // Now there's no errors so we can generate IR without worrying about
   // malformed input.
   context._internals->immutable = true;
-  generate_ir(optimise);
+  generate_ir(optimise, nonexported_globals);
 }
 
 Program::~Program()
@@ -161,7 +163,8 @@ const global_table& Program::get_globals() const
   return _internals->globals;
 }
 
-void Program::generate_ir(bool optimise)
+void Program::generate_ir(bool optimise,
+                          const global_table& nonexported_globals)
 {
   std::string error;
   llvm::InitializeNativeTarget();
@@ -184,9 +187,14 @@ void Program::generate_ir(bool optimise)
   // functions.
   _internals->engine->DisableSymbolSearching();
 
+  global_table all_globals = nonexported_globals;
+  for (const auto& pair : _internals->globals) {
+    all_globals.emplace(pair);
+  }
+
   internal::IrGenerator irgen(
-      *_internals->module, *_internals->engine, _internals->static_data,
-      _internals->globals, *_internals->context);
+      *_internals->module, *_internals->engine,
+      _internals->static_data, all_globals, *_internals->context);
   irgen.walk(*_internals->ast);
   irgen.emit_global_functions();
 

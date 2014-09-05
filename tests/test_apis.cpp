@@ -256,44 +256,26 @@ TEST_F(ApiTest, ProgramFunctions)
 TEST_F(ApiTest, ProgramGlobals)
 {
   auto prog = test_program();
-  ASSERT_EQ(4, prog.get_globals().size());
+  ASSERT_EQ(2, prog.get_globals().size());
   auto at = prog.get_globals().find("a");
   auto bt = prog.get_globals().find("b");
-  auto ct = prog.get_globals().find("c");
-  auto dt = prog.get_globals().find("d");
 
+  EXPECT_EQ(prog.get_globals().find("c"), prog.get_globals().end());
+  EXPECT_EQ(prog.get_globals().find("d"), prog.get_globals().end());
   ASSERT_NE(at, prog.get_globals().end());
   ASSERT_NE(bt, prog.get_globals().end());
-  ASSERT_NE(ct, prog.get_globals().end());
-  ASSERT_NE(dt, prog.get_globals().end());
 
   EXPECT_TRUE(at->second.type.is_vector());
   EXPECT_TRUE(at->second.type.is_ivec());
   EXPECT_FALSE(at->second.type.is_int());
   EXPECT_EQ(3, at->second.type.vector_size());
-  EXPECT_TRUE(at->second.is_exported);
   EXPECT_FALSE(at->second.is_const);
 
   EXPECT_TRUE(bt->second.type.is_vector());
   EXPECT_TRUE(bt->second.type.is_fvec());
   EXPECT_FALSE(bt->second.type.is_float());
   EXPECT_EQ(3, bt->second.type.vector_size());
-  EXPECT_TRUE(bt->second.is_exported);
   EXPECT_TRUE(bt->second.is_const);
-
-  EXPECT_FALSE(ct->second.type.is_vector());
-  EXPECT_FALSE(ct->second.type.is_ivec());
-  EXPECT_FALSE(ct->second.type.is_float());
-  EXPECT_TRUE(ct->second.type.is_int());
-  EXPECT_FALSE(ct->second.is_const);
-  EXPECT_FALSE(ct->second.is_exported);
-
-  EXPECT_TRUE(dt->second.type.is_int());
-  EXPECT_FALSE(dt->second.type.is_function());
-  EXPECT_FALSE(dt->second.type.is_user_type());
-  EXPECT_FALSE(dt->second.type.is_fvec());
-  EXPECT_TRUE(dt->second.is_const);
-  EXPECT_FALSE(dt->second.is_exported);
 }
 
 TEST_F(ApiTest, InstanceFunctionMissing)
@@ -375,20 +357,16 @@ TEST_F(ApiTest, InstanceGlobalExportConst)
   EXPECT_THROW(inst.set_global("b", fvec_t<3>(0., 1., 2.)), runtime_error);
 }
 
-// TODO: why is this the correct behaviour? Surely internal globals shouldn't
-// be guaranteed to even really exist.
 TEST_F(ApiTest, InstanceGlobalInternalVar)
 {
   auto inst = test_instance();
-  EXPECT_EQ(3, inst.get_global<int_t>("c"));
-  EXPECT_THROW(inst.set_global("c", 4), runtime_error);
+  EXPECT_THROW(inst.get_global<int_t>("c"), runtime_error);
 }
 
 TEST_F(ApiTest, InstanceGlobalInternalConst)
 {
   auto inst = test_instance();
-  EXPECT_EQ(18, inst.get_global<int_t>("d"));
-  EXPECT_THROW(inst.set_global("d", 1), runtime_error);
+  EXPECT_THROW(inst.get_global<int_t>("d"), runtime_error);
 }
 
 TEST_F(ApiTest, ErrorInfo)

@@ -48,7 +48,7 @@ TEST_F(RefcountingTest, AdvancedStoredFunctions)
 {
   auto inst = instance(R"(
 global const noop = int() {return 0;};
-global var stored = noop;
+export global var stored = noop;
 
 export pass_through = int()(int()() x)
 {

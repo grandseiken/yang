@@ -99,7 +99,7 @@ export via_return = int()
 TEST_F(FunctionTest, YangViaYang)
 {
   auto inst = instance(R"(
-global var value = 1;
+export global var value = 1;
 export add = int(int x)
 {
   return value += x;
@@ -126,7 +126,7 @@ TEST_F(FunctionTest, YangViaArgument)
   }));
 
   auto inst = instance(ctxt, R"(
-global var value = 1;
+export global var value = 1;
 export add = int(int x)
 {
   return value += x;
@@ -143,7 +143,7 @@ export add_via_context = int()
 TEST_F(FunctionTest, YangViaReturn)
 {
   auto inst = instance(R"(
-global var value = 1;
+export global var value = 1;
 export get_add = int()()
 {
   return int()
@@ -161,7 +161,7 @@ export get_add = int()()
 TEST_F(FunctionTest, YangViaOtherInstance)
 {
   const std::string source = R"(
-global var value = 1;
+export global var value = 1;
 export add = int(int x)
 {
   return value += x;
@@ -317,7 +317,7 @@ TEST_F(FunctionTest, ClosuresStored)
 {
   auto inst = instance(R"(
 global var global_var = 6;
-global var stored = int()
+export global var stored = int()
 {
   return 13;
 };

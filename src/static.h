@@ -24,7 +24,8 @@ class StaticChecker : public ConstAstWalker<Category> {
 public:
 
   StaticChecker(const ContextInternals& context, ParseData& data,
-                function_table& functions_output, global_table& globals_output);
+                function_table& functions_output,
+                global_table& globals_output, global_table& globals_internal);
   ~StaticChecker();
 
 protected:
@@ -101,6 +102,7 @@ private:
   ParseData& _data;
   function_table& _functions_output;
   global_table& _globals_output;
+  global_table& _globals_internal;
 
 };
 

@@ -153,11 +153,13 @@ Category binary_type(const Category& a, const Category& b, bool is_float)
 
 StaticChecker::StaticChecker(
     const ContextInternals& context, ParseData& data,
-    function_table& functions_output, global_table& globals_output)
+    function_table& functions_output,
+    global_table& globals_output, global_table& globals_internal)
   : _context(context)
   , _data(data)
   , _functions_output(functions_output)
   , _globals_output(globals_output)
+  , _globals_internal(globals_internal)
 {
   _scopes.emplace_back(*(Node*)nullptr, "");
 }
@@ -665,8 +667,8 @@ void StaticChecker::before(const Node& node)
         if (global_scope && node.type != Node::GLOBAL_ASSIGN) {
           bool exported = _scopes.back().metadata.has(EXPORT_GLOBAL);
           if (!t.is_error()) {
-            _globals_output.emplace(
-                s, Global(t.type(), !t.not_const(), exported));
+            (exported ? _globals_output : _globals_internal).emplace(
+                s, Global(t.type(), !t.not_const()));
           }
           if (exported) {
             sym[s]->warn_writes = sym[s]->warn_reads = false;
