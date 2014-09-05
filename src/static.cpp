@@ -419,7 +419,6 @@ void StaticChecker::before(const Node& node)
   RESULT_FOR_ANY(node.type == Node::INCREMENT || node.type == Node::DECREMENT) {
     Category t = results[0];
     for (void* tag : t.tags()) {
-      auto sym = (symbol_t*)tag;
       ((symbol_t*)tag)->warn_writes = false;
     }
 

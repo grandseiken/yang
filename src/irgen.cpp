@@ -799,8 +799,8 @@ void IrGenerator::before(const Node& node)
         }
         else {
           // Optimisation passes such as mem2reg work much better when memory
-          // locations are declared in the entry block (so they are guaranteed to
-          // execute once).
+          // locations are declared in the entry block (so they are guaranteed
+          // to execute once).
           auto llvm_function =
               (llvm::Function*)_b.b.GetInsertPoint()->getParent();
           auto& entry_block = llvm_function->getEntryBlock();

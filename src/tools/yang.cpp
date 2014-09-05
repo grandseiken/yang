@@ -39,9 +39,8 @@ int main(int argc, char** argv)
     return 1;
   }
   for (const auto& pair : program.get_globals()) {
-    if (pair.second.is_exported()) {
-      log_info("global [", pair.second.string(context), "] ", pair.first);
-    }
+    log_info("global [", (pair.second.is_const ? "const " : ""),
+             pair.second.type.string(context), "] ", pair.first);
   }
   for (const auto& pair : program.get_functions()) {
     log_info("function [", pair.second.string(context), "] ", pair.first);
