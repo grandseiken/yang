@@ -80,6 +80,8 @@ bool use_function_immediate_assign_hack(const Node& node)
 
 const Node* get_no_effect_node(const Node& node)
 {
+  // TODO: postfix increment/decrement (and possibly others) need clearer
+  // warning messages here.
   if (node.type == Node::EMPTY_EXPR || node.type == Node::CALL ||
       node.type == Node::ASSIGN_VAR || node.type == Node::ASSIGN_CONST ||
       node.type == Node::INCREMENT || node.type == Node::DECREMENT ||
@@ -416,7 +418,9 @@ void StaticChecker::before(const Node& node)
     }
     return t;
   };
-  RESULT_FOR_ANY(node.type == Node::INCREMENT || node.type == Node::DECREMENT) {
+  RESULT_FOR_ANY(node.type == Node::INCREMENT || node.type == Node::DECREMENT ||
+                 node.type == Node::POSTFIX_INCREMENT ||
+                 node.type == Node::POSTFIX_DECREMENT) {
     Category t = results[0];
     for (void* tag : t.tags()) {
       ((symbol_t*)tag)->warn_writes = false;
@@ -432,7 +436,8 @@ void StaticChecker::before(const Node& node)
     else if (!t.not_const()) {
       error(node, str(node) + " applied to constant");
     }
-    return t.make_const(false).make_lvalue(true);
+    return node.type == Node::INCREMENT || node.type == Node::DECREMENT ?
+        t.make_const(false).make_lvalue(true) : load(t);
   };
   RESULT_FOR_ANY(
       node.type == Node::ASSIGN ||

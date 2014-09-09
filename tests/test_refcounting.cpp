@@ -199,10 +199,9 @@ export loops = int()
 
   var i = 0;
   do {
-    ++i;
     const v = alloc();
     result += v();
-    if (i == 1) {
+    if (!i++) {
       continue;
     }
     result += v();

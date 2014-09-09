@@ -201,6 +201,10 @@ std::string AstPrinter::after(const Node& node, const result_list& results)
       return "(++" + results[0] + ")";
     case Node::DECREMENT:
       return "(--" + results[0] + ")";
+    case Node::POSTFIX_INCREMENT:
+      return "(" + results[0] + "++)";
+    case Node::POSTFIX_DECREMENT:
+      return "(" + results[0] + "--)";
     case Node::ASSIGN:
       return "(" + results[0] + " = " + results[1] + ")";
     case Node::ASSIGN_VAR:

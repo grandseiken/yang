@@ -340,14 +340,18 @@ void IrGenerator::before(const Node& node)
         _b.b.CreateFSub(v, load(results[0]));
     return v;
   };
-  RESULT_FOR_ANY(node.type == Node::INCREMENT || node.type == Node::DECREMENT) {
+  RESULT_FOR_ANY(node.type == Node::INCREMENT || node.type == Node::DECREMENT ||
+                 node.type == Node::POSTFIX_INCREMENT ||
+                 node.type == Node::POSTFIX_DECREMENT) {
     Value v = _b.default_for_type(
-        results[0].type, node.type == Node::INCREMENT ? 1 : -1);
+        results[0].type, node.type == Node::INCREMENT ||
+                         node.type == Node::POSTFIX_INCREMENT ? 1 : -1);
+    Value old = load(results[0]);
     v.irval = results[0].type.is_int() || results[0].type.is_ivec() ?
-        _b.b.CreateAdd(load(results[0]), v) :
-        _b.b.CreateFAdd(load(results[0]), v);
+        _b.b.CreateAdd(old, v) : _b.b.CreateFAdd(old, v);
     _scopes.back().memory_store(v, results[0]);
-    return results[0];
+    return node.type == Node::INCREMENT || node.type == Node::DECREMENT ?
+        results[0] : old;
   };
   RESULT_FOR(INT_CAST) {return f2i(load(results[0]));};
   RESULT_FOR(FLOAT_CAST) {return i2f(load(results[0]));};

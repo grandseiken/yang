@@ -215,6 +215,8 @@ ERROR(Op0, "x = void() {var x = 1; x *= 1.;}", "*=");
 ERROR(Op1, "x = void() {\"foo\" + 2;}", "+");
 ERROR(Op2, "x = void() {var x = \"foo\"; ++foo;}", "foo");
 ERROR(Op3, "x = void() {(1, 1, 1 + 1.);}", "+");
+ERROR(Op4, "x = void() {var a = 0; a--++;}", "++");
+ERROR(Op5, "x = void() {var a = 0; --a++;}", "--");
 
 // Variable declaration and assignment errors.
 ERROR(VarA, "x = void() {var a;}", ";");
@@ -324,6 +326,7 @@ WARNING(WarnVarM, "export x = void() {closed const a = 0;}", "=");
 WARNING(WarnVarN, "export x = void() {closed var a = 0; void() {a;}();}", "=");
 WARNING(WarnVarO, "global {closed const a = 0; void() {a;}();}", "=");
 WARNING(WarnVarP, "export x = void() {var a = 0; ++a;}", "=");
+WARNING(WarnVarQ, "export x = void() {var a = 0; a++;}", "++");
 
 // Whitespace warnings.
 WARNING(WarnWhitespaceA, "\texport x = void() {}", "\t");

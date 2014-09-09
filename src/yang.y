@@ -121,7 +121,7 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
 %left T_MUL T_DIV T_MOD
 %right P_UNARY_L
 %right T_POW
-%left '.' '[' '('
+%left '.' '[' '(' T_INCREMENT T_DECREMENT
 %left T_STRING_LITERAL
   /* Precedence of '.' and '::' for member selection. */
 %left T_IDENTIFIER T_SCOPE_RESOLUTION
@@ -322,7 +322,7 @@ expr
 {$$ = $1;}
   | T_FLOAT_LITERAL
 {$$ = $1;}
-  /* Precedence need to disambiguate the (incorrect regardless) ambiguous
+  /* Precedence need to disambiguate the (incorrect, regardless) ambiguous
      program: x = "a" "b" = ... */
   | string_literal %prec P_ELEM
 {$$ = $1;}
@@ -463,6 +463,10 @@ expr
 {$$ = new Node(scan, $1, Node::INCREMENT, $2);}
   | T_DECREMENT expr %prec P_UNARY_L
 {$$ = new Node(scan, $1, Node::DECREMENT, $2);}
+  | expr T_INCREMENT
+{$$ = new Node(scan, $2, Node::POSTFIX_INCREMENT, $1);}
+  | expr T_DECREMENT
+{$$ = new Node(scan, $2, Node::POSTFIX_DECREMENT, $1);}
 
   /* Type-conversion operators. */
 

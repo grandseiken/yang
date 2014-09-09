@@ -46,8 +46,7 @@
 //   from different Instances where one happens to hold a reference to a
 //   function from the other.
 // The last is the trickiest bit and should probably be optional.
-// TODO: vector swizzling and postfix increment/decrement.
-// TODO: multiple / pattern-matching assignment?
+// TODO: vector swizzling.
 //
 // Further off (helpful stuff that can be emulated without needing to be built-
 // -in right away):

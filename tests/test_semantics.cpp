@@ -60,8 +60,7 @@ export ternary_fun = int()
 {
   const a = 1 ? (1, 2) : (0, 1);
   const b = (1, 0) ? 2 * (1, 1) * 2 : (const c = 2, 3);
-  ++global_i;
-  return $+a + $*b + global_i + c;
+  return $+a + $*b + ++global_i + c;
 }
 
 export crazy_combine = int()
@@ -101,9 +100,9 @@ export lvalues = int()
 
   var d = 100;
   var e = 1;
-  (true ? d : e) = 1;
+  (true ? d : e) = (++e)--;
   d += d == 0 ? const x = 0 :
-       d == 1 ? const x = 1 :
+       d == 2 ? const x = 1 :
                 (var x = 1) += 1;
 
   const f = (3, 2, 1);
@@ -112,7 +111,7 @@ export lvalues = int()
 
   return --a + ++b + c + d + e + f[-1] + $+g;
 })");
-  EXPECT_EQ(126, inst.call<int_t>("lvalues"));
+  EXPECT_EQ(127, inst.call<int_t>("lvalues"));
 }
 
 TEST_F(SemanticsTest, Shadowing)

@@ -326,6 +326,10 @@ export pfix0 = int() {++u; return --u;}
 export pfix1 = int() {++uu; return $+--++--uu;}
 export pfix2 = int() {return [++v + 0. - --v];}
 export pfix3 = int() {++vv; return $+[--++--vv];}
+export pfix4 = int() {++u; return u-- - 1;}
+export pfix5 = int() {--uu; return 2 + $+uu++;}
+export pfix6 = int() {return [v-- + v++];}
+export pfix7 = int() {--vv; return 2 + $+[vv++];}
 
 export to_int0 = int() {return [v];}
 export to_int1 = int() {return [vv][0];}
