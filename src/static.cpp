@@ -80,8 +80,6 @@ bool use_function_immediate_assign_hack(const Node& node)
 
 const Node* get_no_effect_node(const Node& node)
 {
-  // TODO: postfix increment/decrement (and possibly others) need clearer
-  // warning messages here.
   if (node.type == Node::EMPTY_EXPR || node.type == Node::CALL ||
       node.type == Node::ASSIGN_VAR || node.type == Node::ASSIGN_CONST ||
       node.type == Node::INCREMENT || node.type == Node::DECREMENT ||
@@ -183,7 +181,17 @@ void StaticChecker::before(const Node& node)
   }
   const Node* no_effect_node = get_no_effect_node(node);
   if (is_tree_root(node) && no_effect_node) {
-    error(*no_effect_node, "operation has no effect", false);
+    // Some nodes need a clearer message about why they "have no effect" than
+    // others.
+    std::string message =
+        node.type == Node::TERNARY ?
+        "both branches of conditional operator have no effect" :
+        node.type == Node::POSTFIX_INCREMENT ?
+        "value of postfix increment is not used (suggest prefix for clarity)" :
+        node.type == Node::POSTFIX_DECREMENT ?
+        "value of postfix decrement is not used (suggest prefix for clarity)" :
+        "operation has no effect";
+    error(*no_effect_node, message, false);
   }
 
   // To make the error messages useful, the general idea here is to fall back to
