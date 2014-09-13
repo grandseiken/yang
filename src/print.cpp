@@ -231,7 +231,16 @@ std::string AstPrinter::after(const Node& node, const result_list& results)
       return "(" + output + ")";
     }
     case Node::VECTOR_INDEX:
-      return "(" + results[0] + "[" + results[1] + "])";
+    {
+      std::string output = "";
+      for (std::size_t i = 1; i < results.size(); ++i) {
+        if (output.length()) {
+          output += ", ";
+        }
+        output += results[i];
+      }
+      return "(" + results[0] + "[" + output + "])";
+    }
 
     default:
       return "";

@@ -231,6 +231,19 @@ export odd_ops = int()
   EXPECT_EQ(48, inst.call<int_t>("odd_ops"));
 }
 
+TEST_F(SemanticsTest, Swizzling)
+{
+  auto inst = instance(R"(
+export swizzling = int()
+{
+  var v = (1, 2, 3, 4, 5);
+  v = v[4, 3, 2, 1, 0];
+  const u = v[3, 4, 3];
+  return $-v + $+u + $*u[0, 0, 0, 0, 0, 0, 0, 0];
+})");
+  EXPECT_EQ(256, inst.call<int_t>("swizzling"));
+}
+
 TEST_F(SemanticsTest, Ordering)
 {
   auto inst = instance(R"(

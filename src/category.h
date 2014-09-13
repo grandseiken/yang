@@ -33,6 +33,7 @@ public:
   Category make_lvalue(bool is_lvalue) const;
   Category add_tag(void* tag) const;
   Category add_tags(const Category& category) const;
+  Category vector_element(std::size_t size) const;
 
   // Unify returns t if is(t), and otherwise an error category; it also merges
   // tags, lvalue-ness and const-ness.

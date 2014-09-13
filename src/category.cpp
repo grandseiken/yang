@@ -62,6 +62,23 @@ Category Category::add_tags(const Category& category) const
   return c;
 }
 
+Category Category::vector_element(std::size_t size) const
+{
+  if (is_error()) {
+    return *this;
+  }
+  Category c = *this;
+  if (is_int()) {
+    c._type = size == 1 ? Type::int_t() : Type::ivec_t(size);
+    return c;
+  }
+  if (is_float()) {
+    c._type = size == 1 ? Type::float_t() : Type::fvec_t(size);
+    return c;
+  }
+  return error();
+}
+
 Category Category::unify(const Category& c) const
 {
   auto r = error().add_tags(*this);

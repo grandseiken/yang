@@ -135,9 +135,7 @@ void Node::add_front(Node* node)
   ((ParseData*)yang_get_extra(scan))->orphans.erase(node);
   children.insert(children.begin(), node);
   node->parent = this;
-
-  left_tree_index = std::min(left_tree_index, node->left_tree_index);
-  right_tree_index = std::max(right_tree_index, node->right_tree_index);
+  extend_bounds(node);
 }
 
 void Node::add(Node* node)
@@ -145,9 +143,7 @@ void Node::add(Node* node)
   ((ParseData*)yang_get_extra(scan))->orphans.erase(node);
   children.push_back(node);
   node->parent = this;
-
-  left_tree_index = std::min(left_tree_index, node->left_tree_index);
-  right_tree_index = std::max(right_tree_index, node->right_tree_index);
+  extend_bounds(node);
 }
 
 std::size_t Node::get_parent_index() const

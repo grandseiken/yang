@@ -482,8 +482,11 @@ expr
  $$->set_inner_bounds($1);
  $$->extend_bounds($1);
  $$->extend_bounds($5);}
-  | expr '[' expr ']'
-{$$ = new Node(scan, $2, Node::VECTOR_INDEX, $1, $3);
+  | expr '[' expr_list ']'
+{$$ = $3;
+ $$->add_front($1);
+ $$->type = Node::VECTOR_INDEX;
+ $$->set_inner_bounds($2);
  $$->extend_bounds($4);}
   ;
 

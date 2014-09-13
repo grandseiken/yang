@@ -127,13 +127,6 @@ const Node* get_no_effect_node(const Node& node)
   return &node;
 }
 
-Category element_type(const Category& c)
-{
-  return c.is_error() ? Category::error() :
-      c.is_int() ? Type::int_t() :
-      c.is_float() ? Type::float_t() : Category::error();
-}
-
 Category numeric_type(bool is_float, std::size_t num)
 {
   return is_float ?
@@ -391,7 +384,7 @@ void StaticChecker::before(const Node& node)
       error(node, str(node) + " applied to " + str(t));
       return Category::error();
     }
-    return element_type(t);
+    return t.is_int() ? Type::int_t() : Type::float_t();
   };
   RESULT_FOR_ANY(node.type == Node::FOLD_EQ || node.type == Node::FOLD_NE ||
                  node.type == Node::FOLD_GE || node.type == Node::FOLD_LE ||
@@ -510,19 +503,15 @@ void StaticChecker::before(const Node& node)
     Category t = load(results[0]);
     std::string ts;
     bool unify_error = false;
-    std::unordered_set<Type> bad_types;
     for (std::size_t i = 0; i < results.size(); ++i) {
       if (node.children[i]->type == Node::NAMED_EXPRESSION) {
         error(*node.children[i], "named vector element");
       }
       Category u = load(results[i]);
-      if (!u.is(Type::int_t()) && !u.is(Type::float_t()) &&
-          !bad_types.count(u.type())) {
-        // Store the bad types we saw already so as not to repeat the error.
+      if (!u.is(Type::int_t()) && !u.is(Type::float_t())) {
         error(*node.children[i],
               "vector element with non-primitive type " + str(u));
         t = Category::error();
-        bad_types.insert(u.type());
       }
       if (i) {
         bool error = t.is_error();
@@ -542,14 +531,18 @@ void StaticChecker::before(const Node& node)
   };
   RESULT_FOR(VECTOR_INDEX) {
     auto left = results[0];
-    auto right = load(results[1]);
-    Category t = element_type(left).unify(left);
-    if (!left.is_vector() || !right.is(Type::int_t())) {
-      error(node, str(node) + " applied to " +
-                  str(left) + " and " + str(right));
-      return left.is_vector() ? t : Category::error().add_tags(left);
+    for (std::size_t i = 1; i < results.size(); ++i) {
+      auto index = load(results[i]);
+      if (!index.is(Type::int_t())) {
+        error(*node.children[i], "type " + str(index) + " in vector index");
+      }
     }
-    return t;
+    if (!left.is_vector()) {
+      error(node, "type " + str(left) + " cannot be indexed");
+      return Category::error().add_tags(left);
+    }
+    auto t = left.vector_element(results.size() - 1);
+    return results.size() == 2 ? t : load(t);
   };
 
 #undef RESULT_FOR

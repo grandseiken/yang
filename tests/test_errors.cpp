@@ -199,11 +199,11 @@ ERROR(OpK, "x = void() {-1 - 1.;}", "-");
 ERROR(OpL, "x = void() {(1, 1, 1, 1.);}", "(");
 ERROR(OpM, "x = void() {();}", ")");
 ERROR(OpN, "x = void() {0 0;}", "0");
-ERROR(OpO, "x = void() {((1, 1), (1, 1));}", "(");
+ERROR(OpO, "x = void() {((1, 1), (1, 1));}", "(", "(");
 ERROR(OpP, "x = void() {(x, 1);}", "x");
 ERROR(OpQ, "x = void() {(1, (1, 1));}", "(");
 ERROR(OpR, "x = void() {(1 a, 2);}", "1 a");
-ERROR(OpS, "x = void() {(1, 2)[1.];}", "[");
+ERROR(OpS, "x = void() {(1, 2)[1.];}", ".");
 ERROR(OpT, "x = void() {(1)[1];}", "[");
 ERROR(OpU, "x = void() {[0];}", "[");
 ERROR(OpV, "x = void() {1..;}", ".");
@@ -217,6 +217,9 @@ ERROR(Op2, "x = void() {var x = \"foo\"; ++foo;}", "foo");
 ERROR(Op3, "x = void() {(1, 1, 1 + 1.);}", "+");
 ERROR(Op4, "x = void() {var a = 0; a--++;}", "++");
 ERROR(Op5, "x = void() {var a = 0; --a++;}", "--");
+ERROR(Op6, "x = void() {(1, 1)[0] + 1.;}", "+");
+ERROR(Op7, "x = void() {(1, 1)[0, 1.];}", ".");
+ERROR(Op8, "x = void() {(1, 1)[0, 1] = (0, 0);}", "=");
 
 // Variable declaration and assignment errors.
 ERROR(VarA, "x = void() {var a;}", ";");
@@ -374,11 +377,12 @@ WARNING(WarnNoEffectN, "export x = int() {(x(), 1, x()); return 0;}", "1");
 WARNING(WarnNoEffectO, "export x = void() {0 ? 0 : 0;}", "?");
 WARNING(WarnNoEffectP, "export x = void() {0 ? 0 : 0 ? 0 : 0;}", "?");
 WARNING(WarnNoEffectQ, "export x = void() {0 ? 0 ? 0 : 0 : 0;}", "?");
-NO_WARNING(WarnNoEffectR, "export x = void() {void() {}();}");
-NO_WARNING(WarnNoEffectS, "export x = int() {0 && x(); return 0;}");
-NO_WARNING(WarnNoEffectT, "export x = int() {(x(), x()); return 0;}");
-NO_WARNING(WarnNoEffectU, "export x = int() {0 ? 0 : x(); return 0;}");
-NO_WARNING(WarnNoEffectV, "export x = int() {0 ? 0 : 0 ? 0 : x(); return 0;}");
+WARNING(WarnNoEffectR, "export x = void() {const x = (1, 1); x[0, 1];}", "[");
+NO_WARNING(WarnNoEffectS, "export x = void() {void() {}();}");
+NO_WARNING(WarnNoEffectT, "export x = int() {0 && x(); return 0;}");
+NO_WARNING(WarnNoEffectU, "export x = int() {(x(), x()); return 0;}");
+NO_WARNING(WarnNoEffectV, "export x = int() {0 ? 0 : x(); return 0;}");
+NO_WARNING(WarnNoEffectW, "export x = int() {0 ? 0 : 0 ? 0 : x(); return 0;}");
 
 // Lvalue and tag propagation through errors.
 ERROR_NO_WARNING(LvalueA,

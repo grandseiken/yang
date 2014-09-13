@@ -365,17 +365,31 @@ void IrGenerator::before(const Node& node)
     return v;
   };
   RESULT_FOR(VECTOR_INDEX) {
-    // Indexing out-of-bounds wraps around.
-    llvm::Value* index =
-        mod(load(results[1]), _b.constant_int(results[0].type.vector_size()));
-    Value v = results[0].type.is_ivec() ? Type::int_t() : Type::float_t();
-    if (results[0].lvalue) {
-      std::vector<llvm::Value*> indices{_b.constant_int(0), index};
-      v.irval = _b.b.CreateGEP(results[0], indices);
-      v.lvalue = true;
+    std::vector<llvm::Value*> indices;
+    for (std::size_t i = 1; i < results.size(); ++i) {
+      // Indexing out-of-bounds wraps around.
+      indices.push_back(mod(
+          load(results[i]), _b.constant_int(results[0].type.vector_size())));
     }
-    else {
-      v.irval = _b.b.CreateExtractElement(load(results[0]), index);
+    Type element = results[0].type.is_ivec() ? Type::int_t() : Type::float_t();
+    // Single-index of an lvalue produces an lvalue.
+    if (indices.size() == 1 && results[0].lvalue) {
+      std::vector<llvm::Value*> gep_indices{_b.constant_int(0), indices[0]};
+      Value v{element, _b.b.CreateGEP(results[0], gep_indices)};
+      v.lvalue = true;
+      return v;
+    }
+    // Otherwise we get a new value or vector.
+    auto left = load(results[0]);
+    if (indices.size() == 1) {
+      return {element, _b.b.CreateExtractElement(left, indices[0])};
+    }
+    Value v = results[0].type.is_ivec() ? _b.constant_ivec(0, indices.size()) :
+                                          _b.constant_fvec(0, indices.size());
+    for (std::size_t i = 0; i < indices.size(); ++i) {
+      v.irval = _b.b.CreateInsertElement(
+          v.irval, _b.b.CreateExtractElement(left, indices[i]),
+          _b.constant_int(i));
     }
     return v;
   };
