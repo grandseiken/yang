@@ -44,9 +44,9 @@ SOURCE=./src
 TESTS=./tests
 GEN=./gen
 LIB=$(LIBDIR)/libyang.a
-YANG_BINARY=$(OUTDIR)/tools/yang
-TEST_BINARY=$(OUTDIR)/tests/tests
-BINARIES=$(YANG_BINARY)
+YANGC_BINARY=$(OUTDIR)/tools/yangc
+TESTS_BINARY=$(OUTDIR)/tests/tests
+BINARIES=$(YANGC_BINARY)
 
 # Compilers and interpreters.
 export SHELL=/bin/sh
@@ -100,13 +100,13 @@ all: \
 .PHONY: lib
 lib: \
 	$(LIB)
-.PHONY: yang
-yang: \
-	$(YANG_BINARY)
+.PHONY: tools
+tools: \
+	$(YANGC_BINARY)
 .PHONY: test
 test: \
-	$(TEST_BINARY)
-	$(TEST_BINARY)
+	$(TESTS_BINARY)
+	$(TESTS_BINARY)
 	touch .tests_passed
 .PHONY: add
 add:
@@ -215,14 +215,14 @@ $(GEN)/%.y.cc: \
 	$(YACC) -p yang_ -d -v -o $@ $<
 
 # Test binary.	
-$(TEST_BINARY): \
+$(TESTS_BINARY): \
 	$(TEST_OBJECT_FILES) $(LIB) $(DEPEND_DIR)/gtest.build
 	@echo Linking./$@
 	$(CXX) -o ./$@ $(TEST_OBJECT_FILES) $(LFLAGS) \
 	    -L$(GTEST_DIR)/lib -Wl,-Bstatic -lgtest -Wl,-Bdynamic -lpthread
 .tests_passed: \
-	$(TEST_BINARY)
-	$(TEST_BINARY)
+	$(TESTS_BINARY)
+	$(TESTS_BINARY)
 	touch ./$@
 
 # Ensure a directory exists.
