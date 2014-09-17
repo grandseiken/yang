@@ -11,22 +11,21 @@
 namespace yang {
 
 Instance::Instance(const Program& program)
-  : _internals(nullptr)
-  , _global_data(nullptr)
+  : _global_data(nullptr)
+  , _program(program._internals)
 {
   if (!program.success()) {
     throw runtime_error(
         program._internals->name +
         ": instantiating program which did not compile successfully");
   }
-  _internals = new internal::InstanceInternals{program._internals};
-
   void* global_alloc = get_native_fp("!global_alloc");
   typedef void* (*alloc_fp)();
   _global_data = ((alloc_fp)(std::intptr_t)global_alloc)();
 
-  *(void**)_global_data = _internals;
+  *(internal::ProgramInternals**)_global_data = program._internals;
   internal::update_structure_refcount((internal::Prefix*)_global_data, 1);
+  internal::update_structure_refcount((internal::Prefix*)_program, 1);
 }
 
 Instance::~Instance()
@@ -35,8 +34,8 @@ Instance::~Instance()
 }
 
 Instance::Instance(const Instance& instance)
-  : _internals(instance._internals)
-  , _global_data(instance._global_data)
+  : _global_data(instance._global_data)
+  , _program(instance._program)
 {
   internal::update_structure_refcount((internal::Prefix*)_global_data, 1);
 }
@@ -47,25 +46,25 @@ Instance& Instance::operator=(const Instance& instance)
     return *this;
   }
   internal::update_structure_refcount((internal::Prefix*)_global_data, -1);
-  _internals = instance._internals;
   _global_data = instance._global_data;
+  _program = instance._program;
   internal::update_structure_refcount((internal::Prefix*)_global_data, 1);
   return *this;
 }
 
 const function_table& Instance::get_functions() const
 {
-  return _internals->program->functions;
+  return _program->functions;
 }
 
 const global_table& Instance::get_globals() const
 {
-  return _internals->program->globals;
+  return _program->globals;
 }
 
 void* Instance::get_native_fp(const std::string& name) const
 {
-  return get_native_fp(_internals->program->module->getFunction(name));
+  return get_native_fp(_program->module->getFunction(name));
 }
 
 void* Instance::get_native_fp(llvm::Function* ir_fp) const
@@ -78,47 +77,46 @@ void* Instance::get_native_fp(llvm::Function* ir_fp) const
   // way around this (technically) defined behaviour. I guess it should work
   // in practice since the whole native codegen thing is inherently machine-
   // -dependent anyway.
-  return _internals->program->engine->getPointerToFunction(ir_fp);
+  return _program->engine->getPointerToFunction(ir_fp);
 }
 
 void Instance::check_global(const std::string& name, const Type& type,
                             bool for_modification) const
 {
-  auto it = _internals->program->globals.find(name);
-  if (it == _internals->program->globals.end()) {
+  auto it = _program->globals.find(name);
+  if (it == _program->globals.end()) {
     throw runtime_error(
-        _internals->program->name +
-        ": requested global `" + name + "` does not exist");
+        _program->name + ": requested global `" + name + "` does not exist");
   }
   if (type != it->second.type) {
     throw runtime_error(
-        _internals->program->name + ": global `" +
-        it->second.type.string(*_internals->program->context) + " " + name +
-        "` accessed via incompatible type `" +
-        type.string(*_internals->program->context) + "`");
+        _program->name + ": global `" +
+        it->second.type.string(*_program->context)
+        + " " + name + "` accessed via incompatible type `" +
+        type.string(*_program->context) + "`");
   }
   if (for_modification && it->second.is_const) {
     throw runtime_error(
-        _internals->program->name + ": constant global `" +
-        it->second.type.string(*_internals->program->context) + " " + name +
+        _program->name + ": constant global `" +
+        it->second.type.string(*_program->context) + " " + name +
         "` cannot be modified");
   }
 }
 
 void Instance::check_function(const std::string& name, const Type& type) const
 {
-  auto it = _internals->program->functions.find(name);
-  if (it == _internals->program->functions.end()) {
+  auto it = _program->functions.find(name);
+  if (it == _program->functions.end()) {
     throw runtime_error(
-        _internals->program->name +
+        _program->name +
         ": requested function `" + name + "` does not exist");
   }
   if (type != it->second) {
     throw runtime_error(
-        _internals->program->name + ": function `" +
-        it->second.string(*_internals->program->context) +
+        _program->name + ": function `" +
+        it->second.string(*_program->context) +
         " " + name + "` accessed via incompatible type `" +
-        type.string(*_internals->program->context) + "`");
+        type.string(*_program->context) + "`");
   }
 }
 

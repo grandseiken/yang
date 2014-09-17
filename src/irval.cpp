@@ -21,10 +21,11 @@ namespace std {
 namespace yang {
 namespace internal {
 
-Vtable::Vtable()
-  : destructor(nullptr)
-  , refout_count(0)
-  , refout_query(nullptr)
+Vtable::Vtable(destructor_t dtor,
+               std::size_t refout_count, refout_query_t query)
+  : destructor(dtor)
+  , refout_count(refout_count)
+  , refout_query(query)
 {
 }
 
@@ -261,10 +262,9 @@ Vtable* Builder::create_vtable(
     llvm::Function* destructor,
     std::size_t refout_count, llvm::Function* refout_query)
 {
-  Vtable* vtable = new Vtable;
+  Vtable* vtable = new Vtable(nullptr, refout_count, nullptr);
   static_data.emplace_back(vtable);
 
-  vtable->refout_count = refout_count;
   generated_function_pointers.emplace_back(
       (void**)&vtable->destructor, destructor);
   generated_function_pointers.emplace_back(
@@ -277,7 +277,6 @@ LexScope::LexScope(Builder& builder, bool create_functions)
   , metadata(nullptr)
   , _b(builder)
   , _cleanup_structures(nullptr)
-  , _destroy_internals(nullptr)
   , _update_refcount(nullptr)
 {
   _rc_locals.emplace_back();
@@ -288,9 +287,6 @@ LexScope::LexScope(Builder& builder, bool create_functions)
   _cleanup_structures = _b.get_native_function(
       "cleanup_structures", (void_fp)&cleanup_structures,
       llvm::FunctionType::get(_b.void_type(), false));
-  _destroy_internals = _b.get_native_function(
-      "destroy_internals", (void_fp)&::yang::internal::destroy_internals,
-      llvm::FunctionType::get(_b.void_type(), _b.void_ptr_type(), false));
 
   // Create the internal general refcounting function.
   auto rc_type = llvm::FunctionType::get(
@@ -345,7 +341,6 @@ LexScope LexScope::next_lex_scope() const
 {
   LexScope scope(_b, false);
   scope._cleanup_structures = _cleanup_structures;
-  scope._destroy_internals = _destroy_internals;
   scope._update_refcount = _update_refcount;
   return scope;
 }
@@ -424,12 +419,7 @@ void LexScope::init_structure_type(
     update_reference_count(memory_load(&*it, pair.first), -1);
   }
   llvm::Value* parent = memory_load(Type::void_t(), structure_ptr(&*it, 0));
-  if (global_data) {
-    _b.b.CreateCall(_destroy_internals, parent);
-  }
-  else {
-    update_reference_count(nullptr, parent, -1);
-  }
+  update_reference_count(nullptr, parent, -1);
   _b.b.CreateRetVoid();
 
   // Create the reference query function.

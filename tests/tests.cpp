@@ -140,10 +140,4 @@ int main(int argc, char** argv)
 {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
-  // TODO: in fact, this is leaking a very small amount of memory that
-  // doesn't seem to be down to the test framework itself. A few kilobytes per
-  // second. It's kind of weird though: seems to occur when on program
-  // instantiation where the program has a few globals, but not if the program
-  // is empty. That doesn't make too much sense. Does "top" report actual
-  // memory usage or is it maybe just fragmentation overhead or something?
 }

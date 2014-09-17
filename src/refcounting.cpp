@@ -121,12 +121,6 @@ void cleanup_cyclic_structures()
 namespace yang {
 namespace internal {
 
-std::unordered_set<InstanceInternals*>& get_instance_cleanup_list()
-{
-  static std::unordered_set<InstanceInternals*> cleanup_list;
-  return cleanup_list;
-}
-
 std::unordered_set<Prefix*>& get_structure_cleanup_list()
 {
   static std::unordered_set<Prefix*> cleanup_list;
@@ -197,23 +191,11 @@ void cleanup_structures()
       free(v);
     }
 
-    // Clean up program internals.
-    for (InstanceInternals* internals : get_instance_cleanup_list()) {
-      delete internals;
-    }
-    get_instance_cleanup_list().clear();
-
     // This probably shouldn't be done so often? But, for destructor semantics,
     // it's nice for this function to be idempotent...
     cleanup_cyclic_structures();
   }
-  while (!get_structure_cleanup_list().empty() ||
-         !get_instance_cleanup_list().empty());
-}
-
-void destroy_internals(InstanceInternals* global_parent)
-{
-  get_instance_cleanup_list().insert(global_parent);
+  while (!get_structure_cleanup_list().empty());
 }
 
 // End namespace yang::internal.

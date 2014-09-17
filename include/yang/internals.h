@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <vector>
 #include "error.h"
+#include "typedefs.h"
 #include "type.h"
 
 namespace llvm {
@@ -19,8 +20,10 @@ namespace llvm {
 
 namespace yang {
 namespace internal {
-struct Node;
 struct ContextInternals;
+struct Node;
+struct Prefix;
+struct Vtable;
 
 struct StaticDataEntry {
   virtual ~StaticDataEntry() {}
@@ -30,8 +33,12 @@ typedef std::vector<std::unique_ptr<StaticDataEntry>> StaticData;
 // Data for a Program that is preserved as long as an Instance or some closure
 // structure needs it.
 struct ProgramInternals {
-  ProgramInternals(const std::shared_ptr<ContextInternals>& context,
-                   const std::string& name);
+  ~ProgramInternals();
+
+  // This must match the Prefix struct declared in src/refcounting.h.
+  Prefix* parent;
+  int_t refcount;
+  Vtable* vtable;
 
   // As well as looking up things in the Context, programs need to ensure that
   // RefCountedNativeFunctions they depend on are kept alive.
@@ -46,15 +53,10 @@ struct ProgramInternals {
   error_list errors;
   error_list warnings;
 
-  std::unique_ptr<internal::Node> ast;
+  std::unique_ptr<Node> ast;
   std::unique_ptr<llvm::LLVMContext> llvm_context;
   std::unique_ptr<llvm::ExecutionEngine> engine;
   llvm::Module* module;
-};
-
-// Same for instance.
-struct InstanceInternals {
-  std::shared_ptr<const ProgramInternals> program;
 };
 
 // End namespace yang::internal.

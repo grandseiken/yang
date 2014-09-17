@@ -22,9 +22,9 @@ namespace internal {
 struct Prefix;
 struct GenericFunction;
 struct Vtable : StaticDataEntry {
-  Vtable();
   typedef void (*destructor_t)(Prefix*);
   typedef void (*refout_query_t)(Prefix*, Prefix**);
+  Vtable(destructor_t dtor, std::size_t refout_count, refout_query_t query);
 
   // Destructor pointer.
   destructor_t destructor;
@@ -212,7 +212,6 @@ private:
 
   // Hooks out to the refcount runtime.
   llvm::Function* _cleanup_structures;
-  llvm::Function* _destroy_internals;
   llvm::Function* _update_refcount;
 
 };

@@ -25,6 +25,10 @@ public:
           std::string* diagnostic_output = nullptr);
   ~Program();
 
+  // Program is just a handle; copies still refer to the same object.
+  Program(const Program&);
+  Program& operator=(const Program&);
+
   // By default, errors and warnings will be printed to standard error. By
   // passing diagnostic_output to the Program constructor, this behaviour can be
   // overridden, and something else can be done with the diagnostic information.
@@ -52,7 +56,7 @@ private:
   void generate_ir(bool optimise, const global_table& nonexported_globals);
 
   friend class Instance;
-  std::shared_ptr<internal::ProgramInternals> _internals;
+  internal::ProgramInternals* _internals;
 
 };
 

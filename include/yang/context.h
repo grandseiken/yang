@@ -53,7 +53,8 @@
 // TODO: a standard library (as a Context?), possibly including some built-in
 // data structures (like a generic map<K, V> type).
 // TODO: add a layer of abstraction so the LLVM backend can be swapped out
-// easily (e.g. for a bytecode backend).
+// easily (e.g. for a bytecode backend). In fact, the bytecode backend should
+// really be an intermediate step for the LLVM backend.
 namespace yang {
 class Instance;
 

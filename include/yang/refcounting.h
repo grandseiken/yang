@@ -21,7 +21,6 @@ template<typename>
 struct ValueInitialise;
 template<typename>
 class NativeFunction;
-struct InstanceInternals;
 
 template<typename...>
 struct TrampolineCallArgs;
@@ -51,8 +50,6 @@ struct Prefix {
   void* data;
 };
 
-// Get list of instance internals which are to be cleaned up.
-std::unordered_set<InstanceInternals*>& get_instance_cleanup_list();
 // Get list of structures which are to be cleaned up.
 std::unordered_set<Prefix*>& get_structure_cleanup_list();
 // Get list of structures which may be involved in a cycle.
@@ -63,8 +60,6 @@ void update_structure_refcount(Prefix* structure, int_t change);
 void update_function_refcount(NativeFunction<void>* target, int_t change);
 // Clean up structures that are no longer referenced.
 void cleanup_structures();
-// Destroy program internals at some point.
-void destroy_internals(InstanceInternals* global_parent);
 
 // End namespace internal.
 }

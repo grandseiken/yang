@@ -26,9 +26,7 @@ public:
   Instance(const Program& program);
   ~Instance();
 
-  // Since Instance is just a handle, copying the object doesn't copy the
-  // global variables and so on, it's still the same Instance. Hopefully that
-  // isn't too confusing.
+  // Instance is just a handle; copies still represent the same object.
   Instance(const Instance&);
   Instance& operator=(const Instance&);
 
@@ -65,8 +63,8 @@ private:
   // Similarly for functions.
   void check_function(const std::string& name, const Type& type) const;
 
-  internal::InstanceInternals* _internals;
   void* _global_data;
+  internal::ProgramInternals* _program;
 
 };
 

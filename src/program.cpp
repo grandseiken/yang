@@ -25,17 +25,16 @@ int yang_parse(yyscan_t scan);
 namespace yang {
 namespace internal {
 
-ProgramInternals::ProgramInternals(
-    const std::shared_ptr<ContextInternals>& context,
-    const std::string& name)
-  : context(context)
-  , name(name)
-  , ast(nullptr)
-  , llvm_context(new llvm::LLVMContext)
-  , engine(nullptr)
-  , module(nullptr)
+ProgramInternals::~ProgramInternals()
 {
 }
+
+// ProgramInternals vtable.
+void program_internals_destructor(Prefix* program_internals)
+{
+  ((ProgramInternals*)program_internals)->~ProgramInternals();
+}
+Vtable program_internals_vtable(program_internals_destructor, 0, nullptr);
 
 // End namespace internal.
 }
@@ -43,8 +42,22 @@ ProgramInternals::ProgramInternals(
 Program::Program(const Context& context, const std::string& name,
                  const std::string& contents, bool optimise,
                  std::string* diagnostic_output)
-  : _internals(new internal::ProgramInternals(context._internals, name))
+  : _internals(nullptr)
 {
+  // The internals will be freed by the refcount system, so must be allocated
+  // with malloc.
+  internal::cleanup_structures();
+  void* memory = malloc(sizeof(internal::ProgramInternals));
+  _internals = new (memory) internal::ProgramInternals;
+
+  _internals->parent = nullptr;
+  _internals->refcount = 0;
+  _internals->vtable = &internal::program_internals_vtable;
+  _internals->context = context._internals;
+  _internals->name = name;
+  _internals->module = nullptr;
+  internal::update_structure_refcount((internal::Prefix*)_internals, 1);
+
   internal::ParseData data(name, contents);
   yyscan_t scan = nullptr;
 
@@ -91,24 +104,44 @@ Program::Program(const Context& context, const std::string& name,
 
   global_table nonexported_globals;
   internal::StaticChecker checker(
-      *_internals->context, data, _internals->functions,
+      *context._internals, data, _internals->functions,
       _internals->globals, nonexported_globals);
+
   checker.walk(*output);
   if (log_errors()) {
     _internals->functions.clear();
     _internals->globals.clear();
     return;
   }
-  _internals->ast = std::move(output);
 
   // Now there's no errors so we can generate IR without worrying about
   // malformed input.
+  _internals->ast = std::move(output);
+  _internals->llvm_context.reset(new llvm::LLVMContext);
   context._internals->immutable = true;
   generate_ir(optimise, nonexported_globals);
 }
 
 Program::~Program()
 {
+  internal::update_structure_refcount((internal::Prefix*)_internals, -1);
+}
+
+Program::Program(const Program& program)
+  : _internals(program._internals)
+{
+  internal::update_structure_refcount((internal::Prefix*)_internals, 1);
+}
+
+Program& Program::operator=(const Program& program)
+{
+  if (this == &program) {
+    return *this;
+  }
+  internal::update_structure_refcount((internal::Prefix*)_internals, -1);
+  _internals = program._internals;
+  internal::update_structure_refcount((internal::Prefix*)_internals, 1);
+  return *this;
 }
 
 const Program::error_list& Program::get_errors() const
@@ -192,9 +225,7 @@ void Program::generate_ir(bool optimise,
     all_globals.emplace(pair);
   }
 
-  internal::IrGenerator irgen(
-      *_internals->module, *_internals->engine,
-      _internals->static_data, all_globals, *_internals->context);
+  internal::IrGenerator irgen(*_internals, all_globals);
   irgen.walk(*_internals->ast);
   irgen.emit_global_functions();
 

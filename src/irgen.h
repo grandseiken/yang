@@ -17,22 +17,17 @@
 #include "walker.h"
 
 namespace llvm {
-  class ExecutionEngine;
   class Function;
-  class Module;
-  class Type;
 }
 
 namespace yang {
 namespace internal {
-struct ContextInternals;
+struct ProgramInternals;
 
 class IrGenerator : public IrCommon, public ConstAstWalker<Value> {
 public:
 
-  IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
-              StaticData& static_data, const global_table& globals,
-              const ContextInternals& context);
+  IrGenerator(ProgramInternals& program_internals, const global_table& globals);
 
   // Emit functions for allocating, freeing, reading and writing to instances
   // of the global structure. This should be called after the tree has been
@@ -80,7 +75,7 @@ private:
       const Node& node, const Value& value,
       bool to_bool = false, bool with_ands = false, bool right_assoc = false);
 
-  const ContextInternals& _context;
+  ProgramInternals& _program_internals;
   // List of static initialisation/destruction functions.
   std::vector<llvm::Function*> _global_inits;
   std::vector<llvm::Function*> _global_destructors;

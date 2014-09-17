@@ -5,7 +5,7 @@
 #include "tests.h"
 
 // TODO: instrument memory allocation and garbage collection and make sure
-// everything is actually getting destroyed at the end.
+// everything is actually getting destroyed at the end and there are no leaks.
 //
 // Also see if this can be used to provide useful debugging diagnostics and
 // statistics on memory usage, refcount contention, etc.

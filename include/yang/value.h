@@ -19,7 +19,8 @@ namespace yang {
 // example of the kind of place this could really help. Ideally that should
 // be easily implementable in terms of the rest of the public interface of
 // Context.
-// Also, printing arbitrary return values in e.g. the example compiler tool.
+// Ideally the example compiler tool should be able to use this to print
+// arbitrary return values or do a simple REPL.
 class Value {
 public:
 

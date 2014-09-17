@@ -33,11 +33,11 @@ namespace internal {
 // all over the place even when analysis could show it's unnecessary. Fix that.
 // Write benchmarks to show improvement.
 
-IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
-                         StaticData& static_data, const global_table& globals,
-                         const ContextInternals& context)
-  : IrCommon(module, engine, static_data)
-  , _context(context)
+IrGenerator::IrGenerator(ProgramInternals& program_internals,
+                         const global_table& globals)
+  : IrCommon(*program_internals.module, *program_internals.engine,
+             program_internals.static_data)
+  , _program_internals(program_internals)
   , _chunk(_b)
 {
   _scopes.emplace_back(_b);
@@ -65,7 +65,7 @@ IrGenerator::IrGenerator(llvm::Module& module, llvm::ExecutionEngine& engine,
   // We need to generate a reverse trampoline function for each function in the
   // Context. User type member functions are present in the context function map
   // as well as free functions.
-  for (const auto& pair : context.functions) {
+  for (const auto& pair : program_internals.context->functions) {
     get_reverse_trampoline_function(pair.second.type, false);
   }
 }
@@ -232,7 +232,7 @@ void IrGenerator::before(const Node& node)
   CONSTANT_FOR(IDENTIFIER) {
     // In type-context, we just want to return a user type.
     if (_scopes.back().metadata.has(LexScope::TYPE_EXPR_CONTEXT)) {
-      return _context.type_lookup(node.string_value);
+      return _program_internals.context->type_lookup(node.string_value);
     }
 
     // Load the variable, if it's there. We must be careful to only return
@@ -244,12 +244,14 @@ void IrGenerator::before(const Node& node)
     }
 
     // It must be a context function.
-    const auto& t = _context.constructor_lookup(node.string_value);
+    const auto& t =
+        _program_internals.context->constructor_lookup(node.string_value);
     if (!t.ctor.type.is_void()) {
       Value v = get_constructor(node.string_value);
       return _b.function_value(v.type, v, get_global_struct());
     }
-    const auto& f = _context.function_lookup(node.string_value);
+    const auto& f =
+        _program_internals.context->function_lookup(node.string_value);
     if (!f.type.is_void()) {
       return _b.function_value(f);
     }
@@ -272,10 +274,9 @@ void IrGenerator::before(const Node& node)
       s = (StaticString*)_b.static_data[it->second].get();
     }
 
-    // TODO: string literal keep-alives the instance it was spawned from
-    // (get_global_struct()), when it really only needs to keep-alive the
-    // program.
-    llvm::Value* chunk = _chunk.allocate_closure_struct(get_global_struct());
+    // String literal only keeps alive the program for the static data.
+    llvm::Value* chunk = _chunk.allocate_closure_struct(
+        _b.constant_ptr(&_program_internals));
     _chunk.memory_store(_b.constant_ptr(s->value.c_str()), chunk, "object");
     return Value(type_of<Ref<const char>>(),
                  _b.b.CreateBitCast(chunk, _b.void_ptr_type()));
@@ -1063,7 +1064,7 @@ Value IrGenerator::get_member_function(
     return jt->second;
   }
 
-  const auto& cf = _context.member_lookup(type, name);
+  const auto& cf = _program_internals.context->member_lookup(type, name);
   std::vector<Type> args;
   for (std::size_t i = 1; i < cf.type.function_num_args(); ++i) {
     args.push_back(cf.type.function_arg(i));
@@ -1110,7 +1111,7 @@ Value IrGenerator::get_constructor(const std::string& type)
 
   // Create the destructor which calls the user-type destructor (and usual chunk
   // destructor).
-  const auto& ct = _context.constructor_lookup(type);
+  const auto& ct = _program_internals.context->constructor_lookup(type);
   auto destructor_type = (llvm::FunctionType*)
       _chunk.structure().destructor->getType()->getPointerElementType();
   auto destructor = llvm::Function::Create(
