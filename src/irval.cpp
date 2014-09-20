@@ -9,6 +9,7 @@
 #include <yang/context.h>
 #include <yang/refcounting.h>
 #include <yang/type_info.h>
+#include "memory.h"
 
 namespace std {
   std::size_t hash<yang::internal::LexScope::metadata_t>::operator()(
@@ -246,7 +247,7 @@ llvm::Function* Builder::get_native_function(
     const std::string& name, void_fp native_fp,
     llvm::FunctionType* type) const
 {
-  // We use special !-prefixed names for native functions so that they can't
+  // We use special !-prefixed names for runtime functions so that they can't
   // be confused with regular user-defined functions (e.g. "malloc" is not
   // reserved).
   llvm::Function* llvm_function = llvm::Function::Create(
@@ -477,7 +478,7 @@ llvm::Value* LexScope::allocate_structure_value()
 
   _b.b.CreateCall(_cleanup_structures);
   auto malloc_ptr = _b.get_native_function(
-      "malloc", (void_fp)&malloc,
+      "malloc", (void_fp)YANG_MALLOC,
       llvm::FunctionType::get(_structure.type, llvm_size_t, false));
 
   // Compute sizeof(type) by indexing one past the null pointer.

@@ -19,11 +19,13 @@ YangTest::~YangTest()
   // Ensure destructors (which may refer to members of the test fixture) are
   // called before it is destroyed.
   force_collection();
+  // And test that everything allocated was destroyed (only in debug mode!).
+  EXPECT_EQ(0, yang::heap_objects_count()) << yang::heap_dump();
 }
 
 void YangTest::force_collection()
 {
-  instance("");
+  yang::internal::cleanup_structures();
 }
 
 std::size_t YangTest::get_managed_count()

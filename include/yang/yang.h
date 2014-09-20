@@ -11,8 +11,9 @@
 #include "function.h"
 #include "instance.h"
 #include "program.h"
-#include "type.h"
+#include "refcounting.h"
 #include "typedefs.h"
+#include "type.h"
 #include "value.h"
 
 #endif

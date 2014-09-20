@@ -39,8 +39,8 @@
 // - AST orphans list
 // - YangTrampolineGlobals
 // - possibly cpp_trampoline_lookup_map
-// - static refcount deletion lists; these need to be per-something somehow
-//   so that objects added temporarily don't get deallocated!
+// - static refcount deletion lists / instrumented heap / etc need to be per-
+//   -something somehow so that objects added temporarily don't get deallocated!
 // - global data / closure data structure access. Both for concurrent invocation
 //   of functions from the same Instance, and concurrent invocation of functions
 //   from different Instances where one happens to hold a reference to a

@@ -64,6 +64,10 @@ void cleanup_structures();
 // End namespace internal.
 }
 
+// Functions for debugging refcounting or memory issues.
+std::size_t heap_objects_count();
+std::string heap_dump();
+
 // Refcount a managed user type on the C++ side.
 template<typename T>
 class Ref {

@@ -4,9 +4,11 @@
 //============================================================================//
 #include <yang/refcounting.h>
 
+#include <sstream>
 #include <yang/internals.h>
 #include <yang/native.h>
 #include "irval.h"
+#include "memory.h"
 
 // All of this is first draft and very naive.
 // TODO: use "modern" reference counting instead. That is:
@@ -188,7 +190,7 @@ void cleanup_structures()
     // call all of their destructors before freeing any: otherwise there are
     // undefined writes.
     for (Prefix* v : to_free) {
-      free(v);
+      YANG_FREE(v);
     }
 
     // This probably shouldn't be done so often? But, for destructor semantics,
@@ -198,6 +200,38 @@ void cleanup_structures()
   while (!get_structure_cleanup_list().empty());
 }
 
-// End namespace yang::internal.
+// End namespace internal.
 }
+
+std::size_t heap_objects_count()
+{
+  return internal::get_instrumented_heap().size();
+}
+
+std::string heap_dump()
+{
+  std::stringstream ss;
+  ss << heap_objects_count() << " total object(s) allocated on Yang heap\n\n";
+  for (internal::Prefix* v : internal::get_instrumented_heap()) {
+    ss << "Object " << v << ":\n\thas vtable " << v->vtable <<
+        "\n\thas reference count " << v->refcount <<
+        "\n\thas parent object " << v->parent << "\n";
+
+    if (!v->vtable->refout_count) {
+      ss << "\n";
+      continue;
+    }
+
+    internal::Prefix** output = new internal::Prefix*[v->vtable->refout_count];
+    v->vtable->refout_query(v, output);
+    for (std::size_t i = 0; i < v->vtable->refout_count; ++i) {
+      ss << "\tholds a reference to object " << output[i] << "\n";
+    }
+    delete output;
+    ss << "\n";
+  }
+  return ss.str();
+}
+
+// End namespace yang.
 }

@@ -15,6 +15,7 @@
 #include "ast.h"
 #include "irgen.h"
 #include "log.h"
+#include "memory.h"
 #include "print.h"
 #include "static.h"
 #include "../gen/yang.y.h"
@@ -45,9 +46,9 @@ Program::Program(const Context& context, const std::string& name,
   : _internals(nullptr)
 {
   // The internals will be freed by the refcount system, so must be allocated
-  // with malloc.
+  // with YANG_MALLOC.
   internal::cleanup_structures();
-  void* memory = malloc(sizeof(internal::ProgramInternals));
+  void* memory = YANG_MALLOC(sizeof(internal::ProgramInternals));
   _internals = new (memory) internal::ProgramInternals;
 
   _internals->parent = nullptr;

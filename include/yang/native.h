@@ -25,6 +25,9 @@ class NativeFunction {
 // Class for dynamic storage of an arbitrary C++ function. Includes a reference-
 // -counting mechanism, as Yang code may hold references to these objects for
 // arbitrary lengths of time.
+// TODO: urgh. Presumably, since all Yang needs is a function pointer, we can
+// keep that internally as a Prefix and get rid of the need for two separate
+// reference-counting systems?
 template<>
 class NativeFunction<void> {
 public:
