@@ -203,12 +203,13 @@ template<typename R, typename... Args>
 struct ValueInitialise<Function<R(Args...)>> {
   void operator()(Function<R(Args...)>& function) const
   {
-    // TODO: why isn't this doing the native ref as well? Seems like that should
-    // fail to refcount native functions returned through yang code properly.
-    // Rewrite this nonsense anyway, regardless.
+    // TODO: rewrite this nonsense anyway, regardless.
     // And get rid of all the bloody friend things that are necessary.
     if (function._env_ref._structure) {
       internal::update_structure_refcount(function._env_ref._structure, 1);
+    }
+    else {
+      function._native_ref = (NativeFunctionInternals*)function._function;
     }
   }
 };

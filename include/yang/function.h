@@ -131,7 +131,8 @@ private:
   internal::RefcountHook<internal::NativeFunctionInternals> _native_ref;
   internal::RefcountHook<internal::Prefix> _env_ref;
 
-  // Bare function variable (necessary for storing Yang functions).
+  // Bare function variable (necessary for storing not-refcounted Yang
+  // functions).
   void* _function;
 
 };
@@ -284,7 +285,7 @@ Function<R(Args...)>::Function()
 
 template<typename R, typename... Args>
 Function<R(Args...)>::Function(void* function, void* env)
-  : _native_ref(nullptr)
+  : _native_ref(env ? nullptr : (internal::NativeFunctionInternals*)function)
   , _env_ref((internal::Prefix*)env)
   , _function(function)
 {

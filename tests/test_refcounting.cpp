@@ -315,6 +315,70 @@ TEST_F(RefcountingTest, Objects)
   EXPECT_EQ(17, Instance(jnst).call<int_t>("g"));
 }
 
+TEST_F(RefcountingTest, YangViaYang)
+{
+  typedef Function<int_t()> intf_t;
+  auto f = make_fn([]{return int_t(0);});
+  {
+    auto inst = instance(R"(
+export f = int()()
+{
+  closed var t = 0;
+  return int()
+  {
+    return t++;
+  };
+})");
+    f = inst.call<intf_t>("f");
+  }
+  force_collection();
+  EXPECT_EQ(f(), 0);
+  EXPECT_EQ(f(), 1);
+  EXPECT_EQ(f(), 2);
+}
+
+TEST_F(RefcountingTest, NativeViaYang)
+{
+  typedef Function<int_t()> intf_t;
+  auto f = make_fn([]{return int_t(0);});
+  {
+    auto ctxt = context();
+    ctxt.register_function("from_context", make_fn([]{
+      return int_t(-1);
+    }));
+
+    auto inst = instance(ctxt, R"(
+export f = int()()
+{
+  return from_context;
+})");
+    f = inst.call<intf_t>("f");
+  }
+  force_collection();
+  EXPECT_EQ(f(), -1);
+}
+
+TEST_F(RefcountingTest, ReverseNativeViaYang)
+{
+  typedef Function<int_t()> intf_t;
+  auto f = make_fn([]{return int_t(0);});
+  {
+    auto ctxt = context();
+    ctxt.register_function("from_yang", make_fn([&](intf_t g){
+      f = g;
+    }));
+
+    auto inst = instance(ctxt, R"(
+export f = void(int() g)
+{
+  from_yang(g);
+})");
+    inst.call<void>("f", make_fn([]{return int_t(-1);}));
+  }
+  force_collection();
+  EXPECT_EQ(-1, f());
+}
+
 TEST_F(RefcountingTest, Strings)
 {
   auto ctxt = context();
