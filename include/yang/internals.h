@@ -6,9 +6,9 @@
 #define YANG_INCLUDE_YANG_INSTERNALS_H
 
 #include <memory>
-#include <unordered_map>
 #include <vector>
 #include "error.h"
+#include "refcounting.h"
 #include "typedefs.h"
 #include "type.h"
 
@@ -22,12 +22,6 @@ namespace yang {
 namespace internal {
 struct ContextInternals;
 struct Node;
-struct Prefix;
-struct Vtable;
-
-struct StaticDataEntry {
-  virtual ~StaticDataEntry() {}
-};
 typedef std::vector<std::unique_ptr<StaticDataEntry>> StaticData;
 
 // Data for a Program that is preserved as long as an Instance or some closure

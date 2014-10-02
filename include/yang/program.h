@@ -5,10 +5,8 @@
 #ifndef YANG_INCLUDE_YANG_PIPELINE_H
 #define YANG_INCLUDE_YANG_PIPELINE_H
 
-#include <memory>
 #include <string>
 #include <vector>
-
 #include "error.h"
 #include "internals.h"
 
@@ -23,11 +21,6 @@ public:
   Program(const Context& context, const std::string& name,
           const std::string& contents, bool optimise = true,
           std::string* diagnostic_output = nullptr);
-  ~Program();
-
-  // Program is just a handle; copies still refer to the same object.
-  Program(const Program&);
-  Program& operator=(const Program&);
 
   // By default, errors and warnings will be printed to standard error. By
   // passing diagnostic_output to the Program constructor, this behaviour can be
@@ -56,7 +49,7 @@ private:
   void generate_ir(bool optimise, const global_table& nonexported_globals);
 
   friend class Instance;
-  internal::ProgramInternals* _internals;
+  internal::RefcountHook<internal::ProgramInternals> _internals;
 
 };
 

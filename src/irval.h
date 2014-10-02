@@ -19,20 +19,7 @@ namespace llvm {
 namespace yang {
 namespace internal {
 
-struct Prefix;
 struct GenericFunction;
-struct Vtable : StaticDataEntry {
-  typedef void (*destructor_t)(Prefix*);
-  typedef void (*refout_query_t)(Prefix*, Prefix**);
-  Vtable(destructor_t dtor, std::size_t refout_count, refout_query_t query);
-
-  // Destructor pointer.
-  destructor_t destructor;
-
-  // Outgoing reference count and query function.
-  std::size_t refout_count;
-  refout_query_t refout_query;
-};
 
 struct StaticString : StaticDataEntry {
   StaticString(const std::string& value);

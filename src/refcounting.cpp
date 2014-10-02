@@ -123,6 +123,11 @@ void cleanup_cyclic_structures()
 namespace yang {
 namespace internal {
 
+void* allocate_yang_structure(std::size_t size)
+{
+  return YANG_MALLOC(size);
+}
+
 std::unordered_set<Prefix*>& get_structure_cleanup_list()
 {
   static std::unordered_set<Prefix*> cleanup_list;
@@ -137,6 +142,9 @@ std::unordered_set<Prefix*>& get_structure_possible_cycle_list()
 
 void update_structure_refcount(Prefix* structure, int_t change)
 {
+  if (!structure) {
+    return;
+  }
   if (!(structure->refcount += change)) {
     get_structure_cleanup_list().insert(structure);
     get_structure_possible_cycle_list().erase(structure);

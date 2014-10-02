@@ -9,31 +9,13 @@
 #include "refcounting.h"
 #include "trampoline.h"
 #include "type.h"
-#include "typedefs.h"
 
 namespace yang {
 class Context;
 
 namespace internal {
-
-template<typename>
-struct FunctionConstruct;
-template<typename>
-struct ValueInitialise;
-template<typename...>
-struct TrampolineCallArgs;
-template<typename>
-struct TrampolineCallReturn;
-template<typename, typename...>
-struct TrampolineCall;
-template<typename, typename>
-struct ReverseTrampolineCallArgs;
-template<typename, typename...>
-struct ReverseTrampolineCallReturn;
-template<typename>
-struct GenerateReverseTrampolineLookupTable;
-
-// End namespace internal.
+  template<typename>
+  struct FunctionConstruct;
 }
 
 // Opaque Yang function object.
@@ -117,9 +99,7 @@ public:
   // object.
   typedef std::function<R(Args...)> cpp_type;
   Function(const cpp_type& cpp_function);
-  Function(const Function& function);
-  ~Function() override;
-  Function& operator=(const Function& function);
+  ~Function() override {};
 
   // Invoke the function.
   R operator()(const Args&... args) const;
@@ -145,16 +125,14 @@ private:
   // to client code must throw rather than returning something unusable.
   Function();
   Function(void* function, void* env);
-
   void get_representation(void** function, void** env) override;
-  void update_env_refcount(int_t change);
 
   // Reference-counted C++ function.
-  internal::NativeFunction<R(Args...)> _native_ref;
+  internal::RefcountHook<internal::NativeFunctionInternals> _native_ref;
+  internal::RefcountHook<internal::Prefix> _env_ref;
 
-  // Bare variables (equivalent to the Yang representation).
+  // Bare function variable (necessary for storing Yang functions).
   void* _function;
-  void* _env;
 
 };
 
@@ -271,10 +249,11 @@ Function<R(Args...)> make_fn(Function<R(Args...)>&& f)
 
 template<typename R, typename... Args>
 Function<R(Args...)>::Function(const cpp_type& function)
-  : _native_ref(function)
+  : _env_ref(nullptr)
   , _function(_native_ref.get())
-  , _env(nullptr)
 {
+  _native_ref->erased_function.reset(
+      new internal::ErasedFunction<R(Args...)>(function));
   // Make sure the reverse trampoline is generated, since the global Yang
   // trampolines will compile a reference it to immediately, even if the
   // Function is never used.
@@ -282,72 +261,40 @@ Function<R(Args...)>::Function(const cpp_type& function)
 }
 
 template<typename R, typename... Args>
-Function<R(Args...)>::Function(const Function& function)
-  : _native_ref(function._native_ref)
-  , _function(function._function)
-  , _env(function._env)
-{
-  update_env_refcount(1);
-}
-
-template<typename R, typename... Args>
-Function<R(Args...)>::~Function()
-{
-  update_env_refcount(-1);
-}
-
-template<typename R, typename... Args>
-Function<R(Args...)>& Function<R(Args...)>::operator=(const Function& function)
-{
-  update_env_refcount(-1);
-  _native_ref = function._native_ref;
-  _function = function._function;
-  _env = function._env;
-  update_env_refcount(1);
-}
-
-template<typename R, typename... Args>
 R Function<R(Args...)>::operator()(const Args&... args) const
 {
   // For C++ functions, just call it directly.
-  if (!_env) {
+  if (!_env_ref.get()) {
     auto native = (internal::NativeFunctionInternals*)_function;
     return native->get<R, Args...>()(args...);
   }
 
   // For yang functions, call via the trampoline machinery.
   return internal::call_via_trampoline<R>(
-      (void_fp)(std::intptr_t)_function, _env, args...);
+      (void_fp)(std::intptr_t)_function, _env_ref.get(), args...);
 }
 
 template<typename R, typename... Args>
 Function<R(Args...)>::Function()
-  : _function(nullptr)
-  , _env(nullptr)
+  : _native_ref(nullptr)
+  , _env_ref(nullptr)
+  , _function(nullptr)
 {
 }
 
 template<typename R, typename... Args>
 Function<R(Args...)>::Function(void* function, void* env)
-  : _function(function)
-  , _env(env)
+  : _native_ref(nullptr)
+  , _env_ref((internal::Prefix*)env)
+  , _function(function)
 {
-  update_env_refcount(1);
 }
 
 template<typename R, typename... Args>
 void Function<R(Args...)>::get_representation(void** function, void** env)
 {
   *function = _function;
-  *env = _env;
-}
-
-template<typename R, typename... Args>
-void Function<R(Args...)>::update_env_refcount(int_t change)
-{
-  if (_env) {
-    internal::update_structure_refcount((internal::Prefix*)_env, change);
-  }
+  *env = _env_ref.get();
 }
 
 // End namespace yang.

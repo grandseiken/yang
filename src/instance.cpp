@@ -12,7 +12,7 @@ namespace yang {
 
 Instance::Instance(const Program& program)
   : _global_data(nullptr)
-  , _program(program._internals)
+  , _program(program._internals.get())
 {
   if (!program.success()) {
     throw runtime_error(
@@ -20,36 +20,10 @@ Instance::Instance(const Program& program)
         ": instantiating program which did not compile successfully");
   }
   void* global_alloc = get_native_fp("!global_alloc");
-  typedef void* (*alloc_fp)();
+  typedef internal::Prefix* (*alloc_fp)();
   _global_data = ((alloc_fp)(std::intptr_t)global_alloc)();
-
-  *(internal::ProgramInternals**)_global_data = program._internals;
-  internal::update_structure_refcount((internal::Prefix*)_global_data, 1);
+  _global_data->parent = (internal::Prefix*)program._internals.get();
   internal::update_structure_refcount((internal::Prefix*)_program, 1);
-}
-
-Instance::~Instance()
-{
-  internal::update_structure_refcount((internal::Prefix*)_global_data, -1);
-}
-
-Instance::Instance(const Instance& instance)
-  : _global_data(instance._global_data)
-  , _program(instance._program)
-{
-  internal::update_structure_refcount((internal::Prefix*)_global_data, 1);
-}
-
-Instance& Instance::operator=(const Instance& instance) 
-{
-  if (this == &instance) {
-    return *this;
-  }
-  internal::update_structure_refcount((internal::Prefix*)_global_data, -1);
-  _global_data = instance._global_data;
-  _program = instance._program;
-  internal::update_structure_refcount((internal::Prefix*)_global_data, 1);
-  return *this;
 }
 
 const function_table& Instance::get_functions() const

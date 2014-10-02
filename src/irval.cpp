@@ -303,26 +303,14 @@ LexScope::LexScope(Builder& builder, bool create_functions)
       llvm::Function::InternalLinkage, "!update_refcount", &_b.module);
   auto entry = llvm::BasicBlock::Create(
       _b.b.getContext(), "entry", _update_refcount);
-  auto function_block = llvm::BasicBlock::Create(
-      _b.b.getContext(), "function", _update_refcount);
-  auto last_block = llvm::BasicBlock::Create(
-      _b.b.getContext(), "last", _update_refcount);
 
   _b.b.SetInsertPoint(entry);
   auto fptr = _update_refcount->arg_begin();
   auto eptr = ++_update_refcount->arg_begin();
   auto change = ++++_update_refcount->arg_begin();
-  llvm::Value* e_not_null = _b.b.CreateIsNotNull(eptr);
-  llvm::Value* not_null = _b.b.CreateOr(
-      _b.b.CreateIsNotNull(fptr), e_not_null);
-  _b.b.CreateCondBr(not_null, function_block, last_block);
-
-  _b.b.SetInsertPoint(function_block);
-  llvm::Value* select = _b.b.CreateSelect(e_not_null, eptr, fptr);
+  llvm::Value* not_null = _b.b.CreateIsNotNull(eptr);
+  llvm::Value* select = _b.b.CreateSelect(not_null, eptr, fptr);
   _b.b.CreateCall2(rc_structure, select, change);
-  _b.b.CreateRetVoid();
-
-  _b.b.SetInsertPoint(last_block);
   _b.b.CreateRetVoid();
 }
 

@@ -194,8 +194,8 @@ template<typename T>
 struct ValueInitialise<Ref<T>> {
   void operator()(Ref<T>& ref) const
   {
-    if (ref._wrap) {
-      internal::update_structure_refcount(ref._wrap, 1);
+    if (ref._wrap._structure) {
+      internal::update_structure_refcount(ref._wrap._structure, 1);
     }
   }
 };
@@ -203,7 +203,13 @@ template<typename R, typename... Args>
 struct ValueInitialise<Function<R(Args...)>> {
   void operator()(Function<R(Args...)>& function) const
   {
-    function.update_env_refcount(1);
+    // TODO: why isn't this doing the native ref as well? Seems like that should
+    // fail to refcount native functions returned through yang code properly.
+    // Rewrite this nonsense anyway, regardless.
+    // And get rid of all the bloody friend things that are necessary.
+    if (function._env_ref._structure) {
+      internal::update_structure_refcount(function._env_ref._structure, 1);
+    }
   }
 };
 
@@ -240,7 +246,7 @@ struct TrampolineCallArgs<Ref<T>, Args...> {
 
   type operator()(const Ref<T>& arg, const Args&... args) const
   {
-    return join(list(arg._wrap), TrampolineCallArgs<Args...>()(args...));
+    return join(list(arg._wrap.get()), TrampolineCallArgs<Args...>()(args...));
   }
 };
 
@@ -270,7 +276,7 @@ struct TrampolineCallArgs<Function<R(Args...)>, Brgs...> {
 
   type operator()(const Function<R(Args...)>& arg, const Brgs&... brgs) const
   {
-    return join(list(arg._function, arg._env),
+    return join(list(arg._function, arg._env_ref.get()),
                 TrampolineCallArgs<Brgs...>()(brgs...));
   }
 };
@@ -293,7 +299,7 @@ struct TrampolineCallReturn<Ref<T>> {
 
   type operator()(Ref<T>& result) const
   {
-    return type(&result._wrap);
+    return type(&result._wrap._structure);
   }
 };
 
@@ -321,7 +327,7 @@ struct TrampolineCallReturn<Function<R(Args...)>> {
 
   type operator()(Function<R(Args...)>& result) const
   {
-    return type(&result._function, &result._env);
+    return type(&result._function, (void**)&result._env_ref._structure);
   }
 };
 
@@ -434,7 +440,7 @@ template<typename T, typename... Args>
 struct ReverseTrampolineCallReturn<Ref<T>, Args...> {
   void operator()(const Ref<T>& result, Prefix** wrap)
   {
-    *wrap = result._wrap;
+    *wrap = result._wrap.get();
   }
 };
 template<typename T, std::size_t N, typename... Args>
@@ -457,7 +463,7 @@ struct ReverseTrampolineCallReturn<Function<R(Args...)>, void**, void**> {
                   void** fptr, void** eptr) const
   {
     *fptr = result._function;
-    *eptr = result._env;
+    *eptr = result._env_ref.get();
   }
 };
 

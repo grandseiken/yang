@@ -15,7 +15,6 @@
 #include "ast.h"
 #include "irgen.h"
 #include "log.h"
-#include "memory.h"
 #include "print.h"
 #include "static.h"
 #include "../gen/yang.y.h"
@@ -30,34 +29,16 @@ ProgramInternals::~ProgramInternals()
 {
 }
 
-// ProgramInternals vtable.
-void program_internals_destructor(Prefix* program_internals)
-{
-  ((ProgramInternals*)program_internals)->~ProgramInternals();
-}
-Vtable program_internals_vtable(program_internals_destructor, 0, nullptr);
-
 // End namespace internal.
 }
 
 Program::Program(const Context& context, const std::string& name,
                  const std::string& contents, bool optimise,
                  std::string* diagnostic_output)
-  : _internals(nullptr)
 {
-  // The internals will be freed by the refcount system, so must be allocated
-  // with YANG_MALLOC.
-  internal::cleanup_structures();
-  void* memory = YANG_MALLOC(sizeof(internal::ProgramInternals));
-  _internals = new (memory) internal::ProgramInternals;
-
-  _internals->parent = nullptr;
-  _internals->refcount = 0;
-  _internals->vtable = &internal::program_internals_vtable;
   _internals->context = context._internals;
   _internals->name = name;
   _internals->module = nullptr;
-  internal::update_structure_refcount((internal::Prefix*)_internals, 1);
 
   internal::ParseData data(name, contents);
   yyscan_t scan = nullptr;
@@ -121,28 +102,6 @@ Program::Program(const Context& context, const std::string& name,
   _internals->llvm_context.reset(new llvm::LLVMContext);
   context._internals->immutable = true;
   generate_ir(optimise, nonexported_globals);
-}
-
-Program::~Program()
-{
-  internal::update_structure_refcount((internal::Prefix*)_internals, -1);
-}
-
-Program::Program(const Program& program)
-  : _internals(program._internals)
-{
-  internal::update_structure_refcount((internal::Prefix*)_internals, 1);
-}
-
-Program& Program::operator=(const Program& program)
-{
-  if (this == &program) {
-    return *this;
-  }
-  internal::update_structure_refcount((internal::Prefix*)_internals, -1);
-  _internals = program._internals;
-  internal::update_structure_refcount((internal::Prefix*)_internals, 1);
-  return *this;
 }
 
 const Program::error_list& Program::get_errors() const

@@ -6,12 +6,9 @@
 #define YANG_INCLUDE_YANG_INSTANCE_H
 
 #include <string>
-
 #include "function.h"
-#include "internals.h"
 #include "type.h"
 #include "type_info.h"
-#include "typedefs.h"
 
 namespace llvm {
   class Function;
@@ -20,15 +17,14 @@ namespace llvm {
 namespace yang {
 class Program;
 
+namespace internal {
+  struct ProgramInternals;
+}
+
 class Instance {
 public:
 
   Instance(const Program& program);
-  ~Instance();
-
-  // Instance is just a handle; copies still represent the same object.
-  Instance(const Instance&);
-  Instance& operator=(const Instance&);
 
   template<typename T>
   T get_global(const std::string& name) const;
@@ -63,7 +59,7 @@ private:
   // Similarly for functions.
   void check_function(const std::string& name, const Type& type) const;
 
-  void* _global_data;
+  internal::RefcountHook<internal::Prefix> _global_data;
   internal::ProgramInternals* _program;
 
 };
@@ -76,7 +72,7 @@ T Instance::get_global(const std::string& name) const
   check_global(name, type_of<T>(), false);
   auto fp = (void_fp)
       (std::intptr_t)get_native_fp("!global_get_" + name);
-  return internal::call_via_trampoline<T>(fp, _global_data);
+  return internal::call_via_trampoline<T>(fp, _global_data.get());
 }
 
 template<typename T>
@@ -85,14 +81,15 @@ void Instance::set_global(const std::string& name, const T& value)
   check_global(name, type_of<T>(), true);
   auto fp = (void_fp)
       (std::intptr_t)get_native_fp("!global_set_" + name);
-  internal::call_via_trampoline<void>(fp, _global_data, value);
+  internal::call_via_trampoline<void>(fp, _global_data.get(), value);
 }
 
 template<typename T>
 T Instance::get_function(const std::string& name)
 {
   check_function(name, type_of<T>());
-  return internal::FunctionConstruct<T>()(get_native_fp(name), _global_data);
+  return internal::FunctionConstruct<T>()(
+      get_native_fp(name), _global_data.get());
 }
 
 template<typename R, typename... Args>
