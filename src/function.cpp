@@ -13,13 +13,9 @@ bool GenericFunction::operator==(const GenericFunction& other) const
   if (type != other.type) {
     return false;
   }
-  void* a = nullptr;
-  void* b = nullptr;
-  void* oa = nullptr;
-  void* ob = nullptr;
-  ptr->get_representation(&a, &b);
-  other.ptr->get_representation(&oa, &ob);
-  return a == oa && b == ob;
+  auto t = ptr->get_yang_representation();
+  auto o = other.ptr->get_yang_representation();
+  return t.first == o.first && t.second == o.second;
 }
 
 bool GenericFunction::operator!=(const GenericFunction& other) const

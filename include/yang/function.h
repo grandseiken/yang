@@ -11,18 +11,6 @@
 #include "type.h"
 
 namespace yang {
-class Context;
-
-namespace internal {
-  template<typename>
-  struct FunctionConstruct;
-}
-
-// Opaque Yang function object.
-template<typename T>
-class Function {
-  static_assert(sizeof(T) != sizeof(T), "use of non-function type");
-};
 
 // Common base class for dynamic storage.
 namespace internal {
@@ -36,61 +24,38 @@ private:
 
   friend class Builder;
   friend struct GenericFunction;
-  virtual void get_representation(void** function, void** env) = 0;
+  virtual std::pair<void*, void*> get_yang_representation() const = 0;
 
 };
 
 // End namespace internal.
 }
 
-// Some general notes about how functions work in Yang:
+template<typename T>
+class Function {
+  static_assert(sizeof(T) != sizeof(T), "use of non-function type");
+};
+
+// The yang::Function type is a superset of the std::function type in that it
+// can hold any std::function, and also any function retrieved from Yang code
+// (including closures, member functions with bound object, etc).
 //
-// The yang::Function type is conceptually a superset of the std::function type.
-// It can hold any std::function, and it can also hold any function retrieved
-// from Yang code (including closures, member functions with bound object, etc).
+// Similarly, function types in Yang can take the same set of values, and are
+// thus interchangable. Invokable objects from either language can be passed
+// back and forth between them, stored, and called at will.
 //
-// Similarly, function types in Yang can hold a reference to any C++
-// std::function or any Yang function. This makes all functions completely
-// interchangable: any invokable object from either language can be passed back
-// and forth between the languages, stored, and invoked at will.
+// This is implemented by representing function types are a pair of pointers:
 //
-// To support this, the internal representation of functions in both the C++
-// yang::Function type and inside Yang code consists of two pointers:
+// (1) a pointer to the actual Yang function or C++ function (actually, a
+//     type-erased wrapper in a reference-counted structure on the heap).
+// (2) a pointer to the environment. The environment pointer is null if and only
+//     if the function is a C++ function. For Yang functions, this points either
+//     to the global data structure associated with the program Instance, or to
+//     some node of the tree of closure structures rooted there.
 //
-// - first: a pointer to the actual Yang function or C++ std::function (in fact,
-//   in the latter case, the pointer is to a type-erased wrapper object that can
-//   store an std::function with any template arguments, and supports automatic
-//   reference counting).
-// - second: to the environment. For C++ functions, this will be the null
-//   pointer (and that is how we identify C++ functions). For Yang functions,
-//   this will be a pointer either to the global data structure associated with
-//   the program Instance, or to some node of the tree of closed environment
-//   structures rooted at that Instance. (In this way, a Yang function
-//   implicitly closes over the Instance it was retrieved from.) These closure
-//   structures are also reference-counted.
-//
-// Some notes on the implementation:
-//
-// - allocating a structure for each lexical closure, with the structures for
-//   inner closures having pointers to the parent, is typical.
-//   These closure structures being a tree rooted at the structure storing the
-//   global variables for the program instantiation is less common.
-// - reference-counting is clearly needed for the closure data structures
-//   themselves. More subtly, it's also needed for the global data structure
-//   of each program instantiation (for, a function obtained from that instance
-//   may be stored and invoked after the corresponding C++ Instance object has
-//   been destroyed; and it's needed for the std::functions held within
-//   yang::Functions: they too must be copied to the heap, since the function
-//   might for example be passed to Yang code, stored, and invoked long after
-//   the original std::function has gone out of scope.
-// - reference-counting is probably a reasonable garbage-collection strategy
-//   for Yang. Minimised GC pausing is ideal for realtime applications, and
-//   cyclic structures are rare (they occur only when a closed environment
-//   contains a function value whose environment pointer is that same
-//   environment or child thereof).
-// - there is also a large amount of template machinery to ensure we can
-//   transparently call Yang functions from C++ and vice-versa, even though
-//   they use different calling conventions.
+// There is also a large amount of template machinery to ensure we can
+// transparently call Yang functions from C++ and vice-versa, even though they
+// use different calling conventions.
 template<typename R, typename... Args>
 class Function<R(Args...)> : public internal::FunctionBase {
 public:
@@ -106,53 +71,30 @@ public:
 
 private:
 
-  template<typename...>
-  friend struct internal::TrampolineCallArgs;
-  template<typename>
-  friend struct internal::TrampolineCallReturn;
-  template<typename, typename...>
-  friend struct internal::TrampolineCall;
-  template<typename, typename>
-  friend struct internal::ReverseTrampolineCallArgs;
-  template<typename, typename...>
-  friend struct internal::ReverseTrampolineCallReturn;
-  friend struct internal::ValueInitialise<Function>;
-  friend struct internal::FunctionConstruct<Function>;
+  friend struct internal::Raw<Function>;
 
-  // Invariant: Function objects returned to client code must never be null.
-  // They must reference a genuine Yang function or C++ function, so that they
-  // can be invoked or passed to Yang code. Library code that returns Functions
-  // to client code must throw rather than returning something unusable.
-  Function();
+  // There is no null function, so library code that returns Functions to client
+  // code must throw rather than returning something unusable.
   Function(void* function, void* env);
-  void get_representation(void** function, void** env) override;
+  std::pair<void*, void*> get_yang_representation() const override;
 
-  // Reference-counted C++ function.
+  // Either _native_ref is non-null, and _env_ref and _yang_function are null,
+  // or vice-versa.
   internal::RefcountHook<internal::NativeFunctionInternals> _native_ref;
   internal::RefcountHook<internal::Prefix> _env_ref;
-
-  // Bare function variable (necessary for storing not-refcounted Yang
-  // functions).
-  void* _function;
+  void* _yang_function;
 
 };
 
 namespace internal {
 
-template<typename T>
-struct FunctionConstruct {
-  static_assert(sizeof(T) != sizeof(T), "use of non-function type");
-  T operator()(void*, void*) const
-  {
-    return {};
-  }
+template<typename>
+struct IsFunction {
+  enum {value = false};
 };
 template<typename R, typename... Args>
-struct FunctionConstruct<Function<R(Args...)>> {
-  Function<R(Args...)> operator()(void* function, void* env) const
-  {
-    return Function<R(Args...)>(function, env);
-  }
+struct IsFunction<Function<R(Args...)>> {
+  enum {value = true};
 };
 
 // Template deduction for make_fn.
@@ -251,7 +193,7 @@ Function<R(Args...)> make_fn(Function<R(Args...)>&& f)
 template<typename R, typename... Args>
 Function<R(Args...)>::Function(const cpp_type& function)
   : _env_ref(nullptr)
-  , _function(_native_ref.get())
+  , _yang_function(nullptr)
 {
   _native_ref->erased_function.reset(
       new internal::ErasedFunction<R(Args...)>(function));
@@ -266,36 +208,26 @@ R Function<R(Args...)>::operator()(const Args&... args) const
 {
   // For C++ functions, just call it directly.
   if (!_env_ref.get()) {
-    auto native = (internal::NativeFunctionInternals*)_function;
-    return native->get<R, Args...>()(args...);
+    return _native_ref.get()->get<R, Args...>()(args...);
   }
 
   // For yang functions, call via the trampoline machinery.
   return internal::call_via_trampoline<R>(
-      (void_fp)(std::intptr_t)_function, _env_ref.get(), args...);
-}
-
-template<typename R, typename... Args>
-Function<R(Args...)>::Function()
-  : _native_ref(nullptr)
-  , _env_ref(nullptr)
-  , _function(nullptr)
-{
+      (void_fp)(std::intptr_t)_yang_function, _env_ref.get(), args...);
 }
 
 template<typename R, typename... Args>
 Function<R(Args...)>::Function(void* function, void* env)
   : _native_ref(env ? nullptr : (internal::NativeFunctionInternals*)function)
   , _env_ref((internal::Prefix*)env)
-  , _function(function)
+  , _yang_function(env ? function : nullptr)
 {
 }
 
 template<typename R, typename... Args>
-void Function<R(Args...)>::get_representation(void** function, void** env)
+std::pair<void*, void*> Function<R(Args...)>::get_yang_representation() const
 {
-  *function = _function;
-  *env = _env_ref.get();
+  return {_env_ref.get() ? _yang_function : _native_ref.get(), _env_ref.get()};
 }
 
 // End namespace yang.

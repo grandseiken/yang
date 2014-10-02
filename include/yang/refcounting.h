@@ -12,24 +12,9 @@
 #include "type.h"
 
 namespace yang {
-class Context;
-
 namespace internal {
-
 template<typename>
-struct ValueInitialise;
-
-template<typename...>
-struct TrampolineCallArgs;
-template<typename>
-struct TrampolineCallReturn;
-template<typename, typename...>
-struct TrampolineCall;
-
-template<typename, typename>
-struct ReverseTrampolineCallArgs;
-template<typename, typename...>
-struct ReverseTrampolineCallReturn;
+struct Raw;
 
 // Refcounting structures.
 struct StaticDataEntry {
@@ -96,11 +81,6 @@ public:
   T* get() const;
 
 private:
-
-  template<typename>
-  friend struct TrampolineCallReturn;
-  template<typename>
-  friend struct ValueInitialise;
 
   static void destructor(Prefix* structure);
   static Vtable vtable;
@@ -219,20 +199,7 @@ public:
 
 private:
 
-  template<typename...>
-  friend struct internal::TrampolineCallArgs;
-  template<typename>
-  friend struct internal::TrampolineCallReturn;
-  template<typename, typename...>
-  friend struct internal::TrampolineCall;
-  template<typename, typename>
-  friend struct internal::ReverseTrampolineCallArgs;
-  template<typename, typename...>
-  friend struct internal::ReverseTrampolineCallReturn;
-  friend struct internal::ValueInitialise<Ref>;
-
-  // Null Ref must never be returned to client code!
-  Ref();
+  friend struct internal::Raw<Ref>;
   Ref(internal::Prefix* wrap);
   internal::RefcountHook<internal::Prefix> _wrap;
 
@@ -254,12 +221,6 @@ template<typename T>
 T* Ref<T>::get() const
 {
   return (T*)_wrap->data;
-}
-
-template<typename T>
-Ref<T>::Ref()
-  : _wrap(nullptr)
-{
 }
 
 template<typename T>

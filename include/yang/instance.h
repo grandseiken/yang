@@ -16,7 +16,6 @@ namespace llvm {
 
 namespace yang {
 class Program;
-
 namespace internal {
   struct ProgramInternals;
 }
@@ -87,9 +86,10 @@ void Instance::set_global(const std::string& name, const T& value)
 template<typename T>
 T Instance::get_function(const std::string& name)
 {
+  static_assert(internal::IsFunction<T>::value, "use of non-function type");
   check_function(name, type_of<T>());
-  return internal::FunctionConstruct<T>()(
-      get_native_fp(name), _global_data.get());
+  return internal::Raw<T>().from(
+      {get_native_fp(name), (void*)_global_data.get()});
 }
 
 template<typename R, typename... Args>

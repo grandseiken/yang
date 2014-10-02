@@ -126,8 +126,8 @@ void Context::register_namespace(const std::string& name,
     auto& g = context._internals->functions[pair.first];
     g.type = pair.second;
     g.ptr = std::make_shared<Function<void()>>(
-        internal::FunctionConstruct<Function<void()>>()(
-            instance.get_native_fp(pair.first), instance._global_data.get()));
+        internal::Raw<Function<void()>>().from(
+            {instance.get_native_fp(pair.first), instance._global_data.get()}));
   }
   // Conservative decision: no type used by the instance is automatically
   // exposed. Clearly, member functions shouldn't be added, so it'd be weird

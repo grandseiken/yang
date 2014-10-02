@@ -185,32 +185,36 @@ struct TrampolineType {
   typedef typename Functions<void, join_type>::fp_type fp_type;
 };
 
-// Initialise reference-counting for values which must be constructed oddly.
 template<typename T>
-struct ValueInitialise {
-  void operator()(T&) const {}
+struct Raw {
+  typedef T raw_type;
+  const T& from(const T& t) const
+  {
+    return t;
+  }
 };
 template<typename T>
-struct ValueInitialise<Ref<T>> {
-  void operator()(Ref<T>& ref) const
+struct Raw<Ref<T>> {
+  typedef Prefix* raw_type;
+  Ref<T> from(Prefix* t) const
   {
-    if (ref._wrap._structure) {
-      internal::update_structure_refcount(ref._wrap._structure, 1);
-    }
+    return Ref<T>(t);
+  }
+  Prefix* to(const Ref<T>& t) const
+  {
+    return t._wrap.get();
   }
 };
 template<typename R, typename... Args>
-struct ValueInitialise<Function<R(Args...)>> {
-  void operator()(Function<R(Args...)>& function) const
+struct Raw<Function<R(Args...)>> {
+  typedef std::pair<void*, void*> raw_type;
+  Function<R(Args...)> from(const raw_type& t) const
   {
-    // TODO: rewrite this nonsense anyway, regardless.
-    // And get rid of all the bloody friend things that are necessary.
-    if (function._env_ref._structure) {
-      internal::update_structure_refcount(function._env_ref._structure, 1);
-    }
-    else {
-      function._native_ref = (NativeFunctionInternals*)function._function;
-    }
+    return Function<R(Args...)>(t.first, t.second);
+  }
+  raw_type to(const Function<R(Args...)>& t) const
+  {
+    return t.get_yang_representation();
   }
 };
 
@@ -247,7 +251,8 @@ struct TrampolineCallArgs<Ref<T>, Args...> {
 
   type operator()(const Ref<T>& arg, const Args&... args) const
   {
-    return join(list(arg._wrap.get()), TrampolineCallArgs<Args...>()(args...));
+    return join(list(Raw<Ref<T>>().to(arg)),
+                TrampolineCallArgs<Args...>()(args...));
   }
 };
 
@@ -277,7 +282,8 @@ struct TrampolineCallArgs<Function<R(Args...)>, Brgs...> {
 
   type operator()(const Function<R(Args...)>& arg, const Brgs&... brgs) const
   {
-    return join(list(arg._function, arg._env_ref.get()),
+    auto rep = Raw<Function<R(Args...)>>().to(arg);
+    return join(list(rep.first, rep.second),
                 TrampolineCallArgs<Brgs...>()(brgs...));
   }
 };
@@ -298,9 +304,9 @@ template<typename T>
 struct TrampolineCallReturn<Ref<T>> {
   typedef typename TrampolineReturn<Ref<T>>::type type;
 
-  type operator()(Ref<T>& result) const
+  type operator()(Prefix*& result) const
   {
-    return type(&result._wrap._structure);
+    return type(&result);
   }
 };
 
@@ -326,9 +332,9 @@ template<typename R, typename... Args>
 struct TrampolineCallReturn<Function<R(Args...)>> {
   typedef typename TrampolineReturn<Function<R(Args...)>>::type type;
 
-  type operator()(Function<R(Args...)>& result) const
+  type operator()(std::pair<void*, void*>& result) const
   {
-    return type(&result._function, (void**)&result._env_ref._structure);
+    return type(&result.first, &result.second);
   }
 };
 
@@ -340,11 +346,10 @@ struct TrampolineCall {
 
   R operator()(const type& function, const Args&... args) const
   {
-    R result;
-    list_call(function, join(TrampolineCallReturn<R>()(result),
+    typename Raw<R>::raw_type temporary;
+    list_call(function, join(TrampolineCallReturn<R>()(temporary),
                              TrampolineCallArgs<Args...>()(args...)));
-    internal::ValueInitialise<R>()(result);
-    return result;
+    return Raw<R>().from(temporary);
   }
 };
 
@@ -392,7 +397,7 @@ template<typename... Args, typename... Brgs, typename T>
 struct ReverseTrampolineCallArgs<List<Ref<T>, Args...>, List<Brgs...>> {
   List<Ref<T>, Args...> operator()(const List<Brgs...>& brgs) const
   {
-    Ref<T> ref_object(std::get<0>(brgs));
+    auto ref_object = Raw<Ref<T>>().from(std::get<0>(brgs));
     typedef typename IndexRange<1, sizeof...(Brgs) - 1>::type range;
     return join(list(ref_object),
                 rtcall_args<List<Args...>>(sublist<range>(brgs)));
@@ -420,7 +425,8 @@ struct ReverseTrampolineCallArgs<
   List<Function<S(Crgs...)>, Args...> operator()(
       const List<Brgs...>& brgs) const
   {
-    Function<S(Crgs...)> fn_object(std::get<0>(brgs), std::get<1>(brgs));
+    auto fn_object = Raw<Function<S(Crgs...)>>().from(
+        {std::get<0>(brgs), std::get<1>(brgs)});
     typedef typename IndexRange<2, sizeof...(Brgs) - 2>::type range;
     return join(list(fn_object),
                 rtcall_args<List<Args...>>(sublist<range>(brgs)));
@@ -441,7 +447,7 @@ template<typename T, typename... Args>
 struct ReverseTrampolineCallReturn<Ref<T>, Args...> {
   void operator()(const Ref<T>& result, Prefix** wrap)
   {
-    *wrap = result._wrap.get();
+    *wrap = Raw<Ref<T>>().to(result);
   }
 };
 template<typename T, std::size_t N, typename... Args>
@@ -463,8 +469,9 @@ struct ReverseTrampolineCallReturn<Function<R(Args...)>, void**, void**> {
   void operator()(const Function<R(Args...)>& result,
                   void** fptr, void** eptr) const
   {
-    *fptr = result._function;
-    *eptr = result._env_ref.get();
+    auto rep = Raw<Function<R(Args...)>>().to(result);
+    *fptr = rep.first;
+    *eptr = rep.second;
   }
 };
 
