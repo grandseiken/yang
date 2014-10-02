@@ -19,8 +19,6 @@ namespace internal {
 
 template<typename>
 struct ValueInitialise;
-template<typename>
-class NativeFunction;
 
 template<typename...>
 struct TrampolineCallArgs;
@@ -56,8 +54,6 @@ std::unordered_set<Prefix*>& get_structure_cleanup_list();
 std::unordered_set<Prefix*>& get_structure_possible_cycle_list();
 // Do structure refcounting.
 void update_structure_refcount(Prefix* structure, int_t change);
-// Do function refcounting.
-void update_function_refcount(NativeFunction<void>* target, int_t change);
 // Clean up structures that are no longer referenced.
 void cleanup_structures();
 

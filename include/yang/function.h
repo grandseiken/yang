@@ -89,8 +89,8 @@ private:
 //
 // Some notes on the implementation:
 //
-// - the practice of allocating a structure for each lexical closure, with the
-//   structures for inner closures having pointers to the parent, is typical.
+// - allocating a structure for each lexical closure, with the structures for
+//   inner closures having pointers to the parent, is typical.
 //   These closure structures being a tree rooted at the structure storing the
 //   global variables for the program instantiation is less common.
 // - reference-counting is clearly needed for the closure data structures
@@ -102,10 +102,10 @@ private:
 //   might for example be passed to Yang code, stored, and invoked long after
 //   the original std::function has gone out of scope.
 // - reference-counting is probably a reasonable garbage-collection strategy
-//   for Yang. Minimised GC pausing is ideal for the realtime applications Yang
-//   was designed for, and cyclic structures are rare (they occur only when a
-//   closed environment contains a function value whose environment pointer is
-//   that same environment, or child thereof).
+//   for Yang. Minimised GC pausing is ideal for realtime applications, and
+//   cyclic structures are rare (they occur only when a closed environment
+//   contains a function value whose environment pointer is that same
+//   environment or child thereof).
 // - there is also a large amount of template machinery to ensure we can
 //   transparently call Yang functions from C++ and vice-versa, even though
 //   they use different calling conventions.
@@ -150,7 +150,7 @@ private:
   void update_env_refcount(int_t change);
 
   // Reference-counted C++ function.
-  internal::RefCountedNativeFunction<R(Args...)> _native_ref;
+  internal::NativeFunction<R(Args...)> _native_ref;
 
   // Bare variables (equivalent to the Yang representation).
   void* _function;
@@ -272,7 +272,7 @@ Function<R(Args...)> make_fn(Function<R(Args...)>&& f)
 template<typename R, typename... Args>
 Function<R(Args...)>::Function(const cpp_type& function)
   : _native_ref(function)
-  , _function(&_native_ref.get())
+  , _function(_native_ref.get())
   , _env(nullptr)
 {
   // Make sure the reverse trampoline is generated, since the global Yang
@@ -311,7 +311,7 @@ R Function<R(Args...)>::operator()(const Args&... args) const
 {
   // For C++ functions, just call it directly.
   if (!_env) {
-    auto native = (internal::NativeFunction<void>*)_function;
+    auto native = (internal::NativeFunctionInternals*)_function;
     return native->get<R, Args...>()(args...);
   }
 

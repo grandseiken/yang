@@ -476,7 +476,7 @@ struct ReverseTrampolineCall<R(Args...), List<ReturnBrgs...>, List<Brgs...>> {
   // debugging sometime anyway.
   static void call(ReturnBrgs... return_brgs, Brgs... brgs, void*, void* target)
   {
-    auto f = (const NativeFunction<void>*)target;
+    auto f = (const NativeFunctionInternals*)target;
     R result = list_call(f->get<R, Args...>(),
                          rtcall_args<List<Args...>>(list(brgs...)));
     ReverseTrampolineCallReturn<R, ReturnBrgs...>()(result, return_brgs...);
@@ -488,7 +488,7 @@ template<typename... Args, typename... Brgs>
 struct ReverseTrampolineCall<void(Args...), List<>, List<Brgs...>> {
   static void call(Brgs... brgs, void*, void* target)
   {
-    auto f = (const NativeFunction<void>*)target;
+    auto f = (const NativeFunctionInternals*)target;
     list_call(f->get<void, Args...>(),
               rtcall_args<List<Args...>>(list(brgs...)));
   }

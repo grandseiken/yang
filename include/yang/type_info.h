@@ -140,7 +140,7 @@ struct TypeInfoError {
 };
 // TODO: should support C++ functions taking arguments by const reference, but
 // it's a bit tricky. It has to be done in the reverse trampoline somehow,
-// possibly by looking up the calling convention in the NativeFunction object?
+// possibly by looking up the calling convention somewhere?
 template<typename T>
 struct TypeInfo : TypeInfoBase<T> {};
 template<typename T>

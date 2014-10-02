@@ -293,8 +293,6 @@ LexScope::LexScope(Builder& builder, bool create_functions)
   auto rc_type = llvm::FunctionType::get(
       _b.void_type(),
       std::vector<llvm::Type*>{_b.void_ptr_type(), _b.int_type()}, false);
-  auto rc_function = _b.get_native_function(
-      "rc_function", (void_fp)&update_function_refcount, rc_type);
   auto rc_structure = _b.get_native_function(
       "rc_structure", (void_fp)&update_structure_refcount, rc_type);
 
@@ -307,10 +305,6 @@ LexScope::LexScope(Builder& builder, bool create_functions)
       _b.b.getContext(), "entry", _update_refcount);
   auto function_block = llvm::BasicBlock::Create(
       _b.b.getContext(), "function", _update_refcount);
-  auto else_block = llvm::BasicBlock::Create(
-      _b.b.getContext(), "else", _update_refcount);
-  auto structure_block = llvm::BasicBlock::Create(
-      _b.b.getContext(), "structure", _update_refcount);
   auto last_block = llvm::BasicBlock::Create(
       _b.b.getContext(), "last", _update_refcount);
 
@@ -318,20 +312,14 @@ LexScope::LexScope(Builder& builder, bool create_functions)
   auto fptr = _update_refcount->arg_begin();
   auto eptr = ++_update_refcount->arg_begin();
   auto change = ++++_update_refcount->arg_begin();
-  llvm::Value* fval = _b.b.CreateAnd(
-      _b.b.CreateIsNotNull(fptr), _b.b.CreateIsNull(eptr));
-  llvm::Value* eval = _b.b.CreateIsNotNull(eptr);
-  _b.b.CreateCondBr(fval, function_block, else_block);
+  llvm::Value* e_not_null = _b.b.CreateIsNotNull(eptr);
+  llvm::Value* not_null = _b.b.CreateOr(
+      _b.b.CreateIsNotNull(fptr), e_not_null);
+  _b.b.CreateCondBr(not_null, function_block, last_block);
 
   _b.b.SetInsertPoint(function_block);
-  _b.b.CreateCall2(rc_function, fptr, change);
-  _b.b.CreateRetVoid();
-
-  _b.b.SetInsertPoint(else_block);
-  _b.b.CreateCondBr(eval, structure_block, last_block);
-
-  _b.b.SetInsertPoint(structure_block);
-  _b.b.CreateCall2(rc_structure, eptr, change);
+  llvm::Value* select = _b.b.CreateSelect(e_not_null, eptr, fptr);
+  _b.b.CreateCall2(rc_structure, select, change);
   _b.b.CreateRetVoid();
 
   _b.b.SetInsertPoint(last_block);

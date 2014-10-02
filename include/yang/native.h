@@ -7,255 +7,124 @@
 
 #include <functional>
 #include <memory>
-#include <type_traits>
-#include <unordered_set>
 
+#include "refcounting.h"
 #include "typedefs.h"
-#include "type.h"
 
 namespace yang {
 namespace internal {
 
-template<typename T>
-class NativeFunction {
-  static_assert(sizeof(T) != sizeof(T),
-                "incorrect native function type argument used");
-};
-
-// Class for dynamic storage of an arbitrary C++ function. Includes a reference-
-// -counting mechanism, as Yang code may hold references to these objects for
-// arbitrary lengths of time.
-// TODO: urgh. Presumably, since all Yang needs is a function pointer, we can
-// keep that internally as a Prefix and get rid of the need for two separate
-// reference-counting systems?
+template<typename>
+struct ErasedFunction;
 template<>
-class NativeFunction<void> {
-public:
+struct ErasedFunction<void> {
+  virtual ~ErasedFunction() {}
+};
+template<typename R, typename... Args>
+struct ErasedFunction<R(Args...)> : ErasedFunction<void> {
+  ErasedFunction(const std::function<R(Args...)>& f)
+    : f(f) {}
+  ~ErasedFunction() override {}
 
-  inline NativeFunction();
-  virtual ~NativeFunction() {}
-  // Convert this to a particular NativeFunction of a given type and return the
-  // contained function. It is the caller's responsibility to ensure the
-  // template arguments are correct; i.e. that the dynamic type of this object
-  // really is a NativeFunction<R(Args...)>.
+  std::function<R(Args...)> f;
+};
+
+// TODO: try to extract the refcounting logic from Program / Instance /
+// NativeFunction into an RAII object with copy/move operators, etc?
+struct NativeFunctionInternals {
+  ~NativeFunctionInternals() {}
+
+  // This must match the Prefix struct declared in src/refcounting.h.
+  Prefix* parent;
+  int_t refcount;
+  Vtable* vtable;
+
+  // Type-erased std::function.
+  std::unique_ptr<ErasedFunction<void>> erased_function;
   template<typename R, typename... Args>
-  const std::function<R(Args...)>& get() const;
-
-  // Increment the reference count. The count starts at zero; this function
-  // should immediately after construction if reference-counting is to be used.
-  // The object must have been allocated with new!
-  inline NativeFunction* take_reference();
-  // Decrement the reference count and return pointer to this object. If it is
-  // then zero, deletes itself and returns null.
-  inline NativeFunction* release_reference();
-  // For debugging purposes.
-  inline std::size_t get_reference_count() const;
-
-private:
-
-  // Set of NativeFunctions which have become unreferenced and should be cleaned
-  // up. There are good reasons not to delete a NativeFunction as soon as its
-  // reference count reaches zero; particularly, it would require extra special-
-  // -case logic for handling return of refcounted values from one function to
-  // another. So we don't do refcounting directly on return values.
-  //
-  // This isn't thread-safe as-is. We need to properly handle return values for
-  // that (which would mean we could delete immediately).
-  static std::unordered_set<NativeFunction*> unreferenced;
-  std::size_t _reference_count;
-
+  const std::function<R(Args...)>& get() const
+  {
+    return ((ErasedFunction<R(Args...)>*)erased_function.get())->f;
+  }
 };
+NativeFunctionInternals* allocate_native_function_internals();
+
+// Hooks a native function into the reference-counting runtime.
+template<typename>
+class NativeFunction;
 
 template<typename R, typename... Args>
-class NativeFunction<R(Args...)> : public NativeFunction<void> {
+class NativeFunction<R(Args...)> {
 public:
 
-  typedef std::function<R(Args...)> function_type;
-  NativeFunction(const function_type& function);
-  ~NativeFunction() override {}
-  const function_type& get_function() const;
+  NativeFunction();
+  NativeFunction(const std::function<R(Args...)>& function);
+  ~NativeFunction();
 
-  // Helpful overrides with the correct return type.
-  NativeFunction* take_reference();
-  NativeFunction* release_reference();
-
-private:
-
-  function_type _function;
-
-};
-
-// Automatic reference-counting for a NativeFunction.
-template<typename T>
-class RefCountedNativeFunction {
-  static_assert(sizeof(T) != sizeof(T),
-                "incorrect native function type argument used");
-};
-
-template<typename R, typename... Args>
-class RefCountedNativeFunction<R(Args...)> {
-public:
-
-  RefCountedNativeFunction();
-  RefCountedNativeFunction(const std::function<R(Args...)>& function);
-  ~RefCountedNativeFunction();
-
-  RefCountedNativeFunction(const RefCountedNativeFunction& function);
-  RefCountedNativeFunction& operator=(const RefCountedNativeFunction& function);
-
-  RefCountedNativeFunction(RefCountedNativeFunction&& function);
-  RefCountedNativeFunction& operator=(RefCountedNativeFunction&& function);
-
-  explicit operator bool() const;
-  typedef NativeFunction<R(Args...)> internal;
-  const internal& get() const;
-  /***/ internal& get();
+  NativeFunction(const NativeFunction& function);
+  NativeFunction& operator=(const NativeFunction& function);
+  NativeFunctionInternals* get();
 
 private:
 
-  internal* _internal;
+  NativeFunctionInternals* _chunk;
 
 };
 
-NativeFunction<void>::NativeFunction()
-  : _reference_count(0)
-{
-  // This constructor is a good time to clean up old memory, since it's also
-  // the only way to allocate new memory.
-  for (NativeFunction* native : unreferenced) {
-    delete native;
-  }
-  unreferenced.clear();
-}
-
 template<typename R, typename... Args>
-const std::function<R(Args...)>& NativeFunction<void>::get() const
-{
-  return ((NativeFunction<R(Args...)>*)this)->get_function();
-}
-
-NativeFunction<void>* NativeFunction<void>::take_reference()
-{
-  if (!_reference_count++) {
-    unreferenced.erase(this);
-  }
-  return this;
-}
-
-NativeFunction<void>* NativeFunction<void>::release_reference()
-{
-  if (--_reference_count) {
-    return this;
-  }
-  unreferenced.insert(this);
-  return nullptr;
-}
-
-std::size_t NativeFunction<void>::get_reference_count() const
-{
-  return _reference_count;
-}
-
-template<typename R, typename... Args>
-NativeFunction<R(Args...)>::NativeFunction(const function_type& function)
-  : _function(function)
+NativeFunction<R(Args...)>::NativeFunction()
+  : _chunk(nullptr)
 {
 }
 
 template<typename R, typename... Args>
-auto NativeFunction<R(Args...)>::get_function() const -> const function_type&
-{
-  return _function;
-}
-
-template<typename R, typename... Args>
-auto NativeFunction<R(Args...)>::take_reference() -> NativeFunction*
-{
-  return (NativeFunction*)NativeFunction<void>::take_reference();
-}
-
-template<typename R, typename... Args>
-auto NativeFunction<R(Args...)>::release_reference() -> NativeFunction*
-{
-  return (NativeFunction*)NativeFunction<void>::release_reference();
-}
-
-template<typename R, typename... Args>
-RefCountedNativeFunction<R(Args...)>::RefCountedNativeFunction()
-  : _internal(nullptr)
-{
-}
-
-template<typename R, typename... Args>
-RefCountedNativeFunction<R(Args...)>::RefCountedNativeFunction(
+NativeFunction<R(Args...)>::NativeFunction(
     const std::function<R(Args...)>& function)
-  : _internal((new internal(function))->take_reference())
+  : _chunk(nullptr)
 {
+  cleanup_structures();
+  _chunk = allocate_native_function_internals();
+  _chunk->erased_function.reset(new ErasedFunction<R(Args...)>{function});
+  update_structure_refcount((Prefix*)_chunk, 1);
 }
 
 template<typename R, typename... Args>
-RefCountedNativeFunction<R(Args...)>::~RefCountedNativeFunction()
+NativeFunction<R(Args...)>::~NativeFunction()
 {
-  if (_internal) {
-    _internal->release_reference();
+  if (_chunk) {
+    update_structure_refcount((Prefix*)_chunk, -1);
   }
 }
 
 template<typename R, typename... Args>
-RefCountedNativeFunction<R(Args...)>::RefCountedNativeFunction(
-    const RefCountedNativeFunction& function)
-  : _internal(
-      function._internal ? function._internal->take_reference() : nullptr)
+NativeFunction<R(Args...)>::NativeFunction(const NativeFunction& function)
+  : _chunk(function._chunk)
 {
+  if (_chunk) {
+    update_structure_refcount((Prefix*)_chunk, 1);
+  }
 }
 
 template<typename R, typename... Args>
-auto RefCountedNativeFunction<R(Args...)>::operator=(
-    const RefCountedNativeFunction& function) -> RefCountedNativeFunction&
+auto NativeFunction<R(Args...)>::operator=(
+    const NativeFunction& function) -> NativeFunction&
 {
   if (this == &function) {
     return *this;
   }
-  if (_internal) {
-    _internal->release_reference();
+  if (_chunk) {
+    update_structure_refcount((Prefix*)_chunk, -1);
   }
-  _internal = function._internal ?
-      function._internal->take_reference() : nullptr;
+  if (_chunk = function._chunk) {
+    update_structure_refcount((Prefix*)_chunk, 1);
+  }
   return *this;
 }
 
 template<typename R, typename... Args>
-RefCountedNativeFunction<R(Args...)>::RefCountedNativeFunction(
-    RefCountedNativeFunction&& function)
-  : _internal(nullptr)
+NativeFunctionInternals* NativeFunction<R(Args...)>::get()
 {
-  std::swap(_internal, function._internal);
-}
-
-template<typename R, typename... Args>
-auto RefCountedNativeFunction<R(Args...)>::operator=(
-    RefCountedNativeFunction&& function) -> RefCountedNativeFunction&
-{
-  std::swap(_internal, function._internal);
-  return *this;
-}
-
-template<typename R, typename... Args>
-RefCountedNativeFunction<R(Args...)>::operator bool() const
-{
-  return _internal;
-}
-
-template<typename R, typename... Args>
-auto RefCountedNativeFunction<R(Args...)>::get() const -> const internal&
-{
-  return *_internal;
-}
-
-template<typename R, typename... Args>
-auto RefCountedNativeFunction<R(Args...)>::get() -> internal&
-{
-  return *_internal;
+  return _chunk;
 }
 
 // End namespace yang::internal.

@@ -41,7 +41,7 @@ struct ProgramInternals {
   Vtable* vtable;
 
   // As well as looking up things in the Context, programs need to ensure that
-  // RefCountedNativeFunctions they depend on are kept alive.
+  // the native functions they depend on are kept alive.
   std::shared_ptr<const ContextInternals> context;
   std::string name;
 

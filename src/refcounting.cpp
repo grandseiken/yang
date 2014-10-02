@@ -151,18 +151,6 @@ void update_structure_refcount(Prefix* structure, int_t change)
   }
 }
 
-void update_function_refcount(NativeFunction<void>* target, int_t change)
-{
-  while (change > 0) {
-    target->take_reference();
-    --change;
-  }
-  while (change < 0) {
-    target->release_reference();
-    ++change;
-  }
-}
-
 void cleanup_structures()
 {
   std::unordered_set<Prefix*> already_freed;
