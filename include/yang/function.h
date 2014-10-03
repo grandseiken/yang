@@ -93,46 +93,6 @@ struct IsFunction<Function<R(Args...)>> {
   enum {value = true};
 };
 
-// Template deduction for make_fn.
-template<typename T> struct RemoveClass {};
-template<typename C, typename R, typename... Args>
-struct RemoveClass<R(C::*)(Args...)> {
-  using type = R(Args...);
-};
-template<typename C, typename R, typename... Args>
-struct RemoveClass<R(C::*)(Args...) const> {
-  using type = R(Args...);
-};
-template<typename C, typename R, typename... Args>
-struct RemoveClass<R(C::*)(Args...) volatile> {
-  using type = R(Args...);
-};
-template<typename C, typename R, typename... Args>
-struct RemoveClass<R(C::*)(Args...) const volatile> {
-  using type = R(Args...);
-};
-
-template<typename T>
-struct GetSignature {
-  using type = typename RemoveClass<
-      decltype(&std::remove_reference<T>::type::operator())>::type;
-};
-template<typename R, typename... Args>
-struct GetSignature<R(Args...)> {
-  using type = R(Args...);
-};
-template<typename R, typename... Args>
-struct GetSignature<R(&)(Args...)> {
-  using type = R(Args...);
-};
-template<typename R, typename... Args>
-struct GetSignature<R(*)(Args...)> {
-  using type = R(Args...);
-};
-
-template<typename T>
-using make_fn_type = yang::Function<typename GetSignature<T>::type>;
-
 // Avoid including unnecessary files in this header.
 void_fp get_global_trampoline_function(const Type& type);
 
@@ -151,25 +111,6 @@ R call_via_trampoline(void_fp target, void* env, const Args&... args)
 }
 
 // End namespace internal.
-}
-
-// Convenient template-deduction constructor function. Creates a yang::Function
-// of the correct type from an unambiguous callable or lambda.
-template<typename T>
-internal::make_fn_type<T> make_fn(T&& t)
-{
-  return internal::make_fn_type<T>(std::forward<T>(t));
-}
-// Avoid double-wrapping when the input is already a yang::Function.
-template<typename R, typename... Args>
-Function<R(Args...)> make_fn(const Function<R(Args...)>& f)
-{
-  return f;
-}
-template<typename R, typename... Args>
-Function<R(Args...)> make_fn(Function<R(Args...)>&& f)
-{
-  return f;
 }
 
 template<typename R, typename... Args>

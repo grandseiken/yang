@@ -10,6 +10,7 @@
 #include "error.h"
 #include "function.h"
 #include "instance.h"
+#include "make_fn.h"
 #include "program.h"
 #include "refcounting.h"
 #include "typedefs.h"
