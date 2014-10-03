@@ -180,24 +180,18 @@ Value Builder::function_value(const Type& function_type,
   v.irval = b.CreateInsertValue(v.irval, cast, 0);
   if (eptr) {
     // Must be bitcast to void pointer, since it may be a global data type or
-    // closure data type..
+    // closure data type.
     llvm::Value* cast = b.CreateBitCast(eptr, void_ptr_type());
     v.irval = b.CreateInsertValue(v.irval, cast, 1);
   }
   return v;
 }
 
-Value Builder::function_value(const GenericFunction& function)
+Value Builder::function_value(const ErasedFunction& function)
 {
-  auto raw = function.ptr->get_raw_representation();
-  if (!raw.environment_ptr) {
-    // Native functions don't need an environment pointer.
-    return function_value(
-        function.type, constant_ptr(raw.function_ptr), nullptr);
-  }
-  return function_value(
-      function.type, constant_ptr(raw.function_ptr),
-      constant_ptr(raw.environment_ptr));
+  auto eptr = function.env_ref.get();
+  auto fptr = eptr ? function.yang_function : function.native_ref.get();
+  return function_value(function.type, constant_ptr(fptr), constant_ptr(eptr));
 }
 
 Value Builder::default_for_type(const Type& type, int_t fill) const

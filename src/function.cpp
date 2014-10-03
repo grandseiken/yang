@@ -8,18 +8,21 @@
 namespace yang {
 namespace internal {
 
-bool GenericFunction::operator==(const GenericFunction& other) const
+ErasedFunction::ErasedFunction()
+  : type(Type::void_t())
+  , native_ref(nullptr)
+  , env_ref(nullptr)
+  , yang_function(nullptr)
 {
-  if (type != other.type) {
-    return false;
-  }
-  auto t = ptr->get_raw_representation();
-  auto o = other.ptr->get_raw_representation();
-  return t.function_ptr == o.function_ptr &&
-      t.environment_ptr == o.environment_ptr;
 }
 
-bool GenericFunction::operator!=(const GenericFunction& other) const
+bool ErasedFunction::operator==(const ErasedFunction& other) const
+{
+  return type == other.type && native_ref == other.native_ref &&
+      env_ref == other.env_ref && yang_function == other.yang_function;
+}
+
+bool ErasedFunction::operator!=(const ErasedFunction& other) const
 {
   return !operator==(other);
 }

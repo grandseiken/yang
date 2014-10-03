@@ -11,21 +11,17 @@
 #include "type.h"
 
 namespace yang {
-
-// Common base class for dynamic storage.
 namespace internal {
 
-class FunctionBase { // TODO: is this necessary? Is GenericFunction necessary?
-public:
+struct ErasedFunction {
+  ErasedFunction();
+  bool operator==(const ErasedFunction& other) const;
+  bool operator!=(const ErasedFunction& other) const;
 
-  virtual ~FunctionBase() {}
-
-private:
-
-  friend class Builder;
-  friend struct GenericFunction;
-  virtual RawFunction get_raw_representation() const = 0;
-
+  Type type;
+  internal::RefcountHook<internal::NativeFunctionInternals> native_ref;
+  internal::RefcountHook<internal::Prefix> env_ref;
+  void* yang_function;
 };
 
 // End namespace internal.
@@ -53,18 +49,20 @@ class Function {
 //     to the global data structure associated with the program Instance, or to
 //     some node of the tree of closure structures rooted there.
 //
+// On the C++ side, we store the Yang and C++ parts of (1) separately since
+// only the C++ part should be refcounted.
+//
 // There is also a large amount of template machinery to ensure we can
 // transparently call Yang functions from C++ and vice-versa, even though they
 // use different calling conventions.
 template<typename R, typename... Args>
-class Function<R(Args...)> : public internal::FunctionBase {
+class Function<R(Args...)> {
 public:
 
   // Construct a generic Yang Function object from a generic C++ function
   // object.
   typedef std::function<R(Args...)> cpp_type;
   Function(const cpp_type& cpp_function);
-  ~Function() override {};
 
   // Invoke the function.
   R operator()(const Args&... args) const;
@@ -72,10 +70,12 @@ public:
 private:
 
   friend struct internal::Raw<Function>;
+  friend class Context;
   // There is no null function, so library code that returns Functions to client
   // code must throw rather than returning something unusable.
   Function(const internal::RawFunction& raw);
-  internal::RawFunction get_raw_representation() const override;
+  internal::RawFunction get_raw_representation() const;
+  internal::ErasedFunction get_erased_representation() const;
 
   // Either _native_ref is non-null, and _env_ref and _yang_function are null,
   // or vice-versa.
@@ -136,20 +136,6 @@ struct GetSignature<R(*)(Args...)> {
 template<typename T>
 using make_fn_type = yang::Function<typename GetSignature<T>::type>;
 
-// Dynamic storage of an abitrary Function.
-struct GenericFunction {
-  GenericFunction()
-    : type(Type::void_t())
-    , ptr(nullptr)
-  {}
-
-  Type type;
-  std::shared_ptr<FunctionBase> ptr;
-
-  bool operator==(const GenericFunction& other) const;
-  bool operator!=(const GenericFunction& other) const;
-};
-
 // Avoid including unnecessary files in this header.
 void_fp get_global_trampoline_function(const Type& type);
 
@@ -195,7 +181,7 @@ Function<R(Args...)>::Function(const cpp_type& function)
   , _yang_function(nullptr)
 {
   _native_ref->erased_function.reset(
-      new internal::ErasedFunction<R(Args...)>(function));
+      new internal::ErasedNativeFunction<R(Args...)>(function));
   // Make sure the reverse trampoline is generated, since the global Yang
   // trampolines will compile a reference it to immediately, even if the
   // Function is never used.
@@ -229,6 +215,18 @@ internal::RawFunction Function<R(Args...)>::get_raw_representation() const
 {
   return internal::RawFunction{
       _env_ref.get() ? _yang_function : _native_ref.get(), _env_ref.get()};
+}
+
+template<typename R, typename... Args>
+internal::ErasedFunction Function<R(Args...)>::get_erased_representation() const
+{
+  internal::GenerateReverseTrampolineLookupTable<Function<R(Args...)>>()();
+  internal::ErasedFunction f;
+  f.type = type_of<Function<R(Args...)>>();
+  f.native_ref = _native_ref;
+  f.env_ref = _env_ref;
+  f.yang_function = _yang_function;
+  return f;
 }
 
 // End namespace yang.

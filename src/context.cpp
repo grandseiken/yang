@@ -23,18 +23,18 @@ const ContextInternals::constructor& ContextInternals::constructor_lookup(
   return it == constructors.end() ? none : it->second;
 }
 
-const GenericFunction& ContextInternals::function_lookup(
+const ErasedFunction& ContextInternals::function_lookup(
     const std::string& name) const
 {
-  static GenericFunction none;
+  static ErasedFunction none;
   auto it = functions.find(name);
   return it == functions.end() ? member_lookup(name) : it->second;
 }
 
-const GenericFunction& ContextInternals::member_lookup(
+const ErasedFunction& ContextInternals::member_lookup(
     const std::string& name) const
 {
-  static GenericFunction none;
+  static ErasedFunction none;
   std::size_t index = name.find_last_of(':');
   if (index == std::string::npos) {
     return none;
@@ -44,10 +44,10 @@ const GenericFunction& ContextInternals::member_lookup(
   return member_lookup(type_lookup(first), last);
 }
 
-const GenericFunction& ContextInternals::member_lookup(
+const ErasedFunction& ContextInternals::member_lookup(
     const Type& type, const std::string& name) const
 {
-  static GenericFunction none;
+  static ErasedFunction none;
   auto member_it = members.find(type);
   if (member_it == members.end()) {
     return none;
@@ -118,16 +118,13 @@ void Context::register_namespace(const std::string& name,
   check_namespace(name);
   Context context;
   for (const auto& pair : instance.get_functions()) {
-    // This is kind of awkward; we just use Function<void()> for every type and
-    // rely on it never being directly invoked. It only works because the
-    // functions are all Yang functions. It depends on otherwise-unnecessary
-    // friendship from Instance. A nice integration of yang::Value might make it
-    // a lot better.
-    auto& g = context._internals->functions[pair.first];
-    g.type = pair.second;
-    g.ptr = std::make_shared<Function<void()>>(
-        internal::Raw<Function<void()>>().from(
-            {instance.get_native_fp(pair.first), instance._global_data.get()}));
+    // This is kind of awkward. It depends on otherwise-unnecessary friendship
+    // from Instance. A nice integration of yang::Value might make it a lot
+    // better.
+    auto& f = context._internals->functions[pair.first];
+    f.type = pair.second;
+    f.env_ref = instance._global_data.get();
+    f.yang_function = instance.get_native_fp(pair.first);
   }
   // Conservative decision: no type used by the instance is automatically
   // exposed. Clearly, member functions shouldn't be added, so it'd be weird

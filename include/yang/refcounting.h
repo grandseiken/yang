@@ -80,6 +80,9 @@ public:
   T* operator->() const;
   T* get() const;
 
+  bool operator==(const RefcountHook& hook) const;
+  bool operator!=(const RefcountHook& hook) const;
+
 private:
 
   static void destructor(Prefix* structure);
@@ -170,6 +173,18 @@ template<typename T>
 T* RefcountHook<T>::get() const
 {
   return _structure;
+}
+
+template<typename T>
+bool RefcountHook<T>::operator==(const RefcountHook& hook) const
+{
+  return _structure == hook._structure;
+}
+
+template<typename T>
+bool RefcountHook<T>::operator!=(const RefcountHook& hook) const
+{
+  return !operator==(hook);
 }
 
 template<typename T>

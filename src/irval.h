@@ -19,8 +19,7 @@ namespace llvm {
 namespace yang {
 namespace internal {
 
-struct GenericFunction;
-
+struct ErasedFunction;
 struct StaticString : StaticDataEntry {
   StaticString(const std::string& value);
   const std::string value;
@@ -92,7 +91,7 @@ struct Builder {
   Value function_value_null(const Type& function_type) const;
   Value function_value(const Type& function_type,
                        llvm::Value* fptr, llvm::Value* ptr);
-  Value function_value(const GenericFunction& function);
+  Value function_value(const ErasedFunction& function);
 
   // Default value for a given type.
   Value default_for_type(const Type& type, int_t fill = 0) const;

@@ -10,7 +10,6 @@
 
 #include "error.h"
 #include "function.h"
-#include "refcounting.h"
 #include "type.h"
 #include "type_info.h"
 
@@ -67,23 +66,23 @@ struct ContextInternals {
     // This is a little odd: constructor/destructor pairs are named separately
     // from the type concerned. It makes sense, since it allows multiple
     // constructors; function overloading would make it unnecessary.
-    GenericFunction ctor;
-    GenericFunction dtor;
+    ErasedFunction ctor;
+    ErasedFunction dtor;
   };
 
   const Type& type_lookup(const std::string& name) const;
   const constructor& constructor_lookup(const std::string& name) const;
-  const GenericFunction& function_lookup(const std::string& name) const;
-  const GenericFunction& member_lookup(const std::string& name) const;
-  const GenericFunction& member_lookup(const Type& t,
-                                       const std::string& name) const;
+  const ErasedFunction& function_lookup(const std::string& name) const;
+  const ErasedFunction& member_lookup(const std::string& name) const;
+  const ErasedFunction& member_lookup(const Type& t,
+                                      const std::string& name) const;
 
   // Using some real heirarchical data structures for namespaces rather than
   // this still somewhat string-based mess might be a little bit nicer.
   typedef std::unordered_set<std::string> namespace_set;
   typedef std::unordered_map<std::string, Type> type_map;
   typedef std::unordered_map<std::string, constructor> constructor_map;
-  typedef std::unordered_map<std::string, GenericFunction> function_map;
+  typedef std::unordered_map<std::string, ErasedFunction> function_map;
   typedef std::unordered_map<Type, function_map> member_map;
 
   namespace_set namespaces;
@@ -159,9 +158,6 @@ private:
   void check_identifier(const std::string& ident) const;
   void copy_internals();
 
-  template<typename R, typename... Args>
-  internal::GenericFunction make_generic(const Function<R(Args...)>& f);
-
   friend class Program;
   friend class Type;
   std::shared_ptr<internal::ContextInternals> _internals;
@@ -186,8 +182,8 @@ void Context::register_constructor(const std::string& name,
   copy_internals();
   auto it = _internals->constructors.insert(
       std::make_pair(name, internal::ContextInternals::constructor()));
-  it.first->second.ctor = make_generic(constructor);
-  it.first->second.dtor = make_generic(destructor);
+  it.first->second.ctor = constructor.get_erased_representation();
+  it.first->second.dtor = destructor.get_erased_representation();
 }
 
 template<typename T, typename... Args>
@@ -208,7 +204,7 @@ void Context::register_member_function(
   Type t = Type::raw_user_t<T>();
   check_member_function(t, name);
   copy_internals();
-  _internals->members[t][name] = make_generic(f);
+  _internals->members[t][name] = f.get_erased_representation();
 }
 
 template<typename T, typename R, typename... Args>
@@ -218,7 +214,7 @@ void Context::register_member_function(
   Type t = Type::managed_user_t<T>();
   check_member_function(t, name);
   copy_internals();
-  _internals->members[t][name] = make_generic(f);
+  _internals->members[t][name] = f.get_erased_representation();
 }
 
 template<typename R, typename... Args>
@@ -227,17 +223,7 @@ void Context::register_function(
 {
   check_function(name);
   copy_internals();
-  _internals->functions[name] = make_generic(f);
-}
-
-template<typename R, typename... Args>
-internal::GenericFunction Context::make_generic(const Function<R(Args...)>& f)
-{
-  internal::GenericFunction g;
-  g.type = type_of<Function<R(Args...)>>();
-  g.ptr = std::make_shared<Function<R(Args...)>>(f);
-  internal::GenerateReverseTrampolineLookupTable<Function<R(Args...)>>()();
-  return g;
+  _internals->functions[name] = f.get_erased_representation();
 }
 
 // End namepsace yang.
