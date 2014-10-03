@@ -15,6 +15,10 @@
 namespace yang {
 namespace internal {
 struct Prefix;
+struct RawFunction {
+  void* function_ptr;
+  Prefix* environment_ptr;
+};
 
 // Boost's metaprogramming list implementation fakes variadic templates for
 // C++03 compatibility. This makes extracting the type-list directly as a
@@ -145,7 +149,7 @@ struct TrampolineReturn<vec<T, N>> {
 };
 template<typename R, typename... Args>
 struct TrampolineReturn<Function<R(Args...)>> {
-  typedef List<void**, void**> type;
+  typedef List<void**, Prefix**> type;
 };
 
 template<typename... Args>
@@ -172,7 +176,7 @@ struct TrampolineArgs<Ref<T>, Args...> {
 template<typename R, typename... Args, typename... Brgs>
 struct TrampolineArgs<Function<R(Args...)>, Brgs...> {
   typedef typename Join<
-      List<void*, void*>,
+      List<void*, Prefix*>,
       typename TrampolineArgs<Brgs...>::type>::type type;
 };
 
@@ -185,6 +189,8 @@ struct TrampolineType {
   typedef typename Functions<void, join_type>::fp_type fp_type;
 };
 
+// TODO: this can probably still be simplified by using Raw everywhere rather
+// than for special cases only.
 template<typename T>
 struct Raw {
   typedef T raw_type;
@@ -207,14 +213,14 @@ struct Raw<Ref<T>> {
 };
 template<typename R, typename... Args>
 struct Raw<Function<R(Args...)>> {
-  typedef std::pair<void*, void*> raw_type;
-  Function<R(Args...)> from(const raw_type& t) const
+  typedef RawFunction raw_type;
+  Function<R(Args...)> from(const RawFunction& t) const
   {
-    return Function<R(Args...)>(t.first, t.second);
+    return Function<R(Args...)>(t);
   }
-  raw_type to(const Function<R(Args...)>& t) const
+  RawFunction to(const Function<R(Args...)>& t) const
   {
-    return t.get_yang_representation();
+    return t.get_raw_representation();
   }
 };
 
@@ -283,7 +289,7 @@ struct TrampolineCallArgs<Function<R(Args...)>, Brgs...> {
   type operator()(const Function<R(Args...)>& arg, const Brgs&... brgs) const
   {
     auto rep = Raw<Function<R(Args...)>>().to(arg);
-    return join(list(rep.first, rep.second),
+    return join(list(rep.function_ptr, rep.environment_ptr),
                 TrampolineCallArgs<Brgs...>()(brgs...));
   }
 };
@@ -332,9 +338,9 @@ template<typename R, typename... Args>
 struct TrampolineCallReturn<Function<R(Args...)>> {
   typedef typename TrampolineReturn<Function<R(Args...)>>::type type;
 
-  type operator()(std::pair<void*, void*>& result) const
+  type operator()(RawFunction& result) const
   {
-    return type(&result.first, &result.second);
+    return type(&result.function_ptr, &result.environment_ptr);
   }
 };
 
@@ -426,7 +432,7 @@ struct ReverseTrampolineCallArgs<
       const List<Brgs...>& brgs) const
   {
     auto fn_object = Raw<Function<S(Crgs...)>>().from(
-        {std::get<0>(brgs), std::get<1>(brgs)});
+        RawFunction{std::get<0>(brgs), std::get<1>(brgs)});
     typedef typename IndexRange<2, sizeof...(Brgs) - 2>::type range;
     return join(list(fn_object),
                 rtcall_args<List<Args...>>(sublist<range>(brgs)));
@@ -465,13 +471,13 @@ struct ReverseTrampolineCallReturn<vec<T, N>, Args...> {
   }
 };
 template<typename R, typename... Args>
-struct ReverseTrampolineCallReturn<Function<R(Args...)>, void**, void**> {
+struct ReverseTrampolineCallReturn<Function<R(Args...)>, void**, Prefix**> {
   void operator()(const Function<R(Args...)>& result,
-                  void** fptr, void** eptr) const
+                  void** fptr, Prefix** eptr) const
   {
     auto rep = Raw<Function<R(Args...)>>().to(result);
-    *fptr = rep.first;
-    *eptr = rep.second;
+    *fptr = rep.function_ptr;
+    *eptr = rep.environment_ptr;
   }
 };
 

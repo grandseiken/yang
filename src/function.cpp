@@ -13,9 +13,10 @@ bool GenericFunction::operator==(const GenericFunction& other) const
   if (type != other.type) {
     return false;
   }
-  auto t = ptr->get_yang_representation();
-  auto o = other.ptr->get_yang_representation();
-  return t.first == o.first && t.second == o.second;
+  auto t = ptr->get_raw_representation();
+  auto o = other.ptr->get_raw_representation();
+  return t.function_ptr == o.function_ptr &&
+      t.environment_ptr == o.environment_ptr;
 }
 
 bool GenericFunction::operator!=(const GenericFunction& other) const

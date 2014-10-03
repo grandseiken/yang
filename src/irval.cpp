@@ -189,13 +189,15 @@ Value Builder::function_value(const Type& function_type,
 
 Value Builder::function_value(const GenericFunction& function)
 {
-  auto rep = function.ptr->get_yang_representation();
-  if (!rep.second) {
+  auto raw = function.ptr->get_raw_representation();
+  if (!raw.environment_ptr) {
     // Native functions don't need an environment pointer.
-    return function_value(function.type, constant_ptr(rep.first), nullptr);
+    return function_value(
+        function.type, constant_ptr(raw.function_ptr), nullptr);
   }
   return function_value(
-      function.type, constant_ptr(rep.first), constant_ptr(rep.second));
+      function.type, constant_ptr(raw.function_ptr),
+      constant_ptr(raw.environment_ptr));
 }
 
 Value Builder::default_for_type(const Type& type, int_t fill) const

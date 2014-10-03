@@ -15,7 +15,7 @@ namespace yang {
 // Common base class for dynamic storage.
 namespace internal {
 
-class FunctionBase {
+class FunctionBase { // TODO: is this necessary? Is GenericFunction necessary?
 public:
 
   virtual ~FunctionBase() {}
@@ -24,7 +24,7 @@ private:
 
   friend class Builder;
   friend struct GenericFunction;
-  virtual std::pair<void*, void*> get_yang_representation() const = 0;
+  virtual RawFunction get_raw_representation() const = 0;
 
 };
 
@@ -72,11 +72,10 @@ public:
 private:
 
   friend struct internal::Raw<Function>;
-
   // There is no null function, so library code that returns Functions to client
   // code must throw rather than returning something unusable.
-  Function(void* function, void* env);
-  std::pair<void*, void*> get_yang_representation() const override;
+  Function(const internal::RawFunction& raw);
+  internal::RawFunction get_raw_representation() const override;
 
   // Either _native_ref is non-null, and _env_ref and _yang_function are null,
   // or vice-versa.
@@ -217,17 +216,19 @@ R Function<R(Args...)>::operator()(const Args&... args) const
 }
 
 template<typename R, typename... Args>
-Function<R(Args...)>::Function(void* function, void* env)
-  : _native_ref(env ? nullptr : (internal::NativeFunctionInternals*)function)
-  , _env_ref((internal::Prefix*)env)
-  , _yang_function(env ? function : nullptr)
+Function<R(Args...)>::Function(const internal::RawFunction& raw)
+  : _native_ref(raw.environment_ptr ?
+        nullptr : (internal::NativeFunctionInternals*)raw.function_ptr)
+  , _env_ref(raw.environment_ptr)
+  , _yang_function(raw.environment_ptr ? raw.function_ptr : nullptr)
 {
 }
 
 template<typename R, typename... Args>
-std::pair<void*, void*> Function<R(Args...)>::get_yang_representation() const
+internal::RawFunction Function<R(Args...)>::get_raw_representation() const
 {
-  return {_env_ref.get() ? _yang_function : _native_ref.get(), _env_ref.get()};
+  return internal::RawFunction{
+      _env_ref.get() ? _yang_function : _native_ref.get(), _env_ref.get()};
 }
 
 // End namespace yang.
