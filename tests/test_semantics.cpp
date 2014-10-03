@@ -293,6 +293,26 @@ export edit = int()()
   ASSERT_EQ(2, edit());
 }
 
+TEST_F(SemanticsTest, SelfReference)
+{
+  auto inst = instance(R"(
+export self = int()
+{
+  var f = int(int n)
+  {
+    return n ? f(n - 1) : 0;
+  };
+  const g = f;
+  f = int(int)
+  {
+    return 1;
+  };
+  return g(4);
+}
+)");
+  ASSERT_EQ(0, inst.call<int_t>("self"));
+}
+
 TEST_F(SemanticsTest, GlobalDestructors)
 {
   int_t temp_int = 0;
