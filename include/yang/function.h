@@ -19,6 +19,8 @@ struct ErasedFunction {
   bool operator!=(const ErasedFunction& other) const;
 
   Type type;
+  // Either _native_ref is non-null, and _env_ref and _yang_function are null,
+  // or vice-versa.
   internal::RefcountHook<internal::NativeFunctionInternals> native_ref;
   internal::RefcountHook<internal::Prefix> env_ref;
   void* yang_function;
@@ -75,13 +77,8 @@ private:
   // code must throw rather than returning something unusable.
   Function(const internal::RawFunction& raw);
   internal::RawFunction get_raw_representation() const;
-  internal::ErasedFunction get_erased_representation() const;
-
-  // Either _native_ref is non-null, and _env_ref and _yang_function are null,
-  // or vice-versa.
-  internal::RefcountHook<internal::NativeFunctionInternals> _native_ref;
-  internal::RefcountHook<internal::Prefix> _env_ref;
-  void* _yang_function;
+  const internal::ErasedFunction& get_erased_representation() const;
+  internal::ErasedFunction _data;
 
 };
 
@@ -177,10 +174,11 @@ Function<R(Args...)> make_fn(Function<R(Args...)>&& f)
 
 template<typename R, typename... Args>
 Function<R(Args...)>::Function(const cpp_type& function)
-  : _env_ref(nullptr)
-  , _yang_function(nullptr)
 {
-  _native_ref->erased_function.reset(
+  _data.type = type_of<Function<R(Args...)>>();
+  _data.native_ref =
+      internal::RefcountHook<internal::NativeFunctionInternals>();
+  _data.native_ref->erased_function.reset(
       new internal::ErasedNativeFunction<R(Args...)>(function));
   // Make sure the reverse trampoline is generated, since the global Yang
   // trampolines will compile a reference it to immediately, even if the
@@ -192,41 +190,39 @@ template<typename R, typename... Args>
 R Function<R(Args...)>::operator()(const Args&... args) const
 {
   // For C++ functions, just call it directly.
-  if (!_env_ref.get()) {
-    return _native_ref.get()->get<R, Args...>()(args...);
+  if (!_data.env_ref.get()) {
+    return _data.native_ref.get()->get<R, Args...>()(args...);
   }
 
   // For yang functions, call via the trampoline machinery.
   return internal::call_via_trampoline<R>(
-      (void_fp)(std::intptr_t)_yang_function, _env_ref.get(), args...);
+      (void_fp)(std::intptr_t)_data.yang_function,
+      _data.env_ref.get(), args...);
 }
 
 template<typename R, typename... Args>
 Function<R(Args...)>::Function(const internal::RawFunction& raw)
-  : _native_ref(raw.environment_ptr ?
-        nullptr : (internal::NativeFunctionInternals*)raw.function_ptr)
-  , _env_ref(raw.environment_ptr)
-  , _yang_function(raw.environment_ptr ? raw.function_ptr : nullptr)
 {
+  _data.type = type_of<Function<R(Args...)>>();
+  _data.native_ref = raw.environment_ptr ? nullptr :
+      (internal::NativeFunctionInternals*)raw.function_ptr;
+  _data.env_ref = raw.environment_ptr;
+  _data.yang_function = raw.environment_ptr ? raw.function_ptr : nullptr;
 }
 
 template<typename R, typename... Args>
 internal::RawFunction Function<R(Args...)>::get_raw_representation() const
 {
   return internal::RawFunction{
-      _env_ref.get() ? _yang_function : _native_ref.get(), _env_ref.get()};
+      _data.env_ref.get() ? _data.yang_function : _data.native_ref.get(),
+      _data.env_ref.get()};
 }
 
 template<typename R, typename... Args>
-internal::ErasedFunction Function<R(Args...)>::get_erased_representation() const
+const internal::ErasedFunction& Function<R(Args...)>::get_erased_representation() const
 {
   internal::GenerateReverseTrampolineLookupTable<Function<R(Args...)>>()();
-  internal::ErasedFunction f;
-  f.type = type_of<Function<R(Args...)>>();
-  f.native_ref = _native_ref;
-  f.env_ref = _env_ref;
-  f.yang_function = _yang_function;
-  return f;
+  return _data;
 }
 
 // End namespace yang.
