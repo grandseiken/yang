@@ -22,8 +22,6 @@ struct RawFunction {
 
 // Converts between rich C++ client types and bare types that can be passed to
 // Yang trampolines.
-// TODO: it would almost certainly be simpler to pass vectors as direct pointers
-// to arrays and deal with them on the Yang side.
 template<typename T>
 struct Raw {
   typedef T type;
@@ -81,8 +79,8 @@ struct TrampolineArgs<> {
 };
 template<typename A, typename... Args>
 struct TrampolineArgs<A, Args...> {
-  typedef typename Join<
-      List<A>, typename TrampolineArgs<Args...>::type>::type type;
+  typedef typename TrampolineArgs<Args...>::type rest;
+  typedef typename Join<List<A>, rest>::type type;
   type operator()(const A& arg, const Args&... args) const
   {
     return join(list(arg), TrampolineArgs<Args...>()(args...));
@@ -91,20 +89,11 @@ struct TrampolineArgs<A, Args...> {
 template<typename T, std::size_t N, typename... Args>
 struct TrampolineArgs<vec<T, N>, Args...> {
   typedef typename TrampolineArgs<Args...>::type rest;
-  typedef typename Join<typename Mul<N, T>::type, rest>::type type;
-
-  template<std::size_t... I>
-  type helper(const vec<T, N>& arg, const typename Raw<Args>::type&... args,
-              const Indices<I...>&) const
-  {
-    return join(typename Mul<N, T>::type(arg[I]...),
-                TrampolineArgs<Args...>()(args...));
-  }
-
+  typedef typename Join<List<T*>, rest>::type type;
   type operator()(const vec<T, N>& arg,
                   const typename Raw<Args>::type&... args) const
   {
-    return helper(arg, args..., range<0, N>());
+    return join(list((T*)arg.elements), TrampolineArgs<Args...>()(args...));
   }
 };
 template<typename... Args>
@@ -128,17 +117,10 @@ struct TrampolineReturn {
 };
 template<typename T, std::size_t N>
 struct TrampolineReturn<vec<T, N>> {
-  typedef typename Mul<N, T*>::type type;
-
-  template<std::size_t... I>
-  type helper(T* result, const Indices<I...>&) const
-  {
-    return type((I + result)...);
-  }
-
+  typedef List<T*> type;
   type operator()(vec<T, N>& result) const
   {
-    return helper(result.elements, range<0, N>());
+    return type(result.elements);
   }
 };
 template<>
@@ -229,18 +211,14 @@ struct ReverseTrampolineArgs<List<A, Args...>, List<Brgs...>> {
 };
 template<typename... Args, typename... Brgs, typename T, std::size_t N>
 struct ReverseTrampolineArgs<List<vec<T, N>, Args...>, List<Brgs...>> {
-  template<std::size_t... I>
-  List<vec<T, N>, Args...> helper(const List<Brgs...>& brgs,
-                                  const Indices<I...>&) const
-  {
-    typedef typename IndexRange<N, sizeof...(Brgs) - N>::type range;
-    return join(list(vec<T, N>(std::get<I>(brgs)...)),
-                rtcall_args<List<Args...>>(sublist<range>(brgs)));
-  }
-
   List<vec<T, N>, Args...> operator()(const List<Brgs...>& brgs) const
   {
-    return helper(brgs, range<0, N>());
+    typedef typename IndexRange<1, sizeof...(Brgs) - 1>::type range;
+    vec<T, N> v;
+    for (std::size_t i = 0; i < N; ++i) {
+      v[i] = std::get<0>(brgs)[i];
+    }
+    return join(list(v), rtcall_args<List<Args...>>(sublist<range>(brgs)));
   }
 };
 template<typename... Args, typename... Brgs>
@@ -263,18 +241,13 @@ struct ReverseTrampolineReturn<R, R*> {
     *ptr = result;
   }
 };
-template<typename T, std::size_t N, typename... Args>
-struct ReverseTrampolineReturn<vec<T, N>, Args...> {
-  template<std::size_t... I>
-  void helper(const vec<T, N>& result, const List<Args...>& args,
-              const Indices<I...>&) const
+template<typename T, std::size_t N>
+struct ReverseTrampolineReturn<vec<T, N>, T*> {
+  void operator()(const vec<T, N>& result, T* t) const
   {
-    ignore((*std::get<I>(args) = result[I])...);
-  }
-
-  void operator()(const vec<T, N>& result, const Args&... args) const
-  {
-    helper(result, List<Args...>(args...), range<0, N>());
+    for (std::size_t i = 0; i < N; ++i) {
+      t[i] = result[i];
+    }
   }
 };
 template<>

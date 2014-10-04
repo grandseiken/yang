@@ -159,11 +159,9 @@ llvm::Function* IrCommon::get_trampoline_function(
   auto jt = function->arg_begin();
   std::size_t return_args =
       return_t.is_void() ? 0 :
-      return_t.is_vector() ? return_t.vector_size() :
       return_t.is_function() ? 2 : 1;
   for (std::size_t i = 0; i < return_args; ++i) {
-    jt->setName("r" + std::to_string(i));
-    ++jt;
+    jt++->setName(return_args == 1 ? "r" : i ? "r_eptr" : "r_fptr");
   }
 
   for (std::size_t i = 0; i < function_type.function_num_args(); ++i) {
@@ -174,11 +172,13 @@ llvm::Function* IrCommon::get_trampoline_function(
       llvm::Value* v = t.is_ivec() ? _b.constant_ivec(0, size) :
                                      _b.constant_fvec(0, size);
 
+      jt->setName("a" + std::to_string(i));
       for (std::size_t j = 0; j < size; ++j) {
-        jt->setName("a" + std::to_string(i) + "_" + std::to_string(j));
-        v = _b.b.CreateInsertElement(v, jt, _b.constant_int(j));
-        ++jt;
+        v = _b.b.CreateInsertElement(
+            v, _b.b.CreateLoad(_b.b.CreateGEP(jt, _b.constant_int(j))),
+            _b.constant_int(j));
       }
+      ++jt;
       call_args.push_back(v);
       continue;
     }
@@ -202,10 +202,10 @@ llvm::Function* IrCommon::get_trampoline_function(
   // Do the call and translate the result back to native calling convention.
   llvm::Value* result = _b.b.CreateCall(callee, call_args);
   if (return_t.is_vector()) {
-    auto it = function->arg_begin();
     for (std::size_t i = 0; i < return_t.vector_size(); ++i) {
-      llvm::Value* v = _b.b.CreateExtractElement(result, _b.constant_int(i));
-      _b.b.CreateStore(v, it++);
+      _b.b.CreateStore(
+          _b.b.CreateExtractElement(result, _b.constant_int(i)),
+          _b.b.CreateGEP(function->arg_begin(), _b.constant_int(i)));
     }
   }
   else if (return_t.is_function()) {
@@ -285,11 +285,21 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
       }
 
       if (it->getType()->isVectorTy()) {
+        llvm::Type* array = llvm::ArrayType::get(
+            it->getType()->getVectorElementType(),
+            it->getType()->getVectorNumElements());
+        llvm::Value* alloc = _b.b.CreateAlloca(array, nullptr);
         for (std::size_t j = 0;
              j < it->getType()->getVectorNumElements(); ++j) {
-          llvm::Value* v = _b.b.CreateExtractElement(it, _b.constant_int(j));
-          args.push_back(v);
+          std::vector<llvm::Value*> indices{
+              _b.constant_int(0), _b.constant_int(j)};
+          _b.b.CreateStore(
+              _b.b.CreateExtractElement(it, _b.constant_int(j)),
+              _b.b.CreateGEP(alloc, indices));
         }
+        std::vector<llvm::Value*> indices{
+              _b.constant_int(0), _b.constant_int(0)};
+        args.push_back(_b.b.CreateGEP(alloc, indices));
         continue;
       }
       if (it->getType()->isStructTy()) {
@@ -313,21 +323,21 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
     _b.b.CreateRetVoid();
   }
   else if (return_t.is_vector()) {
-    std::vector<llvm::Value*> allocs;
     std::size_t size = return_t.vector_size();
-    llvm::Type* t = return_t.is_ivec() ? _b.int_type() : _b.float_type();
-    for (std::size_t i = 0; i < size; ++i) {
-      llvm::Value* v = _b.b.CreateAlloca(t, nullptr);
-      allocs.push_back(v);
-      args.push_back(v);
-    }
+    llvm::Type* array = llvm::ArrayType::get(
+        return_t.is_ivec() ? _b.int_type() : _b.float_type(), size);
+    llvm::Value* alloc = _b.b.CreateAlloca(array, nullptr);
+    std::vector<llvm::Value*> indices{_b.constant_int(0), _b.constant_int(0)};
+    args.push_back(_b.b.CreateGEP(alloc, indices));
     handle();
 
     llvm::Value* v = return_t.is_ivec() ?
         _b.constant_ivec(0, size) : _b.constant_fvec(0, size);
-    for (std::size_t i = 0; i < return_t.vector_size(); ++i) {
-      llvm::Value* load = _b.b.CreateLoad(allocs[i]);
-      v = _b.b.CreateInsertElement(v, load, _b.constant_int(i));
+    for (std::size_t i = 0; i < size; ++i) {
+      std::vector<llvm::Value*> indices{_b.constant_int(0), _b.constant_int(i)};
+      v = _b.b.CreateInsertElement(
+          v, _b.b.CreateLoad(_b.b.CreateGEP(alloc, indices)),
+          _b.constant_int(i));
     }
     _b.b.CreateRet(v);
   }
@@ -386,10 +396,7 @@ llvm::FunctionType* IrCommon::get_trampoline_type(
   auto add_type = [&](llvm::Type* t, bool to_ptr)
   {
     if (t->isVectorTy()) {
-      for (std::size_t i = 0; i < t->getVectorNumElements(); ++i) {
-        auto elem = t->getVectorElementType();
-        args.push_back(to_ptr ? llvm::PointerType::get(elem, 0) : elem);
-      }
+      args.push_back(llvm::PointerType::get(t->getVectorElementType(), 0));
       return;
     }
     if (t->isStructTy()) {
