@@ -8,6 +8,7 @@
 #include <functional>
 #include <tuple>
 #include <unordered_map>
+#include "meta_list.h"
 #include "native.h"
 #include "refcounting.h"
 #include "type_info.h"
@@ -20,188 +21,25 @@ struct RawFunction {
   Prefix* environment_ptr;
 };
 
-// Boost's metaprogramming list implementation fakes variadic templates for
-// C++03 compatibility. This makes extracting the type-list directly as a
-// comma-separated type list for constructing e.g. function pointer types
-// difficult.
-template<typename... T>
-using List = std::tuple<T...>;
-template<typename... T>
-List<T...> list(const T&... t)
-{
-  return List<T...>(t...);
-}
-template<typename... T>
-void ignore(const T&...) {}
-
-// Integer pack range.
-template<std::size_t... N>
-struct Indices {};
-template<std::size_t Min, std::size_t N, std::size_t... I>
-struct IndexRange {
-  typedef typename IndexRange<Min, N - 1, Min + N - 1, I...>::type type;
-};
-template<std::size_t Min, std::size_t... N>
-struct IndexRange<Min, 0, N...> {
-  typedef Indices<N...> type;
-};
-template<std::size_t Min, std::size_t N>
-auto range() -> typename IndexRange<Min, N>::type
-{
-  return typename IndexRange<Min, N>::type();
-}
-
-// Multiply list.
-template<std::size_t N, typename T, typename... U>
-struct Mul {
-  typedef typename Mul<N - 1, T, T, U...>::type type;
-};
-template<typename T, typename... U>
-struct Mul<0, T, U...> {
-  typedef List<U...> type;
-};
-
-// Join two lists.
-template<typename T, typename U>
-struct Join {};
-template<typename... T, typename... U>
-struct Join<List<T...>, List<U...>> {
-  typedef List<T..., U...> type;
-
-  template<std::size_t... I, std::size_t... J>
-  type helper(const List<T...>& t, const List<U...>& u,
-              const Indices<I...>&, const Indices<J...>&) const
-  {
-    return type(std::get<I>(t)..., std::get<J>(u)...);
-  }
-
-  type operator()(const List<T...>& t, const List<U...>& u) const
-  {
-    return helper(t, u, range<0, sizeof...(T)>(), range<0, sizeof...(U)>());
-  }
-};
-template<typename T, typename U>
-auto join(const T& t, const U& u) -> decltype(Join<T, U>()(t, u))
-{
-  return Join<T, U>()(t, u);
-}
-
-// Get a sublist from a list.
-template<typename, typename>
-struct Sublist {};
-template<std::size_t... I, typename... T>
-struct Sublist<Indices<I...>, List<T...>> {
-  typedef List<typename std::tuple_element<I, List<T...>>::type...> type;
-
-  type operator()(const List<T...>& t) const
-  {
-    return type(std::get<I>(t)...);
-  }
-};
-template<typename I, typename T>
-auto sublist(const T& t) -> decltype(Sublist<I, T>()(t))
-{
-  return Sublist<I, T>()(t);
-}
-
-// Some function metadata.
-template<typename R, typename... Args>
-struct Functions {
-  typedef R (*fp_type)(Args...);
-  typedef std::function<R(Args...)> type;
-};
-template<typename R, typename... Args>
-struct Functions<R, List<Args...>> {
-  typedef typename Functions<R, Args...>::fp_type fp_type;
-  typedef typename Functions<R, Args...>::type type;
-};
-
-// Call function with args from a tuple.
-template<typename R, typename... Args, std::size_t... I>
-R list_call(const std::function<R(Args...)>& f, const List<Args...>& args,
-            const Indices<I...>&)
-{
-  return f(std::get<I>(args)...);
-}
-template<typename R, typename... Args>
-R list_call(const std::function<R(Args...)>& f, const List<Args...>& args)
-{
-  return list_call(f, args, range<0, sizeof...(Args)>());
-}
-
-// Templates for converting native function types into the corresponding
-// Yang trampoline function types.
-template<typename R>
-struct TrampolineReturn {
-  typedef List<R*> type;
-};
-template<typename R>
-struct TrampolineReturn<Ref<R>> {
-  typedef List<Prefix**> type;
-};
-template<>
-struct TrampolineReturn<void> {
-  typedef List<> type;
-};
-template <typename T, std::size_t N>
-struct TrampolineReturn<vec<T, N>> {
-  typedef typename Mul<N, T*>::type type;
-};
-template<typename R, typename... Args>
-struct TrampolineReturn<Function<R(Args...)>> {
-  typedef List<void**, Prefix**> type;
-};
-
-template<typename... Args>
-struct TrampolineArgs {};
-template<typename A, typename... Args>
-struct TrampolineArgs<A, Args...> {
-  typedef typename Join<
-      List<A>, typename TrampolineArgs<Args...>::type>::type type;
-};
-template<>
-struct TrampolineArgs<> {
-  typedef List<> type;
-};
-template<typename T, std::size_t N, typename... Args>
-struct TrampolineArgs<vec<T, N>, Args...> {
-  typedef typename TrampolineArgs<Args...>::type rest;
-  typedef typename Join<typename Mul<N, T>::type, rest>::type type;
-};
-template<typename T, typename... Args>
-struct TrampolineArgs<Ref<T>, Args...> {
-  typedef typename TrampolineArgs<Args...>::type rest;
-  typedef typename Join<List<Prefix*>, rest>::type type;
-};
-template<typename R, typename... Args, typename... Brgs>
-struct TrampolineArgs<Function<R(Args...)>, Brgs...> {
-  typedef typename Join<
-      List<void*, Prefix*>,
-      typename TrampolineArgs<Brgs...>::type>::type type;
-};
-
-template<typename R, typename... Args>
-struct TrampolineType {
-  typedef typename Join<
-      typename TrampolineReturn<R>::type,
-      typename TrampolineArgs<Args...>::type>::type join_type;
-  typedef typename Functions<void, join_type>::type type;
-  typedef typename Functions<void, join_type>::fp_type fp_type;
-};
-
-// TODO: this can probably still be simplified by using Raw everywhere rather
-// than for special cases only.
+// Converts between rich C++ client types and bare types that can be passed to
+// Yang trampolines.
+// TODO: it would almost certainly be simpler to pass vectors as direct pointers
+// to arrays and deal with them on the Yang side.
 template<typename T>
 struct Raw {
-  typedef T raw_type;
+  typedef T type;
   const T& from(const T& t) const
+  {
+    return t;
+  }
+  const T& to(const T& t) const
   {
     return t;
   }
 };
 template<typename T>
 struct Raw<Ref<T>> {
-  typedef Prefix* raw_type;
+  typedef Prefix* type;
   Ref<T> from(Prefix* t) const
   {
     return Ref<T>(t);
@@ -213,7 +51,7 @@ struct Raw<Ref<T>> {
 };
 template<typename R, typename... Args>
 struct Raw<Function<R(Args...)>> {
-  typedef RawFunction raw_type;
+  typedef RawFunction type;
   Function<R(Args...)> from(const RawFunction& t) const
   {
     return Function<R(Args...)>(t);
@@ -223,103 +61,75 @@ struct Raw<Function<R(Args...)>> {
     return t.get_raw_representation();
   }
 };
+template<>
+struct Raw<void> {
+  typedef void type;
+};
 
 // Function call instrumentation for converting native types to the Yang calling
-// convention for trampoline functions. TrampolineCallArgs unpacks the argument
-// list; TrampolineCallReturn unpacks the return value.
+// convention for trampoline functions. TrampolineArgs unpacks the argument
+// list; TrampolineReturn unpacks the temporary return object into output
+// pointers.
 template<typename...>
-struct TrampolineCallArgs {};
-
-// TrampolineCallArgs base case.
+struct TrampolineArgs;
 template<>
-struct TrampolineCallArgs<> {
+struct TrampolineArgs<> {
+  typedef List<> type;
   List<> operator()() const
   {
     return {};
   }
 };
-
-// TrampolineCallArgs unpacking of a single primitive.
 template<typename A, typename... Args>
-struct TrampolineCallArgs<A, Args...> {
-  typedef typename TrampolineArgs<A, Args...>::type type;
-
+struct TrampolineArgs<A, Args...> {
+  typedef typename Join<
+      List<A>, typename TrampolineArgs<Args...>::type>::type type;
   type operator()(const A& arg, const Args&... args) const
   {
-    return join(list(arg), TrampolineCallArgs<Args...>()(args...));
+    return join(list(arg), TrampolineArgs<Args...>()(args...));
   }
 };
-
-// TrampolineCallArgs unpacking of a managed user type.
-template<typename T, typename... Args>
-struct TrampolineCallArgs<Ref<T>, Args...> {
-  typedef typename TrampolineArgs<Ref<T>, Args...>::type type;
-
-  type operator()(const Ref<T>& arg, const Args&... args) const
-  {
-    return join(list(Raw<Ref<T>>().to(arg)),
-                TrampolineCallArgs<Args...>()(args...));
-  }
-};
-
-// TrampolineCallArgs unpacking of a vector.
 template<typename T, std::size_t N, typename... Args>
-struct TrampolineCallArgs<vec<T, N>, Args...> {
-  typedef typename TrampolineArgs<vec<T, N>, Args...>::type type;
+struct TrampolineArgs<vec<T, N>, Args...> {
+  typedef typename TrampolineArgs<Args...>::type rest;
+  typedef typename Join<typename Mul<N, T>::type, rest>::type type;
 
   template<std::size_t... I>
-  type helper(const vec<T, N>& arg, const Args&... args,
+  type helper(const vec<T, N>& arg, const typename Raw<Args>::type&... args,
               const Indices<I...>&) const
   {
     return join(typename Mul<N, T>::type(arg[I]...),
-                TrampolineCallArgs<Args...>()(args...));
+                TrampolineArgs<Args...>()(args...));
   }
 
-  type operator()(const vec<T, N>& arg, const Args&... args) const
+  type operator()(const vec<T, N>& arg,
+                  const typename Raw<Args>::type&... args) const
   {
     return helper(arg, args..., range<0, N>());
   }
 };
-
-// TrampolineCallArgs unpacking of a function.
-template<typename R, typename... Args, typename... Brgs>
-struct TrampolineCallArgs<Function<R(Args...)>, Brgs...> {
-  typedef typename TrampolineArgs<Function<R(Args...)>, Brgs...>::type type;
-
-  type operator()(const Function<R(Args...)>& arg, const Brgs&... brgs) const
+template<typename... Args>
+struct TrampolineArgs<RawFunction, Args...> {
+  typedef typename TrampolineArgs<Args...>::type rest;
+  typedef typename Join<List<void*, Prefix*>, rest>::type type;
+  type operator()(const RawFunction& arg, const Args&... args) const
   {
-    auto rep = Raw<Function<R(Args...)>>().to(arg);
-    return join(list(rep.function_ptr, rep.environment_ptr),
-                TrampolineCallArgs<Brgs...>()(brgs...));
+    return join(list(arg.function_ptr, arg.environment_ptr),
+                TrampolineArgs<Args...>()(args...));
   }
 };
 
-// TrampolineCallReturn for a primitive return.
 template<typename R>
-struct TrampolineCallReturn {
-  typedef typename TrampolineReturn<R>::type type;
-
+struct TrampolineReturn {
+  typedef List<R*> type;
   type operator()(R& result) const
   {
     return type(&result);
   }
 };
-
-// TrampolineCallReturn for a managed user type return.
-template<typename T>
-struct TrampolineCallReturn<Ref<T>> {
-  typedef typename TrampolineReturn<Ref<T>>::type type;
-
-  type operator()(Prefix*& result) const
-  {
-    return type(&result);
-  }
-};
-
-// TrampolineCallReturn for a vector return.
 template<typename T, std::size_t N>
-struct TrampolineCallReturn<vec<T, N>> {
-  typedef typename TrampolineReturn<vec<T, N>>::type type;
+struct TrampolineReturn<vec<T, N>> {
+  typedef typename Mul<N, T*>::type type;
 
   template<std::size_t... I>
   type helper(T* result, const Indices<I...>&) const
@@ -332,29 +142,48 @@ struct TrampolineCallReturn<vec<T, N>> {
     return helper(result.elements, range<0, N>());
   }
 };
-
-// TrampolineCallReturn for a function return.
-template<typename R, typename... Args>
-struct TrampolineCallReturn<Function<R(Args...)>> {
-  typedef typename TrampolineReturn<Function<R(Args...)>>::type type;
-
+template<>
+struct TrampolineReturn<RawFunction> {
+  typedef List<void**, Prefix**> type;
   type operator()(RawFunction& result) const
   {
     return type(&result.function_ptr, &result.environment_ptr);
   }
 };
+template<>
+struct TrampolineReturn<void> {
+  typedef List<> type;
+};
 
 // Combine the above into a complete function call.
+template<typename>
+struct Functions;
+template<typename... Args>
+struct Functions<List<Args...>> {
+  typedef void (*fp_type)(Args...);
+  typedef std::function<void(Args...)> type;
+};
+template<typename R, typename... Args>
+struct TrampolineType {
+  typedef typename Join<
+      typename TrampolineReturn<R>::type,
+      typename TrampolineArgs<Args...>::type>::type join_type;
+  typedef typename Functions<join_type>::type type;
+  typedef typename Functions<join_type>::fp_type fp_type;
+};
+
 template<typename R, typename... Args>
 struct TrampolineCall {
-  typedef typename TrampolineType<R, Args...>::type type;
-  typedef typename TrampolineType<R, Args...>::fp_type fp_type;
+  typedef TrampolineType<
+      typename Raw<R>::type, typename Raw<Args>::type...> type;
 
-  R operator()(const type& function, const Args&... args) const
+  R operator()(const typename type::type& function, const Args&... args) const
   {
-    typename Raw<R>::raw_type temporary;
-    list_call(function, join(TrampolineCallReturn<R>()(temporary),
-                             TrampolineCallArgs<Args...>()(args...)));
+    typename Raw<R>::type temporary;
+    list_call(function, join(
+        TrampolineReturn<typename Raw<R>::type>()(temporary),
+        TrampolineArgs<typename Raw<Args>::type...>()(
+            Raw<Args>().to(args)...)));
     return Raw<R>().from(temporary);
   }
 };
@@ -363,35 +192,35 @@ struct TrampolineCall {
 // void.
 template<typename... Args>
 struct TrampolineCall<void, Args...> {
-  typedef typename TrampolineType<void, Args...>::type type;
-  typedef typename TrampolineType<void, Args...>::fp_type fp_type;
+  typedef TrampolineType<void, typename Raw<Args>::type...> type;
 
-  void operator()(const type& function, const Args&... args) const
+  void operator()(const typename type::type& function,
+                  const Args&... args) const
   {
-    list_call(function, TrampolineCallArgs<Args...>()(args...));
+    list_call(function, TrampolineArgs<typename Raw<Args>::type...>()(
+        Raw<Args>().to(args)...));
   }
 };
 
 // Function call instrumentation for reverse trampoline conversion to native
-// calling convention. ReverseTrampolineCallArgs corresponds to
-// TrampolineCallArgs, and so on.
+// calling convention. ReverseTrampolineArgs corresponds to TrampolineArgs, and
+// so on.
 template<typename, typename>
-struct ReverseTrampolineCallArgs {};
+struct ReverseTrampolineArgs;
 template<typename T, typename U>
-auto rtcall_args(const U& u)
-  -> decltype(ReverseTrampolineCallArgs<T, U>()(u))
+auto rtcall_args(const U& u) -> decltype(ReverseTrampolineArgs<T, U>()(u))
 {
-  return ReverseTrampolineCallArgs<T, U>()(u);
+  return ReverseTrampolineArgs<T, U>()(u);
 }
 template<>
-struct ReverseTrampolineCallArgs<List<>, List<>> {
+struct ReverseTrampolineArgs<List<>, List<>> {
   List<> operator()(const List<>&) const
   {
     return {};
   }
 };
 template<typename... Args, typename... Brgs, typename A>
-struct ReverseTrampolineCallArgs<List<A, Args...>, List<Brgs...>> {
+struct ReverseTrampolineArgs<List<A, Args...>, List<Brgs...>> {
   List<A, Args...> operator()(const List<Brgs...>& brgs) const
   {
     typedef typename IndexRange<1, sizeof...(Brgs) - 1>::type range;
@@ -400,7 +229,7 @@ struct ReverseTrampolineCallArgs<List<A, Args...>, List<Brgs...>> {
   }
 };
 template<typename... Args, typename... Brgs, typename T>
-struct ReverseTrampolineCallArgs<List<Ref<T>, Args...>, List<Brgs...>> {
+struct ReverseTrampolineArgs<List<Ref<T>, Args...>, List<Brgs...>> {
   List<Ref<T>, Args...> operator()(const List<Brgs...>& brgs) const
   {
     auto ref_object = Raw<Ref<T>>().from(std::get<0>(brgs));
@@ -410,7 +239,7 @@ struct ReverseTrampolineCallArgs<List<Ref<T>, Args...>, List<Brgs...>> {
   }
 };
 template<typename... Args, typename... Brgs, typename T, std::size_t N>
-struct ReverseTrampolineCallArgs<List<vec<T, N>, Args...>, List<Brgs...>> {
+struct ReverseTrampolineArgs<List<vec<T, N>, Args...>, List<Brgs...>> {
   template<std::size_t... I>
   List<vec<T, N>, Args...> helper(const List<Brgs...>& brgs,
                                   const Indices<I...>&) const
@@ -426,7 +255,7 @@ struct ReverseTrampolineCallArgs<List<vec<T, N>, Args...>, List<Brgs...>> {
   }
 };
 template<typename... Args, typename... Brgs, typename S, typename... Crgs>
-struct ReverseTrampolineCallArgs<
+struct ReverseTrampolineArgs<
     List<Function<S(Crgs...)>, Args...>, List<Brgs...>> {
   List<Function<S(Crgs...)>, Args...> operator()(
       const List<Brgs...>& brgs) const
@@ -441,23 +270,16 @@ struct ReverseTrampolineCallArgs<
 
 // Return-value assigned to pointer outputs.
 template<typename, typename...>
-struct ReverseTrampolineCallReturn {};
+struct ReverseTrampolineReturn;
 template<typename R>
-struct ReverseTrampolineCallReturn<R, R*> {
+struct ReverseTrampolineReturn<R, R*> {
   void operator()(const R& result, R* ptr) const
   {
     *ptr = result;
   }
 };
-template<typename T, typename... Args>
-struct ReverseTrampolineCallReturn<Ref<T>, Args...> {
-  void operator()(const Ref<T>& result, Prefix** wrap)
-  {
-    *wrap = Raw<Ref<T>>().to(result);
-  }
-};
 template<typename T, std::size_t N, typename... Args>
-struct ReverseTrampolineCallReturn<vec<T, N>, Args...> {
+struct ReverseTrampolineReturn<vec<T, N>, Args...> {
   template<std::size_t... I>
   void helper(const vec<T, N>& result, const List<Args...>& args,
               const Indices<I...>&) const
@@ -470,46 +292,45 @@ struct ReverseTrampolineCallReturn<vec<T, N>, Args...> {
     helper(result, List<Args...>(args...), range<0, N>());
   }
 };
-template<typename R, typename... Args>
-struct ReverseTrampolineCallReturn<Function<R(Args...)>, void**, Prefix**> {
-  void operator()(const Function<R(Args...)>& result,
+template<>
+struct ReverseTrampolineReturn<RawFunction, void**, Prefix**> {
+  void operator()(const RawFunction& result,
                   void** fptr, Prefix** eptr) const
   {
-    auto rep = Raw<Function<R(Args...)>>().to(result);
-    *fptr = rep.function_ptr;
-    *eptr = rep.environment_ptr;
+    *fptr = result.function_ptr;
+    *eptr = result.environment_ptr;
   }
 };
 
 // Combine into reverse function call.
 template<typename, typename, typename>
-struct ReverseTrampolineCall {};
+struct ReverseTrampolineCall;
 
 // For convenience, this template takes both the native template arguments R and
-// Brgs, and their instantiation lists TrampolineReturn<R>::type and
-// TrampolineArgs<Brgs>::type respectively.
+// Brgs, and their instantiation lists TrampolineReturn<Raw<R>::type>::type and
+// TrampolineArgs<Raw<Brgs>::type>::type respectively.
 template<typename R, typename... Args, typename... ReturnBrgs, typename... Brgs>
 struct ReverseTrampolineCall<R(Args...), List<ReturnBrgs...>, List<Brgs...>> {
   // No reference args; this is the function directly called from Yang code.
-  // Takes the environment pointer argument, even though it isn't used: this is
+  // Takes the environment pointer argument, even though it isn't used: that's
   // more complicated than it's worth to exclude, and could be useful for
   // debugging sometime anyway.
-  static void call(ReturnBrgs... return_brgs, Brgs... brgs, void*, void* target)
+  static void call(ReturnBrgs... return_brgs, Brgs... brgs, void*,
+                   const NativeFunctionInternals* target)
   {
-    auto f = (const NativeFunctionInternals*)target;
-    R result = list_call(f->get<R, Args...>(),
+    R result = list_call(target->get<R, Args...>(),
                          rtcall_args<List<Args...>>(list(brgs...)));
-    ReverseTrampolineCallReturn<R, ReturnBrgs...>()(result, return_brgs...);
+    ReverseTrampolineReturn<typename Raw<R>::type, ReturnBrgs...>()(
+        Raw<R>().to(result), return_brgs...);
   }
 };
 
 // Specialisation for void returns.
 template<typename... Args, typename... Brgs>
 struct ReverseTrampolineCall<void(Args...), List<>, List<Brgs...>> {
-  static void call(Brgs... brgs, void*, void* target)
+  static void call(Brgs... brgs, void*, const NativeFunctionInternals* target)
   {
-    auto f = (const NativeFunctionInternals*)target;
-    list_call(f->get<void, Args...>(),
+    list_call(target->get<void, Args...>(),
               rtcall_args<List<Args...>>(list(brgs...)));
   }
 };
@@ -534,8 +355,9 @@ struct ReverseTrampolineLookupGenerator {
     auto& map = get_cpp_trampoline_lookup_map();
     void_fp ptr = (void_fp)&internal::ReverseTrampolineCall<
         R(Args...),
-        typename internal::TrampolineReturn<R>::type,
-        typename internal::TrampolineArgs<Args...>::type>::call;
+        typename internal::TrampolineReturn<typename Raw<R>::type>::type,
+        typename internal::TrampolineArgs<typename Raw<Args>::type...>::type
+    >::call;
     map.emplace(Type::erased_t(type_of<Function<R(Args...)>>()), ptr);
   }
 

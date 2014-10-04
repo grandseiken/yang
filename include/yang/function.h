@@ -106,7 +106,7 @@ R call_via_trampoline(void_fp target, void* env, const Args&... args)
   internal::GenerateForwardTrampolineLookupTable<Function<R(Args...)>>()();
 
   typedef internal::TrampolineCall<R, Args..., void*, void_fp> call_type;
-  auto trampoline_expanded = (typename call_type::fp_type)trampoline;
+  auto trampoline_expanded = (typename call_type::type::fp_type)trampoline;
   return call_type()(trampoline_expanded, args..., env, target);
 }
 
