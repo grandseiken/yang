@@ -6,7 +6,6 @@
 #define YANG_INCLUDE_YANG_TRAMPOLINE_H
 
 #include <functional>
-#include <tuple>
 #include <unordered_map>
 #include "meta_list.h"
 #include "native.h"
@@ -228,16 +227,6 @@ struct ReverseTrampolineArgs<List<A, Args...>, List<Brgs...>> {
                 rtcall_args<List<Args...>>(sublist<range>(brgs)));
   }
 };
-template<typename... Args, typename... Brgs, typename T>
-struct ReverseTrampolineArgs<List<Ref<T>, Args...>, List<Brgs...>> {
-  List<Ref<T>, Args...> operator()(const List<Brgs...>& brgs) const
-  {
-    auto ref_object = Raw<Ref<T>>().from(std::get<0>(brgs));
-    typedef typename IndexRange<1, sizeof...(Brgs) - 1>::type range;
-    return join(list(ref_object),
-                rtcall_args<List<Args...>>(sublist<range>(brgs)));
-  }
-};
 template<typename... Args, typename... Brgs, typename T, std::size_t N>
 struct ReverseTrampolineArgs<List<vec<T, N>, Args...>, List<Brgs...>> {
   template<std::size_t... I>
@@ -254,17 +243,13 @@ struct ReverseTrampolineArgs<List<vec<T, N>, Args...>, List<Brgs...>> {
     return helper(brgs, range<0, N>());
   }
 };
-template<typename... Args, typename... Brgs, typename S, typename... Crgs>
-struct ReverseTrampolineArgs<
-    List<Function<S(Crgs...)>, Args...>, List<Brgs...>> {
-  List<Function<S(Crgs...)>, Args...> operator()(
-      const List<Brgs...>& brgs) const
+template<typename... Args, typename... Brgs>
+struct ReverseTrampolineArgs<List<RawFunction, Args...>, List<Brgs...>> {
+  List<RawFunction, Args...> operator()(const List<Brgs...>& brgs) const
   {
-    auto fn_object = Raw<Function<S(Crgs...)>>().from(
-        RawFunction{std::get<0>(brgs), std::get<1>(brgs)});
+    RawFunction f{std::get<0>(brgs), std::get<1>(brgs)};
     typedef typename IndexRange<2, sizeof...(Brgs) - 2>::type range;
-    return join(list(fn_object),
-                rtcall_args<List<Args...>>(sublist<range>(brgs)));
+    return join(list(f), rtcall_args<List<Args...>>(sublist<range>(brgs)));
   }
 };
 
@@ -303,6 +288,20 @@ struct ReverseTrampolineReturn<RawFunction, void**, Prefix**> {
 };
 
 // Combine into reverse function call.
+template<typename... Args>
+struct FromRawList {
+  template<std::size_t... I>
+  List<Args...> helper(const List<typename Raw<Args>::type...>& args,
+                       const Indices<I...>&) const
+  {
+    return List<Args...>(Raw<Args>().from(std::get<I>(args))...);
+  }
+
+  List<Args...> operator()(const List<typename Raw<Args>::type...>& args) const
+  {
+    return helper(args, range<0, sizeof...(Args)>());
+  }
+};
 template<typename, typename, typename>
 struct ReverseTrampolineCall;
 
@@ -318,8 +317,8 @@ struct ReverseTrampolineCall<R(Args...), List<ReturnBrgs...>, List<Brgs...>> {
   static void call(ReturnBrgs... return_brgs, Brgs... brgs, void*,
                    const NativeFunctionInternals* target)
   {
-    R result = list_call(target->get<R, Args...>(),
-                         rtcall_args<List<Args...>>(list(brgs...)));
+    R result = list_call(target->get<R, Args...>(), FromRawList<Args...>()(
+        rtcall_args<List<typename Raw<Args>::type...>>(list(brgs...))));
     ReverseTrampolineReturn<typename Raw<R>::type, ReturnBrgs...>()(
         Raw<R>().to(result), return_brgs...);
   }
@@ -330,8 +329,8 @@ template<typename... Args, typename... Brgs>
 struct ReverseTrampolineCall<void(Args...), List<>, List<Brgs...>> {
   static void call(Brgs... brgs, void*, const NativeFunctionInternals* target)
   {
-    list_call(target->get<void, Args...>(),
-              rtcall_args<List<Args...>>(list(brgs...)));
+    list_call(target->get<void, Args...>(), FromRawList<Args...>()(
+        rtcall_args<List<typename Raw<Args>::type...>>(list(brgs...))));
   }
 };
 

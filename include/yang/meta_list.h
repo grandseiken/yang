@@ -5,10 +5,13 @@
 #ifndef YANG_INCLUDE_YANG_META_LIST_H
 #define YANG_INCLUDE_YANG_META_LIST_H
 
+#include <cstddef>
+#include <tuple>
+
 namespace yang {
 namespace internal {
 
-// Proper compile-time list (can't use boost MPL, it fakes variadic templates).
+// Proper compile-time list (can't use boost MPL - it fakes variadic templates).
 template<typename... T>
 using List = std::tuple<T...>;
 template<typename... T>

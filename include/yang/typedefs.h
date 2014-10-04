@@ -48,7 +48,6 @@ public:
   T elements[N];
 
   // Constructors.
-
   vec()
     : elements{0}
   {
@@ -74,12 +73,10 @@ public:
   }
 
   // Assignment.
-
   vec& operator=(const vec&) noexcept = default;
   vec& operator=(vec&&) noexcept = default;
 
   // Indexing.
-
   T& operator[](std::size_t i)
   {
     return elements[i];
@@ -104,7 +101,6 @@ public:
 
   // Comparison operators. Relational operators return true iff all of the
   // element-wise comparisons return true.
-
   bool operator==(const vec& arg) const
   {
     for (std::size_t i = 0; i < N; ++i) {
@@ -161,7 +157,6 @@ public:
   }
 
   // Binary operators.
-
   vec operator+(const vec& arg) const
   {
     vec v;
@@ -217,7 +212,6 @@ public:
   }
 
   // Shortcut assignment operators.
-
   vec& operator+=(const vec& arg)
   {
     return operator=(operator+(arg));
@@ -249,7 +243,6 @@ public:
   }
 
   // Unary operators and mathematical functions.
-
   vec operator-() const
   {
     return vec().operator-(*this);
@@ -276,7 +269,6 @@ public:
   }
 
   // Dot product.
-
   T dot(const vec& arg) const
   {
     T t{0};
@@ -287,7 +279,6 @@ public:
   }
 
   // Cross products for two and three dimensions.
-
   template<bool B = true, typename = enable_if<N == 2 && B>>
   T cross(const vec& arg) const
   {
@@ -303,7 +294,6 @@ public:
   }
 
   // Euclidean division and modulo operators.
-
   template<typename = std::enable_if<std::is_same<T, int_t>::value>>
   vec euclidean_div(const vec& arg) const
   {
@@ -347,7 +337,6 @@ public:
 };
 
 // Binary operators with a single element on the left.
-
 template<typename T, std::size_t N>
 vec<T, N> operator*(const T& t, const vec<T, N>& v)
 {
@@ -369,7 +358,6 @@ vec<T, N> operator/(const T& t, const vec<T, N>& v)
 }
 
 // Miscellaenous element-wise mathematical functions.
-
 template<typename T, std::size_t N>
 vec<T, N> abs(const vec<T, N>& v)
 {
@@ -431,7 +419,6 @@ vec<T, N> max(const vec<T, N>& a, const vec<T, N>& b)
 }
 
 // Write string representation to stream.
-
 template<typename T, std::size_t N>
 std::ostream& operator<<(std::ostream& stream, const vec<T, N>& arg)
 {
@@ -445,7 +432,6 @@ std::ostream& operator<<(std::ostream& stream, const vec<T, N>& arg)
 }
 
 // Standard accessor types for 4-element vectors.
-
 template<bool>
 struct element_accessor_instance {
   static const element_accessor<0> x;
