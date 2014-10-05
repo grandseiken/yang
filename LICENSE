@@ -34,10 +34,12 @@ Software           Directory and license information
 Berkeley YACC      dependencies/byacc/README
 Flex               dependencies/flex/COPYING
 Google Test        dependencies/googletest/LICENSE
+                   dependencies/llvm/utils/unittest/googletest/LICENSE.txt
 LLVM               dependencies/llvm/LICENSE.txt
 Autoconf           dependencies/llvm/autoconf/LICENSE.txt
-                   dependencies/llvm/projects/sample/autoconf/LICENSE.txt
-Google Test        dependencies/llvm/utils/unittest/googletest/LICENSE.txt
+                   dependencies/llvm/projects/ModuleMaker/autoconf/LICENSE.txt
 OpenBSD regex      dependencies/llvm/lib/Support/{reg*, COPYRIGHT.regex}
 pyyaml tests       dependencies/llvm/test/YAMLParser/{*.data, LICENSE.TXT}
 ARM contributions  dependencies/llvm/lib/Target/ARM/LICENSE.TXT
+md5 contributions  dependencies/llvm/lib/Support/MD5.cpp
+                   dependencies/llvm/include/llvm/Support/MD5.h

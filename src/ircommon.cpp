@@ -33,7 +33,7 @@ void IrCommon::optimise_ir(llvm::Function* function) const
 
   auto optimiser = function ?
       (llvm::PassManager*)&function_optimiser : &module_optimiser;
-  optimiser->add(new llvm::DataLayout(*_b.engine.getDataLayout()));
+  optimiser->add(new llvm::DataLayoutPass(*_b.engine.getDataLayout()));
 
   // This should come first, so that inlined code can take advantage of e.g.
   // unreachable hints before they are deleted.

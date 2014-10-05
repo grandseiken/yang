@@ -8,11 +8,6 @@
 #include <unordered_map>
 #include "irval.h"
 
-namespace llvm {
-  class Constant;
-  class PassManager;
-}
-
 namespace yang {
 namespace internal {
 

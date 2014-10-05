@@ -19,8 +19,6 @@ List<T...> list(const T&... t)
 {
   return List<T...>(t...);
 }
-template<typename... T>
-void ignore(const T&...) {}
 
 // Integer pack range.
 template<std::size_t... N>

@@ -821,7 +821,7 @@ void IrGenerator::before(const Node& node)
           // locations are declared in the entry block (so they are guaranteed
           // to execute once).
           auto llvm_function =
-              (llvm::Function*)_b.b.GetInsertPoint()->getParent();
+              (llvm::Function*)_b.b.GetInsertBlock()->getParent();
           auto& entry_block = llvm_function->getEntryBlock();
           llvm::IRBuilder<> entry(&entry_block, entry_block.begin());
           storage =
@@ -949,6 +949,7 @@ void IrGenerator::create_function(const Node& node, const Type& function_type)
   auto function = llvm::Function::Create(
       llvm_type, llvm::Function::InternalLinkage, "anonymous", &_b.module);
 
+  function->addAttribute(function->arg_size(), llvm::Attribute::NonNull);
   auto eptr = --function->arg_end();
   eptr->setName("env");
   _scopes.emplace_back(_scopes.back().next_lex_scope());
@@ -958,7 +959,7 @@ void IrGenerator::create_function(const Node& node, const Type& function_type)
   // pointer.
   back.metadata.add(LexScope::ENVIRONMENT_PTR, &*eptr);
   back.metadata.add(LexScope::FUNCTION, function);
-  back.metadata.add(LexScope::PARENT_BLOCK, &*_b.b.GetInsertPoint());
+  back.metadata.add(LexScope::PARENT_BLOCK, &*_b.b.GetInsertBlock());
 
   auto block = llvm::BasicBlock::Create(_b.b.getContext(), "entry", function);
   _b.b.SetInsertPoint(block);
@@ -1038,24 +1039,6 @@ void IrGenerator::create_function(const Node& node, const Type& function_type)
     back.memory_store(Value(arg, &*it), storage);
     back.symbol_table.add(name, Value(arg, storage));
   }
-
-  // Inform the optimiser that the eptr will never be null. This allows a lot
-  // of simplification in most cases.
-  // TODO: LLVM doesn't make as much use of it as I'd like, though, for reasons
-  // I can't quite work out. It correctly optimises out the C++ function check
-  // for recursive calls, and similarly for some refcount calls, but somehow
-  // it can't optimise out the very first check for the eptr refcounting?
-  // Alternatively, try using nonnull parameter attribute instead? Or is the
-  // nonnull info redundant now that the check is done on the C++ side?
-  auto notnull_block =
-      llvm::BasicBlock::Create(_b.b.getContext(), "notnull", function);
-  auto main_block =
-      llvm::BasicBlock::Create(_b.b.getContext(), "main", function);
-  llvm::Value* cmp = _b.b.CreateIsNull(eptr);
-  _b.b.CreateCondBr(cmp, notnull_block, main_block);
-  _b.b.SetInsertPoint(notnull_block);
-  _b.b.CreateUnreachable();
-  _b.b.SetInsertPoint(main_block);
 }
 
 Value IrGenerator::get_member_function(

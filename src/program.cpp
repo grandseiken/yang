@@ -4,10 +4,10 @@
 //============================================================================//
 #include <yang/program.h>
 
-#include <llvm/Analysis/Verifier.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/JIT.h>
 #include <llvm/IR/Module.h>
+#include <llvm/IR/Verifier.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/TargetSelect.h>
 
@@ -189,8 +189,8 @@ void Program::generate_ir(bool optimise,
   irgen.walk(*_internals->ast);
   irgen.emit_global_functions();
 
-  if (llvm::verifyModule(*_internals->module,
-                         llvm::ReturnStatusAction, &error)) {
+  llvm::raw_string_ostream eos(error);
+  if (llvm::verifyModule(*_internals->module, &eos)) {
     // Shouldn't be possible and indicates severe bug, so log the entire IR.
     log_err(print_ir());
     throw runtime_error(_internals->name +

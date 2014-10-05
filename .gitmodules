@@ -1,7 +1,7 @@
 [submodule "dependencies/llvm"]
 	path = dependencies/llvm
 	url = http://llvm.org/git/llvm.git
-	branch = release_33
+	branch = release_35
 [submodule "dependencies/byacc"]
 	path = dependencies/byacc
 	url = https://github.com/grandseiken/byacc.git

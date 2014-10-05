@@ -58,7 +58,9 @@ CFLAGS=\
 	$(CFLAGSEXTRA) $(C11FLAGS) -I$(INCLUDE) \
 	-isystem $(LLVM_DIR)/include -isystem $(GTEST_DIR)/include
 LFLAGS=\
-	$(LFLAGSEXTRA) -L$(LIBDIR) -Wl,-Bstatic -lyang -Wl,-Bdynamic -lpthread -ldl
+	$(LFLAGSEXTRA) -L$(LIBDIR) \
+	-Wl,-Bstatic -lyang \
+	-Wl,-Bdynamic -lz -ltinfo -lpthread -ldl
 ifeq ($(DBG), 1)
 CFLAGS+=-Og -g -ggdb -DDEBUG
 WFLAGS=-Werror -Wall -Wextra -Wpedantic
@@ -162,8 +164,8 @@ endif
 LLVM_LIBS=\
 	LLVMipo LLVMX86CodeGen LLVMSelectionDAG LLVMX86Desc LLVMX86Info \
 	LLVMX86AsmPrinter LLVMX86Utils LLVMJIT LLVMCodeGen LLVMScalarOpts \
-	LLVMInstCombine LLVMTransformUtils LLVMipa LLVMAnalysis \
-	LLVMRuntimeDyld LLVMExecutionEngine LLVMTarget LLVMMC LLVMObject \
+	LLVMInstCombine LLVMTransformUtils LLVMipa LLVMAnalysis LLVMTarget \
+	LLVMObject LLVMMCParser LLVMBitReader LLVMExecutionEngine LLVMMC \
 	LLVMCore LLVMSupport
 
 # Library archiving. For speed, don't rearchive LLVM libraries.
@@ -217,7 +219,7 @@ $(GEN)/%.y.cc: \
 # Test binary.	
 $(TESTS_BINARY): \
 	$(TEST_OBJECT_FILES) $(LIB) $(DEPEND_DIR)/gtest.build
-	@echo Linking./$@
+	@echo Linking ./$@
 	$(CXX) -o ./$@ $(TEST_OBJECT_FILES) $(LFLAGS) \
 	    -L$(GTEST_DIR)/lib -Wl,-Bstatic -lgtest -Wl,-Bdynamic -lpthread
 .tests_passed: \
@@ -255,9 +257,10 @@ $(DEPEND_DIR)/gtest.build:
 	touch $@
 
 # Build LLVM.
+LLVM_COMMON_OPTS=\
+  --enable-jit --disable-docs --enable-targets=host
 LLVM_OPTS=\
-  --enable-jit --disable-docs --enable-targets=host \
-  --disable-assertions --enable-optimized
+  $(LLVM_COMMON_OPTS) --disable-assertions --enable-optimized
 $(DEPEND_DIR)/llvm.build:
 	@echo Building LLVM
 	cd $(LLVM_DIR) && ./configure $(LLVM_OPTS)
@@ -265,8 +268,7 @@ $(DEPEND_DIR)/llvm.build:
 	touch $@
 # Build LLVM in debug mode.
 LLVM_DBG_OPTS=\
-  --enable-jit --enable-targets=host --disable-docs \
-  --enable-assertions --disable-optimized
+  $(LLVM_COMMON_OPTS) --enable-assertions --disable-optimized
 $(DEPEND_DIR)/llvm_dbg.build:
 	@echo Building LLVM
 	cd $(LLVM_DIR) && ./configure $(LLVM_DBG_OPTS)
