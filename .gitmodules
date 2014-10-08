@@ -14,3 +14,6 @@
 [submodule "dependencies/sphinx"]
 	path = dependencies/sphinx
 	url = https://github.com/sphinx-doc/sphinx
+[submodule "dependencies/pygments"]
+	path = dependencies/pygments
+	url = https://github.com/zmughal/pygments-mirror

@@ -43,4 +43,5 @@ pyyaml tests       dependencies/llvm/test/YAMLParser/{*.data, LICENSE.TXT}
 ARM contributions  dependencies/llvm/lib/Target/ARM/LICENSE.TXT
 md5 contributions  dependencies/llvm/lib/Support/MD5.cpp
                    dependencies/llvm/include/llvm/Support/MD5.h
+Pygments           dependencies/pygments/LICENSE
 Sphinx             dependencies/sphinx/LICENSE

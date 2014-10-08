@@ -26,8 +26,9 @@ BYACC_DIR=$(DEPEND_DIR)/byacc
 FLEX_DIR=$(DEPEND_DIR)/flex
 GTEST_DIR=$(DEPEND_DIR)/googletest
 LLVM_DIR=$(DEPEND_DIR)/llvm
+PYGMENTS_DIR=$(DEPEND_DIR)/pygments
 SPHINX_DIR=$(DEPEND_DIR)/sphinx
-SPHINX_INSTALL_DIR=install/lib/python
+PYTHON_INSTALL_DIR=install/lib/python
 
 # Final outputs.
 ifeq ($(DBG), 1)
@@ -243,18 +244,18 @@ $(TESTS_BINARY): \
 
 # Documentation.
 SPHINX_BUILD=\
-	PYTHONPATH=$${PWD}/$(SPHINX_DIR)/$(SPHINX_INSTALL_DIR) \
-	$(SPHINX_DIR)/install/bin/sphinx-build
+	PYTHONPATH=$${PWD}/$(DEPEND_DIR)/$(PYTHON_INSTALL_DIR) \
+	$(DEPEND_DIR)/install/bin/sphinx-build
 SPHINX_BUILD_OPTS=\
 	-d $(DOCS)/doctrees -n $(DOCS)/source
 $(DOCS)/text/index.txt: \
 	$(DEPEND_DIR)/sphinx.build $(DOC_FILES)
 	$(SPHINX_BUILD) -b text $(SPHINX_BUILD_OPTS) $(DOCS)/text
 $(DOCS)/html/index.html: \
-	$(DEPEND_DIR)/sphinx.build $(DOC_FILES)
+	$(DEPEND_DIR)/sphinx.build $(DEPEND_DIR)/pygments.build $(DOC_FILES)
 	$(SPHINX_BUILD) -b html $(SPHINX_BUILD_OPTS) $(DOCS)/html
 $(DOCS)/latex/Yang.pdf: \
-	$(DEPEND_DIR)/sphinx.build $(DOC_FILES)
+	$(DEPEND_DIR)/sphinx.build $(DEPEND_DIR)/pygments.build $(DOC_FILES)
 	$(SPHINX_BUILD) -b latex $(SPHINX_BUILD_OPTS) $(DOCS)/latex
 	$(MAKE) -C $(DOCS)/latex all-pdf
 
@@ -306,14 +307,25 @@ $(DEPEND_DIR)/llvm_dbg.build:
 	cd $(LLVM_DIR) && $(MAKE)
 	touch $@
 
-# Build Sphinx.
-$(DEPEND_DIR)/sphinx.build:
+# Build Pygments.
+$(DEPEND_DIR)/pygments.build: \
+	$(DEPEND_DIR)/$(PYTHON_INSTALL_DIR)/.mkdir
+	@echo Building Pygments
+	cd $(PYGMENTS_DIR) && $(PYTHON) setup.py build
+	cd $(PYGMENTS_DIR) && \
+	    PYTHONPATH=$${PWD}/../$(PYTHON_INSTALL_DIR) \
+	    $(PYTHON) setup.py install --home $${PWD}/../install
+	touch $@
+
+# Build Sphinx. Must depend on pygments, otherwise sphinx will install the
+# wrong version.
+$(DEPEND_DIR)/sphinx.build: \
+	$(DEPEND_DIR)/$(PYTHON_INSTALL_DIR)/.mkdir $(DEPEND_DIR)/pygments.build
 	@echo Building Sphinx
 	cd $(SPHINX_DIR) && $(PYTHON) setup.py build
-	cd $(SPHINX_DIR) && mkdir -p $(SPHINX_INSTALL_DIR)
 	cd $(SPHINX_DIR) && \
-	    PYTHONPATH=$${PWD}/$(SPHINX_INSTALL_DIR) \
-	    $(PYTHON) setup.py install --home $${PWD}/install
+	    PYTHONPATH=$${PWD}/../$(PYTHON_INSTALL_DIR) \
+	    $(PYTHON) setup.py install --home $${PWD}/../install
 	touch $@
 
 # Clean dependencies.
@@ -325,4 +337,6 @@ clean_all: \
 	-cd $(FLEX_DIR) && [ -f ./Makefile ] && $(MAKE) clean
 	cd $(GTEST_DIR) && rm -rf lib *.o
 	-cd $(LLVM_DIR) && $(MAKE) clean
-	cd $(SPHINX_DIR) && rm -rf build install
+	cd $(PYGMENTS_DIR) && rm -rf build
+	cd $(SPHINX_DIR) && rm -rf build
+	cd $(DEPEND_DIR) && rm -rf install

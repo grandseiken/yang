@@ -265,3 +265,4 @@ texinfo_documents = [
 # -- Extra Yang options ---------------------------------------------------
 
 primary_domain = 'cpp'
+highlight_language = 'cpp'
