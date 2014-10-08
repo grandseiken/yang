@@ -4,7 +4,8 @@
 #==============================================================================#
 # Targets:
 #   lib - the Yang static library
-#   yang - the Yang standalone compiler/checker
+#   tools - various Yang tools
+#   docs - generate documentation
 #   test - build and run unit tests
 #   clean - delete all outputs
 #   clean_all - delete all outputs and clean dependencies
@@ -16,7 +17,7 @@
 #   wc - print line counts of all code files
 #
 # External package dependencies:
-#   make m4 texinfo texlive
+#   make m4 texinfo texlive python
 .SUFFIXES:
 
 # Dependency directories.
@@ -25,6 +26,8 @@ BYACC_DIR=$(DEPEND_DIR)/byacc
 FLEX_DIR=$(DEPEND_DIR)/flex
 GTEST_DIR=$(DEPEND_DIR)/googletest
 LLVM_DIR=$(DEPEND_DIR)/llvm
+SPHINX_DIR=$(DEPEND_DIR)/sphinx
+SPHINX_INSTALL_DIR=install/lib/python
 
 # Final outputs.
 ifeq ($(DBG), 1)
@@ -43,6 +46,7 @@ INCLUDE=./include
 SOURCE=./src
 TESTS=./tests
 GEN=./gen
+DOCS=./docs
 LIB=$(LIBDIR)/libyang.a
 YANGC_BINARY=$(OUTDIR)/tools/yangc
 TESTS_BINARY=$(OUTDIR)/tests/tests
@@ -52,6 +56,7 @@ BINARIES=$(YANGC_BINARY)
 export SHELL=/bin/sh
 export FLEX=$(FLEX_DIR)/flex
 export YACC=$(BYACC_DIR)/yacc
+export PYTHON=python
 
 C11FLAGS=-std=c++11
 CFLAGS=\
@@ -98,13 +103,16 @@ ALL_FILES=\
 # Master targets.
 .PHONY: all
 all: \
-	lib tools .tests_passed
+	lib tools docs .tests_passed
 .PHONY: lib
 lib: \
 	$(LIB)
 .PHONY: tools
 tools: \
 	$(BINARIES)
+.PHONY: docs
+docs: \
+	$(DOCS)/text/index.txt $(DOCS)/html/index.html $(DOCS)/latex/Yang.pdf
 .PHONY: test
 test: \
 	$(TESTS_BINARY)
@@ -125,6 +133,7 @@ clean:
 	rm -rf $(OUTDIR)
 	rm -rf $(GEN)
 	rm -rf $(LLVM_LIB_DIR)/*.o
+	rm -rf $(DOCS)/doctrees $(DOCS)/text $(DOCS)/html $(DOCS)/latex
 
 # Dependency generation. Each source file generates a corresponding .deps file
 # (a Makefile containing a .build target), which is then included. Inclusion
@@ -147,12 +156,14 @@ $(OUTDIR)/%.build: \
 	./% $(OUTDIR)/%.mkdir
 	touch $@
 
+ifneq ('$(MAKECMDGOALS)', 'docs')
 ifneq ('$(MAKECMDGOALS)', 'add')
 ifneq ('$(MAKECMDGOALS)', 'todo')
 ifneq ('$(MAKECMDGOALS)', 'wc')
 ifneq ('$(MAKECMDGOALS)', 'clean')
 ifneq ('$(MAKECMDGOALS)', 'clean_all')
 -include $(DEP_FILES)
+endif
 endif
 endif
 endif
@@ -227,6 +238,23 @@ $(TESTS_BINARY): \
 	$(TESTS_BINARY)
 	touch ./$@
 
+# Documentation.
+SPHINX_BUILD=\
+	PYTHONPATH=$${PWD}/$(SPHINX_DIR)/$(SPHINX_INSTALL_DIR) \
+	$(SPHINX_DIR)/install/bin/sphinx-build
+SPHINX_BUILD_OPTS=\
+	-d $(DOCS)/doctrees -n $(DOCS)/source
+$(DOCS)/text/index.txt: \
+	$(DEPEND_DIR)/sphinx.build
+	$(SPHINX_BUILD) -b text $(SPHINX_BUILD_OPTS) $(DOCS)/text
+$(DOCS)/html/index.html: \
+	$(DEPEND_DIR)/sphinx.build
+	$(SPHINX_BUILD) -b html $(SPHINX_BUILD_OPTS) $(DOCS)/html
+$(DOCS)/latex/Yang.pdf: \
+	$(DEPEND_DIR)/sphinx.build
+	$(SPHINX_BUILD) -b latex $(SPHINX_BUILD_OPTS) $(DOCS)/latex
+	$(MAKE) -C $(DOCS)/latex all-pdf
+
 # Ensure a directory exists.
 .PRECIOUS: ./%.mkdir
 ./%.mkdir:
@@ -235,18 +263,18 @@ $(TESTS_BINARY): \
 
 # Makefile for dependencies below here.
 
-# Build Flex.
-$(DEPEND_DIR)/flex.build:
-	@echo Building Flex
-	cd $(FLEX_DIR) && ./configure
-	cd $(FLEX_DIR) && $(MAKE)
-	touch $@
-
 # Build BYACC.
 $(DEPEND_DIR)/byacc.build:
 	@echo Building BYACC
 	cd $(BYACC_DIR) && ./configure
 	cd $(BYACC_DIR) && $(MAKE)
+	touch $@
+
+# Build Flex.
+$(DEPEND_DIR)/flex.build:
+	@echo Building Flex
+	cd $(FLEX_DIR) && ./configure
+	cd $(FLEX_DIR) && $(MAKE)
 	touch $@
 
 # Build Google Test.
@@ -275,6 +303,16 @@ $(DEPEND_DIR)/llvm_dbg.build:
 	cd $(LLVM_DIR) && $(MAKE)
 	touch $@
 
+# Build Sphinx.
+$(DEPEND_DIR)/sphinx.build:
+	@echo Building Sphinx
+	cd $(SPHINX_DIR) && $(PYTHON) setup.py build
+	cd $(SPHINX_DIR) && mkdir -p $(SPHINX_INSTALL_DIR)
+	cd $(SPHINX_DIR) && \
+	    PYTHONPATH=$${PWD}/$(SPHINX_INSTALL_DIR) \
+	    $(PYTHON) setup.py install --home $${PWD}/install
+	touch $@
+
 # Clean dependencies.
 .PHONY: clean_all
 clean_all: \
@@ -284,3 +322,4 @@ clean_all: \
 	-cd $(FLEX_DIR) && [ -f ./Makefile ] && $(MAKE) clean
 	cd $(GTEST_DIR) && rm -rf lib *.o
 	-cd $(LLVM_DIR) && $(MAKE) clean
+	cd $(SPHINX_DIR) && rm -rf build install

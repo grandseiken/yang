@@ -11,3 +11,6 @@
 [submodule "dependencies/googletest"]
 	path = dependencies/googletest
 	url = http://git.chromium.org/external/googletest.git
+[submodule "dependencies/sphinx"]
+	path = dependencies/sphinx
+	url = https://github.com/sphinx-doc/sphinx
