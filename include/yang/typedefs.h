@@ -11,15 +11,16 @@
 #include <ostream>
 
 namespace yang {
-
-template<bool B, typename T = void>
-using enable_if = typename std::enable_if<B, T>::type;
+namespace internal {
+  template<bool B, typename T = void>
+  using enable_if = typename std::enable_if<B, T>::type;
+  typedef void (*void_fp)();
+}
 
 typedef void void_t;
 typedef int32_t int_t;
 typedef uint32_t uint_t;
 typedef double float_t;
-typedef void (*void_fp)();
 
 inline int_t euclidean_div(int_t n, int_t d)
 {
@@ -54,7 +55,7 @@ public:
   }
 
   template<typename... U,
-           typename = enable_if<N == sizeof...(U)>>
+           typename = internal::enable_if<N == sizeof...(U)>>
   vec(const U&... args)
     : elements{args...}
   {
@@ -87,13 +88,13 @@ public:
     return elements[i];
   }
 
-  template<std::size_t M, typename = enable_if<(M < N)>>
+  template<std::size_t M, typename = internal::enable_if<(M < N)>>
   T& operator[](const element_accessor<M>&)
   {
     return elements[M];
   }
 
-  template<std::size_t M, typename = enable_if<(M < N)>>
+  template<std::size_t M, typename = internal::enable_if<(M < N)>>
   const T& operator[](const element_accessor<M>&) const
   {
     return elements[M];
@@ -279,13 +280,13 @@ public:
   }
 
   // Cross products for two and three dimensions.
-  template<bool B = true, typename = enable_if<N == 2 && B>>
+  template<bool B = true, typename = internal::enable_if<N == 2 && B>>
   T cross(const vec& arg) const
   {
     return elements[0] * arg[1] - arg[0] * elements[1];
   }
 
-  template<bool B = true, typename = enable_if<N == 3 && B>>
+  template<bool B = true, typename = internal::enable_if<N == 3 && B>>
   vec cross(const vec& arg) const
   {
     return vec(elements[1] * arg[2] - elements[2] * arg[1],
@@ -456,9 +457,9 @@ const element_accessor<2> element_accessor_instance<B>::z;
 template<bool B>
 const element_accessor<3> element_accessor_instance<B>::w;
 
-template<std::size_t N, typename = enable_if<(N > 1)>>
+template<std::size_t N, typename = internal::enable_if<(N > 1)>>
 using ivec_t = vec<int_t, N>;
-template<std::size_t N, typename = enable_if<(N > 1)>>
+template<std::size_t N, typename = internal::enable_if<(N > 1)>>
 using fvec_t = vec<float_t, N>;
 
 // End namespace yang.

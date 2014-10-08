@@ -68,7 +68,7 @@ T Instance::get_global(const std::string& name) const
   // type_of will fail at compile-time for completely unsupported types; will
   // fail at runtime for incorrect (but plausible) types.
   check_global(name, type_of<T>(), false);
-  auto fp = (void_fp)
+  auto fp = (internal::void_fp)
       (std::intptr_t)get_native_fp("!global_get_" + name);
   return internal::call_via_trampoline<T>(fp, _global_data.get());
 }
@@ -77,7 +77,7 @@ template<typename T>
 void Instance::set_global(const std::string& name, const T& value)
 {
   check_global(name, type_of<T>(), true);
-  auto fp = (void_fp)
+  auto fp = (internal::void_fp)
       (std::intptr_t)get_native_fp("!global_set_" + name);
   internal::call_via_trampoline<void>(fp, _global_data.get(), value);
 }

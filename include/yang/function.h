@@ -34,13 +34,16 @@ class Function {
   static_assert(sizeof(T) != sizeof(T), "use of non-function type");
 };
 
-// The yang::Function type is a superset of the std::function type in that it
-// can hold any std::function, and also any function retrieved from Yang code
-// (including closures, member functions with bound object, etc).
+// The equivalent of Yang function types. Provides an interface for manipulating
+// functions defined in both C++ and Yang in an agnostic way.
 //
-// Similarly, function types in Yang can take the same set of values, and are
-// thus interchangable. Invokable objects from either language can be passed
-// back and forth between them, stored, and called at will.
+// This type is a superset of the std::function type in that it can target any
+// std::function, and also any function defined in Yang code (including
+// free functions, closures, member functions with bound object, and so on).
+//
+// It is equivalent to the corresponding Yang function types, which take the
+// same set of values. Invokable objects from either language can be passed
+// back and forth between them, stored, and called arbitrarily.
 //
 // This is implemented by representing function types are a pair of pointers:
 //
@@ -61,12 +64,28 @@ template<typename R, typename... Args>
 class Function<R(Args...)> {
 public:
 
-  // Construct a generic Yang Function object from a generic C++ function
-  // object.
-  typedef std::function<R(Args...)> cpp_type;
-  Function(const cpp_type& cpp_function);
+  // Converts an std::function into the equivalent yang::Function.
+  //
+  // Invoking the constructed object is equivalent to invoking the original
+  // std::function. It can be transferred to Yang code anywhere a value of the
+  // equivalent Yang function type is expected.
+  //
+  // The std::function is copied into a reference-counted structure in Yang's
+  // internal memory, to which this object holds a reference. Thus, once the
+  // value is transferred to Yang code it is not dependent on the lifetime of
+  // either this yang::Function or the original std::function argument.
+  //
+  // However, the value of course depends on the lifetimes of any objects which
+  // the original std::function depends on. For example, if a C++ lambda is
+  // converted to an yang::Function object, it is the user's responsibility to
+  // ensure any captured variables still exist when the function is eventually
+  // invoked.
+  Function(const std::function<R(Args...)>& cpp_function);
 
-  // Invoke the function.
+  // Invokes the function.
+  //
+  // Invokes the target of this yang::Function object, whether that is a C++
+  // or Yang function.
   R operator()(const Args&... args) const;
 
 private:
@@ -114,7 +133,7 @@ R call_via_trampoline(void_fp target, void* env, const Args&... args)
 }
 
 template<typename R, typename... Args>
-Function<R(Args...)>::Function(const cpp_type& function)
+Function<R(Args...)>::Function(const std::function<R(Args...)>& function)
 {
   _data.type = type_of<Function<R(Args...)>>();
   _data.native_ref =
@@ -137,7 +156,7 @@ R Function<R(Args...)>::operator()(const Args&... args) const
 
   // For yang functions, call via the trampoline machinery.
   return internal::call_via_trampoline<R>(
-      (void_fp)(std::intptr_t)_data.yang_function,
+      (internal::void_fp)(std::intptr_t)_data.yang_function,
       _data.env_ref.get(), args...);
 }
 

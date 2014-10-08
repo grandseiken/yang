@@ -98,13 +98,13 @@ ALL_FILES=\
 # Master targets.
 .PHONY: all
 all: \
-	lib $(BINARIES) .tests_passed
+	lib tools .tests_passed
 .PHONY: lib
 lib: \
 	$(LIB)
 .PHONY: tools
 tools: \
-	$(YANGC_BINARY)
+	$(BINARIES)
 .PHONY: test
 test: \
 	$(TESTS_BINARY)

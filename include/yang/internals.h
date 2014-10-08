@@ -2,8 +2,8 @@
 // This file is part of the Yang software project. It is distributed under the
 // MIT License. See LICENSE file for details.
 //============================================================================//
-#ifndef YANG_INCLUDE_YANG_INSTERNALS_H
-#define YANG_INCLUDE_YANG_INSTERNALS_H
+#ifndef YANG_INCLUDE_YANG_INTERNALS_H
+#define YANG_INCLUDE_YANG_INTERNALS_H
 
 #include <memory>
 #include <vector>
