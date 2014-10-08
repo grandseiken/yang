@@ -95,10 +95,13 @@ DEP_FILES=\
 	$(addprefix $(OUTDIR)/,$(addsuffix .deps,\
 	$(SOURCE_FILES) $(TOOL_CPP_FILES) $(TEST_CPP_FILES)))
 
+DOC_FILES=\
+	$(wildcard $(DOCS)/source/*.*) \
+	$(wildcard $(DOCS)/source/*/*.*)
 MISC_FILES=Makefile Makedeps README.md LICENSE .gitignore
 ALL_FILES=\
 	$(CPP_FILES) $(TOOL_CPP_FILES) $(TEST_CPP_FILES) \
-	$(H_FILES) $(L_FILES) $(Y_FILES) $(MISC_FILES)
+	$(H_FILES) $(L_FILES) $(Y_FILES) $(MISC_FILES) $(DOC_FILES)
 
 # Master targets.
 .PHONY: all
@@ -245,13 +248,13 @@ SPHINX_BUILD=\
 SPHINX_BUILD_OPTS=\
 	-d $(DOCS)/doctrees -n $(DOCS)/source
 $(DOCS)/text/index.txt: \
-	$(DEPEND_DIR)/sphinx.build
+	$(DEPEND_DIR)/sphinx.build $(DOC_FILES)
 	$(SPHINX_BUILD) -b text $(SPHINX_BUILD_OPTS) $(DOCS)/text
 $(DOCS)/html/index.html: \
-	$(DEPEND_DIR)/sphinx.build
+	$(DEPEND_DIR)/sphinx.build $(DOC_FILES)
 	$(SPHINX_BUILD) -b html $(SPHINX_BUILD_OPTS) $(DOCS)/html
 $(DOCS)/latex/Yang.pdf: \
-	$(DEPEND_DIR)/sphinx.build
+	$(DEPEND_DIR)/sphinx.build $(DOC_FILES)
 	$(SPHINX_BUILD) -b latex $(SPHINX_BUILD_OPTS) $(DOCS)/latex
 	$(MAKE) -C $(DOCS)/latex all-pdf
 
