@@ -99,7 +99,7 @@ DEP_FILES=\
 DOC_FILES=\
 	$(wildcard $(DOCS)/source/*.*) \
 	$(wildcard $(DOCS)/source/*/*.*)
-MISC_FILES=Makefile Makedeps README.md LICENSE .gitignore
+MISC_FILES=Makefile README.md LICENSE .gitignore
 ALL_FILES=\
 	$(CPP_FILES) $(TOOL_CPP_FILES) $(TEST_CPP_FILES) \
 	$(H_FILES) $(L_FILES) $(Y_FILES) $(MISC_FILES) $(DOC_FILES)
@@ -146,15 +146,15 @@ clean:
 # default causes everything to be generated.
 .SECONDEXPANSION:
 $(DEP_FILES): $(OUTDIR)/%.deps: \
-	$(OUTDIR)/%.build $(OUTDIR)/%.mkdir ./Makedeps $(Y_OUTPUTS) $(L_OUTPUTS) \
+	$(OUTDIR)/%.build $(OUTDIR)/%.mkdir $(Y_OUTPUTS) $(L_OUTPUTS) \
 	$$(subst \
 	$$(OUTDIR)/,,$$($$(subst .,_,$$(subst /,_,$$(subst \
 	$$(OUTDIR)/,,./$$(@:.deps=))))_LINK:.o=))
 	SOURCE_FILE=$(subst $(OUTDIR)/,,./$(@:.deps=)); \
 	    echo Generating dependencies for $$SOURCE_FILE; \
-	    echo $(addsuffix .cpp,$(subst $(OUTDIR),$(SOURCE),$(BINARIES))) | \
-	        fgrep $$SOURCE_FILE > /dev/null; \
-	    ./Makedeps $@ $< $$SOURCE_FILE $(OUTDIR) $$?
+	    $(CXX) $(CFLAGS) -MM $$SOURCE_FILE | \
+	        sed -e 's/.*\.o:/$(subst /,\/,$<)::/g' > $@; \
+	    echo "	@touch" $< >> $@
 .PRECIOUS: $(OUTDIR)/%.build
 $(OUTDIR)/%.build: \
 	./% $(OUTDIR)/%.mkdir
@@ -200,10 +200,9 @@ $(LIB): \
 
 # Tool binary linking.
 $(BINARIES): $(OUTDIR)/%: \
-	$(OUTDIR)/%.mkdir $(LIB) \
-	$$(__src$$(subst /,_,$$(subst $$(OUTDIR),,./$$@))_cpp_LINK)
+	$(OUTDIR)/$(SOURCE)/%.cpp.o $(OUTDIR)/%.mkdir $(LIB)
 	@echo Linking ./$@
-	$(CXX) -o ./$@ $(filter-out %.a,$(filter-out %.mkdir,$^)) $(LFLAGS)
+	$(CXX) -o ./$@ $< $(LFLAGS)
 
 # Object files. References dependencies that must be built before their header
 # files are available.
