@@ -87,6 +87,7 @@ H_FILES=\
 CPP_FILES=$(wildcard $(SOURCE)/*.cpp)
 SOURCE_FILES=$(CPP_FILES) $(L_OUTPUTS) $(Y_OUTPUTS)
 OBJECT_FILES=$(addprefix $(OUTDIR)/,$(addsuffix .o,$(SOURCE_FILES)))
+INCLUDE_FILES=$(wildcard $(INCLUDE)/*/*.h)
 
 TOOL_CPP_FILES=$(wildcard $(SOURCE)/tools/*.cpp)
 TEST_CPP_FILES=$(wildcard $(TESTS)/*.cpp)
@@ -246,15 +247,17 @@ SPHINX_BUILD=\
 	PYTHONPATH=$${PWD}/$(DEPEND_DIR)/$(PYTHON_INSTALL_DIR) \
 	$(DEPEND_DIR)/install/bin/sphinx-build
 SPHINX_BUILD_OPTS=\
-	-d $(DOCS)/doctrees -n $(DOCS)/source
+	-a -E -n $(DOCS)/source
 $(DOCS)/text/index.txt: \
-	$(DEPEND_DIR)/sphinx.build $(DOC_FILES)
+	$(DEPEND_DIR)/sphinx.build $(DOC_FILES) $(INCLUDE_FILES)
 	$(SPHINX_BUILD) -b text $(SPHINX_BUILD_OPTS) $(DOCS)/text
 $(DOCS)/html/index.html: \
-	$(DEPEND_DIR)/sphinx.build $(DEPEND_DIR)/pygments.build $(DOC_FILES)
+	$(DEPEND_DIR)/sphinx.build $(DOC_FILES) $(INCLUDE_FILES) \
+	$(DEPEND_DIR)/pygments.build
 	$(SPHINX_BUILD) -b html $(SPHINX_BUILD_OPTS) $(DOCS)/html
 $(DOCS)/latex/Yang.pdf: \
-	$(DEPEND_DIR)/sphinx.build $(DEPEND_DIR)/pygments.build $(DOC_FILES)
+	$(DEPEND_DIR)/sphinx.build $(DOC_FILES) $(INCLUDE_FILES) \
+	$(DEPEND_DIR)/pygments.build
 	$(SPHINX_BUILD) -b latex $(SPHINX_BUILD_OPTS) $(DOCS)/latex
 	$(MAKE) -C $(DOCS)/latex all-pdf
 

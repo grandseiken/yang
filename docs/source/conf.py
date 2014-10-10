@@ -266,3 +266,64 @@ texinfo_documents = [
 
 primary_domain = 'cpp'
 highlight_language = 'cpp'
+
+# -- Yang autodocumenter --------------------------------------------------
+
+from docutils.parsers.rst import directives
+from sphinx.ext import autodoc
+import re
+
+class CppCommentDocumenter(autodoc.Documenter):
+  objtype = 'cpp'
+  titles_allowed = True
+
+  DOC_REGEX = re.compile(r'/\*\*(([^*]|\*[^/])*)\*/')
+  DOC_LINE_PREFIX_REGEX = re.compile(r'( *\*)')
+
+  def write(self, text):
+    self.add_line(text, '<autocpp>')
+
+  def preprocess(self, text):
+    output = []
+    for line in text.split('\n'):
+      # Strip trailing whitespace.
+      t = line.rstrip()
+      # Strip the typical Javadoc-style line prefixes.
+      match = CppCommentDocumenter.DOC_LINE_PREFIX_REGEX.match(t)
+      if match:
+        t = t[len(match.group(0)):]
+      # Strip first space.
+      if len(t) and t[0] == ' ':
+        t = t[1:]
+      output.append(t)
+
+    # Strip empty lines from beginning and end.
+    first = 0
+    while first < len(output) and not output[first]:
+      first += 1
+    last = len(output) - 1
+    while last >= 0 and not output[last]:
+      last -= 1
+    if first > last:
+      return None
+    return output[first:1 + last]
+
+  def handle(self, lines):
+    for line in lines:
+      self.write(line)
+
+  def generate(self, more_content=None, real_modname=None,
+               check_module=False, all_members=False):
+    with open(self.name) as f:
+      text = f.read()
+    first = True
+    for match in CppCommentDocumenter.DOC_REGEX.findall(text):
+      doc = self.preprocess(match[0])
+      if doc:
+        if not first:
+          self.write('')
+        first = False
+        self.handle(doc)
+
+autodoc.add_documenter(CppCommentDocumenter)
+directives.register_directive('autocpp', autodoc.AutoDirective)
