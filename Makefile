@@ -117,7 +117,7 @@ tools: \
 	$(BINARIES)
 .PHONY: docs
 docs: \
-	$(DOCS)/text/index.txt $(DOCS)/html/index.html $(DOCS)/latex/Yang.pdf
+	$(DOCS)/html/index.html
 .PHONY: test
 test: \
 	$(TESTS_BINARY)
@@ -248,18 +248,10 @@ SPHINX_BUILD=\
 	$(DEPEND_DIR)/install/bin/sphinx-build
 SPHINX_BUILD_OPTS=\
 	-a -E -n $(DOCS)/source
-$(DOCS)/text/index.txt: \
-	$(DEPEND_DIR)/sphinx.build $(DOC_FILES) $(INCLUDE_FILES)
-	$(SPHINX_BUILD) -b text $(SPHINX_BUILD_OPTS) $(DOCS)/text
 $(DOCS)/html/index.html: \
 	$(DEPEND_DIR)/sphinx.build $(DOC_FILES) $(INCLUDE_FILES) \
 	$(DEPEND_DIR)/pygments.build
 	$(SPHINX_BUILD) -b html $(SPHINX_BUILD_OPTS) $(DOCS)/html
-$(DOCS)/latex/Yang.pdf: \
-	$(DEPEND_DIR)/sphinx.build $(DOC_FILES) $(INCLUDE_FILES) \
-	$(DEPEND_DIR)/pygments.build
-	$(SPHINX_BUILD) -b latex $(SPHINX_BUILD_OPTS) $(DOCS)/latex
-	$(MAKE) -C $(DOCS)/latex all-pdf
 
 # Ensure a directory exists.
 .PRECIOUS: ./%.mkdir
