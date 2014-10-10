@@ -10,9 +10,27 @@
 #include "trampoline.h"
 #include "type.h"
 
+/** #summary */
 namespace yang {
+/** #summary */
+
 namespace internal {
 
+// This is implemented by representing function types are a pair of pointers:
+//
+// (1) a pointer to the actual Yang function or C++ function (actually, a
+//     type-erased wrapper in a reference-counted structure on the heap).
+// (2) a pointer to the environment. The environment pointer is null if and only
+//     if the function is a C++ function. For Yang functions, this points either
+//     to the global data structure associated with the program Instance, or to
+//     some node of the tree of closure structures rooted there.
+//
+// On the C++ side, we store the Yang and C++ parts of (1) separately since
+// only the C++ part should be refcounted.
+//
+// There is also a large amount of template machinery to ensure we can
+// transparently call Yang functions from C++ and vice-versa, even though they
+// use different calling conventions.
 struct ErasedFunction {
   ErasedFunction();
   bool operator==(const ErasedFunction& other) const;
@@ -29,68 +47,70 @@ struct ErasedFunction {
 // End namespace internal.
 }
 
+/** #summary */
 template<typename T>
+/** #summary */
 class Function {
+/** #summary */
   static_assert(sizeof(T) != sizeof(T), "use of non-function type");
+/** #summary */
 };
+/** #summary */
 
-// The equivalent of Yang function types. Provides an interface for manipulating
-// functions defined in both C++ and Yang in an agnostic way.
-//
-// This type is a superset of the std::function type in that it can target any
-// std::function, and also any function defined in Yang code (including
-// free functions, closures, member functions with bound object, and so on).
-//
-// It is equivalent to the corresponding Yang function types, which take the
-// same set of values. Invokable objects from either language can be passed
-// back and forth between them, stored, and called arbitrarily.
-//
-// This is implemented by representing function types are a pair of pointers:
-//
-// (1) a pointer to the actual Yang function or C++ function (actually, a
-//     type-erased wrapper in a reference-counted structure on the heap).
-// (2) a pointer to the environment. The environment pointer is null if and only
-//     if the function is a C++ function. For Yang functions, this points either
-//     to the global data structure associated with the program Instance, or to
-//     some node of the tree of closure structures rooted there.
-//
-// On the C++ side, we store the Yang and C++ parts of (1) separately since
-// only the C++ part should be refcounted.
-//
-// There is also a large amount of template machinery to ensure we can
-// transparently call Yang functions from C++ and vice-versa, even though they
-// use different calling conventions.
+/**
+ * #class
+ *
+ * ``yang::Function`` is the equivalent of Yang function types. It provides an
+ * interface for manipulating functions defined in both C++ and Yang in a
+ * language-agnostic way.
+ *
+ * This type is a superset of the std::function type in that it can target any
+ * std::function, and also any function defined in Yang code (including
+ * free functions, closures, member functions with bound object, and so on).
+ *
+ * It is equivalent to the corresponding Yang function types, which take the
+ * same set of values. Invokable objects from either language can be passed
+ * back and forth between them, stored, and called arbitrarily.
+ */
 template<typename R, typename... Args>
 class Function<R(Args...)> {
+/** #summary */
 public:
 
-  // Converts an std::function into the equivalent yang::Function.
-  //
-  // Invoking the constructed object is equivalent to invoking the original
-  // std::function. It can be transferred to Yang code anywhere a value of the
-  // equivalent Yang function type is expected.
-  //
-  // The std::function is copied into a reference-counted structure in Yang's
-  // internal memory, to which this object holds a reference. Thus, once the
-  // value is transferred to Yang code it is not dependent on the lifetime of
-  // either this yang::Function or the original std::function argument.
-  //
-  // However, the value of course depends on the lifetimes of any objects which
-  // the original std::function depends on. For example, if a C++ lambda is
-  // converted to an yang::Function object, it is the user's responsibility to
-  // ensure any captured variables still exist when the function is eventually
-  // invoked.
+  /**
+   * #function
+   *
+   *   Converts an ``std::function`` into the equivalent ``yang::Function``.
+   *
+   *   Invoking the constructed object is equivalent to invoking the original
+   *   ``std::function``. It can be transferred to Yang code anywhere a value of
+   *   the equivalent Yang function type is expected.
+   *
+   *   The ``std::function`` is copied into a reference-counted structure in
+   *   Yang's internal memory, to which this object holds a reference. Thus,
+   *   once the value is transferred to Yang code it is not dependent on the
+   *   lifetime of either this ``yang::Function`` or the original
+   *   ``std::function`` argument.
+   *
+   *   However, the value of course depends on the lifetimes of any objects
+   *   which the original ``std::function`` depends on. For example, if a C++
+   *   lambda is converted to a ``yang::Function`` object, it is the user's
+   *   responsibility to ensure any captured variables still exist when the
+   *   function is eventually invoked.
+   */
   Function(const std::function<R(Args...)>& cpp_function);
 
-  // Invokes the function.
-  //
-  // Invokes the target of this yang::Function object, whether that is a C++
-  // or Yang function.
+  /**
+   * #function
+   *
+   *   Invokes the target of this ``yang::Function`` object, whether that is a
+   *   C++ or Yang function.
+   */
   R operator()(const Args&... args) const;
 
 private:
 
-  friend struct internal::Raw<Function>;
+ friend struct internal::Raw<Function>;
   friend class Context;
   // There is no null function, so library code that returns Functions to client
   // code must throw rather than returning something unusable.
@@ -99,7 +119,9 @@ private:
   const internal::ErasedFunction& get_erased_representation() const;
   internal::ErasedFunction _data;
 
+/** #summary */
 };
+/** #summary */
 
 namespace internal {
 
@@ -186,6 +208,7 @@ const internal::ErasedFunction& Function<R(Args...)>::get_erased_representation(
 }
 
 // End namespace yang.
+/** #summary */
 }
 
 #endif

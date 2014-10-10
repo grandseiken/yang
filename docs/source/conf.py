@@ -273,6 +273,16 @@ from docutils.parsers.rst import directives
 from sphinx.ext import autodoc
 import re
 
+def clean(string):
+  return list(s.rstrip() for s in string.split('\n'))
+
+def substitute(string, keyword, function):
+  index = string.find(keyword)
+  while index >= 0:
+    string = string[:index] + function() + string[index + len(keyword):]
+    index = string.find(keyword)
+  return string
+
 class CppCommentDocumenter(autodoc.Documenter):
   objtype = 'cpp'
   titles_allowed = True
@@ -308,22 +318,68 @@ class CppCommentDocumenter(autodoc.Documenter):
       return None
     return output[first:1 + last]
 
-  def handle(self, lines):
+  def handle(self, lines, rest):
+    for i in xrange(len(rest)):
+      if rest[i] == '\n':
+        rest = rest[1 + i:]
+        break
+      if rest[i] != ' ':
+        rest = rest[i:1 + rest.find('\n')]
+        break
+
+    summary = []
+    output = []
+    def fn():
+      syntax = clean(rest[:1 + rest.find(';')])
+      summary.extend(syntax)
+      return '\n\n========\n\n.. function:: ' + ' '.join(syntax)[:-1]
+    def cls():
+      syntax = clean(rest[:1 + rest.find('{')])
+      summary.extend(syntax)
+      return ''
+    def sum():
+      syntax = clean(rest[:rest.find('\n')])
+      summary.extend(syntax)
+      return ''
+
     for line in lines:
-      self.write(line)
+      line = substitute(line, '#function', fn)
+      line = substitute(line, '#class', cls)
+      line = substitute(line, '#summary', sum)
+      output.extend(line.split('\n'))
+    return summary, output
 
   def generate(self, more_content=None, real_modname=None,
                check_module=False, all_members=False):
     with open(self.name) as f:
       text = f.read()
+
+    summary = []
+    output = []
+
     first = True
-    for match in CppCommentDocumenter.DOC_REGEX.findall(text):
-      doc = self.preprocess(match[0])
+    match = CppCommentDocumenter.DOC_REGEX.search(text)
+    while match:
+      doc = self.preprocess(match.group(1))
+
       if doc:
+        # Add a blank line between each section of doc comments.
         if not first:
-          self.write('')
+          output.append('')
         first = False
-        self.handle(doc)
+        s, o = self.handle(doc, text[match.end():])
+        summary.extend(s)
+        output.extend(o)
+
+      match = CppCommentDocumenter.DOC_REGEX.search(text, match.end())
+
+    self.write('::')
+    self.write('')
+    for line in summary:
+      self.write('  ' + line)
+    self.write('')
+    for line in output:
+      self.write(line)
 
 autodoc.add_documenter(CppCommentDocumenter)
 directives.register_directive('autocpp', autodoc.AutoDirective)
