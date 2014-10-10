@@ -99,7 +99,8 @@ DEP_FILES=\
 
 DOC_FILES=\
 	$(wildcard $(DOCS)/source/*.*) \
-	$(wildcard $(DOCS)/source/*/*.*)
+	$(wildcard $(DOCS)/source/*/*.*) \
+	$(wildcard $(DOCS)/source/*/*/*.*)
 MISC_FILES=Makefile README.md LICENSE .gitignore
 ALL_FILES=\
 	$(CPP_FILES) $(TOOL_CPP_FILES) $(TEST_CPP_FILES) \
