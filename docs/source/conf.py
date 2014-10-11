@@ -383,3 +383,60 @@ class CppCommentDocumenter(autodoc.Documenter):
 
 autodoc.add_documenter(CppCommentDocumenter)
 directives.register_directive('autocpp', autodoc.AutoDirective)
+
+# -- Override ridiculous formatting ---------------------------------------
+
+from sphinx.builders import html as html_builder
+from sphinx.writers import html
+
+class Html(html.SmartyPantsHTMLTranslator):
+  def __init__(self, *args, **kwargs):
+    self.desc = False
+    html.SmartyPantsHTMLTranslator.__init__(self, *args, **kwargs)
+
+  def visit_desc(self, node):
+    self.desc = True
+    self.body.append(self.starttag(node, 'dl', CLASS=node['objtype']))
+  def depart_desc(self, node):
+    self.desc = False
+    self.body.append('</dl>\n\n')
+
+  def visit_desc_addname(self, node):
+    pass
+  def depart_desc_addname(self, node):
+    pass
+
+  def visit_desc_name(self, node):
+    pass
+  def depart_desc_name(self, node):
+    pass
+
+  def visit_desc_parameterlist(self, node):
+    self.body.append('(')
+    self.first_parameter = True
+  def depart_desc_parameterlist(self, node):
+    self.body.append(')')
+    self.first_parameter = False
+
+  def visit_desc_parameter(self, node):
+    if not self.first_parameter:
+      self.body.append(', ')
+    self.first_parameter = False
+  def depart_desc_parameter(self, node):
+    pass
+
+  def visit_desc_annotation(self, node):
+    pass
+  def depart_desc_annotation(self, node):
+    pass
+
+  def visit_emphasis(self, node):
+    if not self.desc:
+      self.body.append(self.starttag(node, 'em', ''))
+  def depart_emphasis(self, node):
+    if not self.desc:
+      self.body.append('</em>')
+
+def html_init(self):
+  self.translator_class = Html
+html_builder.StandaloneHTMLBuilder.init_translator_class = html_init
