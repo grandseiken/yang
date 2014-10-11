@@ -60,17 +60,20 @@ class Function {
 /**
  * #class
  *
- * ``yang::Function`` is the equivalent of Yang function types. It provides an
- * interface for manipulating functions defined in both C++ and Yang in a
- * language-agnostic way.
+ * ``yang::Function`` is the C++ equivalent of the Yang function types. It
+ * provides an interface for manipulating functions defined in both C++ and Yang
+ * in a language-agnostic way.
  *
- * This type is a superset of the std::function type in that it can target any
- * std::function, and also any function defined in Yang code (including
+ * This type is a superset of the ``std::function`` type in that it can target
+ * any ``std::function``, and also any function defined in Yang code (including
  * free functions, closures, member functions with bound object, and so on).
  *
- * It is equivalent to the corresponding Yang function types, which take the
- * same set of values. Invokable objects from either language can be passed
- * back and forth between them, stored, and called arbitrarily.
+ * In general, ``yang::Function`` objects targeting C++ functions can be
+ * constructed directly, whereas ``yang::Function`` objects targeting Yang
+ * functions must be retrieved from ``yang::Instance`` objects.
+ *
+ * Invokable objects from either language can be passed back and forth, stored,
+ * and called arbitrarily.
  */
 template<typename R, typename... Args>
 class Function<R(Args...)> {
@@ -92,7 +95,7 @@ public:
    *   lifetime of either this ``yang::Function`` or the original
    *   ``std::function`` argument.
    *
-   *   However, the value of course depends on the lifetimes of any objects
+   *   However, the value (of course) depends on the lifetimes of any objects
    *   which the original ``std::function`` depends on. For example, if a C++
    *   lambda is converted to a ``yang::Function`` object, it is the user's
    *   responsibility to ensure any captured variables still exist when the
