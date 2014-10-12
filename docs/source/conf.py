@@ -301,13 +301,31 @@ class YangObject(directives.ObjectDescription):
       return self.parse_name(sig[match.end():])
     return self.parse_name(sig)
 
+FUNCTION_RE = re.compile(r'\w+')
+def function_name(text):
+  started = False
+  depth = 0
+  index = 0
+  rev = text[::-1]
+  for char in rev:
+    if char == ')':
+      started = True
+      depth += 1
+    if char == '(':
+      depth -= 1
+    if started and not depth:
+      break
+    index += 1
+  match = FUNCTION_RE.search(rev, index)
+  return match.group()[::-1]
+
 class YangMemberObject(YangObject):
   def parse_name(self, sig):
-    return sig
+    return self.env.ref_context['yang:class'] + '::' + function_name(sig)
 
 class YangFunctionObject(YangObject):
   def parse_name(self, sig):
-    return sig
+    return function_name(sig)
 
 class YangClassObject(YangObject):
   REGEX = re.compile(r'class (\w+)')
@@ -318,13 +336,7 @@ class YangClassObject(YangObject):
     return self.name
 
   def before_content(self):
-    if 'yang:parent' in self.env.ref_context:
-      self.env.ref_context['yang:parent'].append(self.name)
-    else:
-      self.env.ref_context['yang:parent'] = [self.name]
-
-  def after_content(self):
-    self.env.ref_context['yang:parent'].pop()
+    self.env.ref_context['yang:class'] = self.name
 
 class YangDomain(domains.Domain):
   name = 'yang'
