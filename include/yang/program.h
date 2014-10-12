@@ -40,8 +40,7 @@ public:
   /**
    * #member ##
    *
-   *   Returns the ``name`` parameter that was passed in to this ``Program``'s
-   *   constructor.
+   *   Returns the ``name`` parameter given to this ``Program`` on construction.
    */
   const std::string& get_name() const;
 

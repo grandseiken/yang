@@ -269,7 +269,6 @@ from docutils import nodes
 from sphinx import addnodes
 from sphinx import directives
 from sphinx import domains
-from sphinx.util import nodes as util_nodes
 
 IDENTIFIER_RE = re.compile(r'\w+')
 class YangObject(directives.ObjectDescription):
@@ -289,8 +288,12 @@ class YangObject(directives.ObjectDescription):
       signode += nodes.Text(text[last_index:match.start(0)])
 
       link = text[match.start(0):match.end(0)]
+      yang_class = ''
+      if 'yang:class' in self.env.ref_context:
+        yang_class = self.env.ref_context['yang:class']
       xref = addnodes.pending_xref(
-          refdomain='yang', reftype='class', reftarget=link)
+          refdomain='yang', reftype='yang', reftarget=link,
+          yang_class=yang_class)
       xref += nodes.Text(link)
       signode += xref
 
@@ -370,15 +373,27 @@ class YangDomain(domains.Domain):
     'objects': {},
   }
 
-  def resolve_xref(self, env, fromdocname, builder,
-                   type, target, node, contnode):
-    name = node.attributes['reftarget']
-    if name not in self.data['objects']:
-      return None
-    docname = self.data['objects'][name]
+  def resolve_xref_name(self, name, from_docname, builder, cont_node):
+    to_docname = self.data['objects'][name]
+    node = nodes.reference('', '', internal=True)
+    rel_uri = builder.get_relative_uri(from_docname, to_docname)
+    node['refuri'] = rel_uri + '#' + name
+    node['reftitle'] = name
+    node.append(cont_node)
+    return node
 
-    return util_nodes.make_refnode(
-        builder, fromdocname, docname, name, contnode, name)
+  def resolve_xref(self, env, from_docname, builder,
+                   type, target, node, cont_node):
+    name = None
+    if target in self.data['objects']:
+      name = target
+    member_target = node.attributes['yang_class'] + '::' + target
+    if member_target in self.data['objects']:
+      name = member_target
+
+    if name:
+      return self.resolve_xref_name(name, from_docname, builder, cont_node)
+    return None
 
   def get_objects(self):
     # TODO: implement for searching?
@@ -493,21 +508,25 @@ from docutils import nodes
 from sphinx.builders import html as html_builder
 from sphinx.writers import html
 
-def node_string(node):
+def htmlencode(text):
+  return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+def node_string(node, encode):
   """Assemble string from a particular node without formatting."""
   if node.tagname == '#text':
-    return str(node)
-  return ''.join(node_string(child) for child in node.children)
+    return htmlencode(str(node)) if encode else str(node)
+  return ''.join(node_string(child, encode) for child in node.children)
 
 def node_find_links(node, index):
   """Search node tree for URL references and their positions in the source."""
   links = []
   if node.tagname == 'reference' and 'refuri' in node.attributes:
     url = node.attributes['refuri']
-    links = [(node.attributes['refuri'], index, index + len(node_string(node)))]
+    links = [(node.attributes['refuri'],
+              index, index + len(node_string(node, True)))]
   for child in node.children:
     links.extend(node_find_links(child, index))
-    index += len(node_string(child))
+    index += len(node_string(child, True))
   return links
 
 def combine_links(links, highlighted):
@@ -556,7 +575,7 @@ class Html(html.SmartyPantsHTMLTranslator):
     def warner(msg):
       self.builder.warn(msg, (self.builder.current_docname, node.line))
     highlighted = self.highlighter.highlight_block(
-        node_string(node), self.highlightlang, warn=warner)
+        node_string(node, False), self.highlightlang, warn=warner)
     self.body.append(combine_links(node_find_links(node, 0), highlighted))
     raise nodes.SkipNode
 
