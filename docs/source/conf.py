@@ -269,6 +269,41 @@ from docutils import nodes
 from sphinx import addnodes
 from sphinx import directives
 from sphinx import domains
+from sphinx.util import compat
+
+def make_source_literal(env, text):
+  literal = nodes.literal_block()
+
+  last_index = 0
+  match = IDENTIFIER_RE.search(text, last_index)
+  while match:
+    literal += nodes.Text(text[last_index:match.start(0)])
+
+    link = text[match.start(0):match.end(0)]
+    yang_class = ''
+    if 'yang:class' in env.ref_context:
+      yang_class = env.ref_context['yang:class']
+    xref = addnodes.pending_xref(
+        refdomain='yang', reftype='yang', reftarget=link,
+        yang_class=yang_class)
+    xref += nodes.Text(link)
+    literal += xref
+
+    last_index = match.end(0)
+    match = IDENTIFIER_RE.search(text, last_index)
+
+  literal += nodes.Text(text[last_index:])
+  return literal
+
+class YangCodeDirective(compat.Directive):
+  has_content = True
+
+  def run(self):
+    env = self.state.document.settings.env
+    self.assert_has_content()
+    node = make_source_literal(env, '\n'.join(self.content))
+    self.add_name(node)
+    return [node]
 
 IDENTIFIER_RE = re.compile(r'\w+')
 class YangObject(directives.ObjectDescription):
@@ -280,27 +315,6 @@ class YangObject(directives.ObjectDescription):
 
     objects = self.env.domaindata['yang']['objects']
     objects[name] = self.env.docname
-
-  def add_nodes(self, signode, text):
-    last_index = 0
-    match = IDENTIFIER_RE.search(text, last_index)
-    while match:
-      signode += nodes.Text(text[last_index:match.start(0)])
-
-      link = text[match.start(0):match.end(0)]
-      yang_class = ''
-      if 'yang:class' in self.env.ref_context:
-        yang_class = self.env.ref_context['yang:class']
-      xref = addnodes.pending_xref(
-          refdomain='yang', reftype='yang', reftarget=link,
-          yang_class=yang_class)
-      xref += nodes.Text(link)
-      signode += xref
-
-      last_index = match.end(0)
-      match = IDENTIFIER_RE.search(text, last_index)
-
-    signode += nodes.Text(text[last_index:])
 
   def handle_signature(self, sig, signode):
     lines = [line for line in sig.split('\\n') if line.strip()]
@@ -318,7 +332,7 @@ class YangObject(directives.ObjectDescription):
       first = False
 
     text = '\n'.join(line[indent:] for line in lines)
-    self.add_nodes(signode, text)
+    signode += make_source_literal(self.env, text)
 
     match = YangObject.TEMPLATE_RE.search(sig)
     if match:
@@ -368,6 +382,7 @@ class YangDomain(domains.Domain):
     'class': YangClassObject,
     'function': YangFunctionObject,
     'member': YangMemberObject,
+    'code': YangCodeDirective,
   }
   initial_data = {
     'objects': {},
@@ -493,7 +508,7 @@ class CppDocumenter(autodoc.Documenter):
 
       match = CppDocumenter.DOC_REGEX.search(text, match.end())
 
-    self.write('::')
+    self.write('.. code::')
     self.write('')
     for line in summary:
       self.write('  ' + line)
@@ -572,6 +587,10 @@ class Html(html.SmartyPantsHTMLTranslator):
     if node.parent['objtype'] != 'describe' and node['ids'] and node['first']:
       self.body.append('<!--[%s]-->' % node['ids'][0])
 
+  def depart_desc_signature(self, node):
+    self.body.append('</dt>\n')
+
+  def visit_literal_block(self, node):
     def warner(msg):
       self.builder.warn(msg, (self.builder.current_docname, node.line))
     highlighted = self.highlighter.highlight_block(
@@ -579,9 +598,8 @@ class Html(html.SmartyPantsHTMLTranslator):
     self.body.append(combine_links(node_find_links(node, 0), highlighted))
     raise nodes.SkipNode
 
-  def depart_desc_signature(self, node):
-    self.add_permalink_ref(node, 'definition')
-    self.body.append('</dt>\n')
+  def depart_literal_block(self, node):
+    pass
 
 
 # -- Set up all the extra functionality  ----------------------------------
