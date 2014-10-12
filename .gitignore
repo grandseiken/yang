@@ -4,3 +4,6 @@ dbg/
 gen/
 lib/
 dependencies/
+docs/html
+*.pyc
+*.swp

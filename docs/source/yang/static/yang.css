@@ -793,7 +793,7 @@ p.admonition-title:after {
  
 pre {
     padding: 10px;
-    background-color: #272822;
+    background-color: #0f140f;
     margin: 1.5em 0 1.5em 0;
 }
  
@@ -824,4 +824,16 @@ a:hover em.std-term {
 div.code-block-caption {
     background-color: #ddd;
     color: #222;
+}
+
+/* -- custom Yang stuff ----------------------------------------------------- */
+
+a.code-ref {
+  color: inherit;
+  text-decoration: underline;
+}
+
+a.code-ref:hover {
+  font-weight: bold;
+  text-decoration: none;
 }

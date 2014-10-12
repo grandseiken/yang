@@ -1,4 +1,4 @@
-``yang::Function<R(Args...)>``
-==============================
+``yang::Function``
+==================
 
 .. autocpp:: include/yang/function.h

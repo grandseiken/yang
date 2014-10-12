@@ -10,13 +10,11 @@
 #include "trampoline.h"
 #include "type.h"
 
-/** #summary */
+/** #sumline ## */
 namespace yang {
-/** #summary */
-
 namespace internal {
 
-// This is implemented by representing function types are a pair of pointers:
+// This is implemented by representing function types as a pair of pointers:
 //
 // (1) a pointer to the actual Yang function or C++ function (actually, a
 //     type-erased wrapper in a reference-counted structure on the heap).
@@ -49,14 +47,9 @@ struct ErasedFunction {
 
 /** #summary */
 template<typename T>
-/** #summary */
 class Function {
-/** #summary */
   static_assert(sizeof(T) != sizeof(T), "use of non-function type");
-/** #summary */
 };
-/** #summary */
-
 /**
  * #class
  *
@@ -77,11 +70,11 @@ class Function {
  */
 template<typename R, typename... Args>
 class Function<R(Args...)> {
-/** #summary */
+/** #sumline */
 public:
 
   /**
-   * #function
+   * #member
    *
    *   Converts an ``std::function`` into the equivalent ``yang::Function``.
    *
@@ -104,7 +97,7 @@ public:
   Function(const std::function<R(Args...)>& cpp_function);
 
   /**
-   * #function
+   * #member
    *
    *   Invokes the target of this ``yang::Function`` object, whether that is a
    *   C++ or Yang function.
@@ -122,9 +115,8 @@ private:
   const internal::ErasedFunction& get_erased_representation() const;
   internal::ErasedFunction _data;
 
-/** #summary */
+/** #sumline ## */
 };
-/** #summary */
 
 namespace internal {
 
@@ -211,7 +203,7 @@ const internal::ErasedFunction& Function<R(Args...)>::get_erased_representation(
 }
 
 // End namespace yang.
-/** #summary */
+/** #sumline */
 }
 
 #endif

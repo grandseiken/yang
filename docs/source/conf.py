@@ -89,7 +89,7 @@ exclude_patterns = []
 #show_authors = False
 
 # The name of the Pygments (syntax highlighting) style to use.
-pygments_style = 'monokai'
+pygments_style = 'fruity'
 
 # A list of ignored prefixes for module index sorting.
 #modindex_common_prefix = []
@@ -262,33 +262,90 @@ texinfo_documents = [
 #texinfo_no_detailmenu = False
 
 
-# -- Extra Yang options ---------------------------------------------------
+# -- Yang custom domain ---------------------------------------------------
 
-primary_domain = 'cpp'
-highlight_language = 'cpp'
+import re
+from docutils import nodes
+from sphinx import directives
+from sphinx import domains
+from sphinx import roles
+
+class YangObject(directives.ObjectDescription):
+
+  TEMPLATE_RE = re.compile(r'template\s*<[^>]*>')
+
+  def add_target_and_index(self, name, sig, signode):
+    signode['ids'].append(name)
+    self.indexnode['entries'].append(('single', 'yang::' + name, name, ''))
+
+  def handle_signature(self, sig, signode):
+    lines = [line for line in sig.split('\\n') if line.strip()]
+
+    # Remove indentation.
+    first = True
+    for line in lines:
+      index = 0
+      for char in line:
+        if char != ' ':
+          break
+        index += 1
+      if first or index < indent:
+        indent = index
+      first = False
+
+    text = '\n'.join(line[indent:] for line in lines)
+    signode += nodes.Text(text)
+
+    match = YangObject.TEMPLATE_RE.search(sig)
+    if match:
+      return self.parse_name(sig[match.end():])
+    return self.parse_name(sig)
+
+class YangMemberObject(YangObject):
+  def parse_name(self, sig):
+    return sig
+
+class YangFunctionObject(YangObject):
+  def parse_name(self, sig):
+    return sig
+
+class YangClassObject(YangObject):
+  REGEX = re.compile(r'class (\w+)')
+
+  def parse_name(self, sig):
+    match = YangClassObject.REGEX.search(sig)
+    self.name = match.group(1)
+    return self.name
+
+  def before_content(self):
+    if 'yang:parent' in self.env.ref_context:
+      self.env.ref_context['yang:parent'].append(self.name)
+    else:
+      self.env.ref_context['yang:parent'] = [self.name]
+
+  def after_content(self):
+    self.env.ref_context['yang:parent'].pop()
+
+class YangDomain(domains.Domain):
+  name = 'yang'
+  label = 'C++'
+  directives = {
+    'class': YangClassObject,
+    'function': YangFunctionObject,
+    'member': YangMemberObject,
+  }
+
 
 # -- Yang autodocumenter --------------------------------------------------
 
-from docutils.parsers.rst import directives
 from sphinx.ext import autodoc
-import re
 
-def clean(string):
-  return list(s.rstrip() for s in string.split('\n'))
-
-def substitute(string, keyword, function):
-  index = string.find(keyword)
-  while index >= 0:
-    string = string[:index] + function() + string[index + len(keyword):]
-    index = string.find(keyword)
-  return string
-
-class CppCommentDocumenter(autodoc.Documenter):
+class CppDocumenter(autodoc.Documenter):
   objtype = 'cpp'
   titles_allowed = True
 
   DOC_REGEX = re.compile(r'/\*\*(([^*]|\*[^/])*)\*/')
-  DOC_LINE_PREFIX_REGEX = re.compile(r'( *\*)')
+  DOC_LINE_PREFIX_REGEX = re.compile(r'(\s*\*)')
 
   def write(self, text):
     self.add_line(text, '<autocpp>')
@@ -299,7 +356,7 @@ class CppCommentDocumenter(autodoc.Documenter):
       # Strip trailing whitespace.
       t = line.rstrip()
       # Strip the typical Javadoc-style line prefixes.
-      match = CppCommentDocumenter.DOC_LINE_PREFIX_REGEX.match(t)
+      match = CppDocumenter.DOC_LINE_PREFIX_REGEX.match(t)
       if match:
         t = t[len(match.group(0)):]
       # Strip first space.
@@ -318,36 +375,37 @@ class CppCommentDocumenter(autodoc.Documenter):
       return None
     return output[first:1 + last]
 
-  def handle(self, lines, rest):
-    for i in xrange(len(rest)):
-      if rest[i] == '\n':
-        rest = rest[1 + i:]
-        break
-      if rest[i] != ' ':
-        rest = rest[i:1 + rest.find('\n')]
-        break
+  def handle(self, lines, rest, summary, output):
+    rest = rest[1 + rest.find('\n'):]
 
-    summary = []
-    output = []
-    def fn():
-      syntax = clean(rest[:1 + rest.find(';')])
-      summary.extend(syntax)
-      return '\n\n========\n\n.. function:: ' + ' '.join(syntax)[:-1]
-    def cls():
-      syntax = clean(rest[:1 + rest.find('{')])
-      summary.extend(syntax)
-      return ''
-    def sum():
-      syntax = clean(rest[:rest.find('\n')])
-      summary.extend(syntax)
-      return ''
+    def add_summary(code):
+      summary.extend(code.split('\n'))
+
+    def substitute(string, keyword, function):
+      while string.find(keyword) >= 0:
+        string = string.replace(keyword, function() or '', 1)
+      return string
+
+    def substitute_syntax(string, keyword, end_syntax):
+      def f():
+        syntax = rest[:1 + rest.find(end_syntax)]
+        add_summary(syntax)
+        syntax = syntax[:-len(end_syntax)].rstrip()
+        processed = '\\\\n' + syntax.replace('\n', '\\\\n')
+        return '\n\n.. ' + keyword[1:] + ':: ' + processed
+      return substitute(string, keyword, f)
 
     for line in lines:
-      line = substitute(line, '#function', fn)
-      line = substitute(line, '#class', cls)
-      line = substitute(line, '#summary', sum)
+      line = substitute_syntax(line, '#class', '{')
+      line = substitute_syntax(line, '#member', ';')
+      line = substitute_syntax(line, '#function', ';')
+
+      line = substitute(line, '#sumline',
+                        lambda: add_summary(rest[:rest.find('\n')]))
+      line = substitute(line, '#summary',
+                        lambda: add_summary(rest[:rest.find('/**')]))
+      line = substitute(line, '##', lambda: add_summary(''))
       output.extend(line.split('\n'))
-    return summary, output
 
   def generate(self, more_content=None, real_modname=None,
                check_module=False, all_members=False):
@@ -358,7 +416,7 @@ class CppCommentDocumenter(autodoc.Documenter):
     output = []
 
     first = True
-    match = CppCommentDocumenter.DOC_REGEX.search(text)
+    match = CppDocumenter.DOC_REGEX.search(text)
     while match:
       doc = self.preprocess(match.group(1))
 
@@ -367,11 +425,9 @@ class CppCommentDocumenter(autodoc.Documenter):
         if not first:
           output.append('')
         first = False
-        s, o = self.handle(doc, text[match.end():])
-        summary.extend(s)
-        output.extend(o)
+        self.handle(doc, text[match.end():], summary, output)
 
-      match = CppCommentDocumenter.DOC_REGEX.search(text, match.end())
+      match = CppDocumenter.DOC_REGEX.search(text, match.end())
 
     self.write('::')
     self.write('')
@@ -381,62 +437,93 @@ class CppCommentDocumenter(autodoc.Documenter):
     for line in output:
       self.write(line)
 
-autodoc.add_documenter(CppCommentDocumenter)
-directives.register_directive('autocpp', autodoc.AutoDirective)
 
 # -- Override ridiculous formatting ---------------------------------------
 
+from docutils import nodes
 from sphinx.builders import html as html_builder
 from sphinx.writers import html
+
+def node_string(node):
+  """Assemble string from a particular node without formatting."""
+  if node.tagname == '#text':
+    return str(node)
+  return ''.join(node_string(child) for child in node.children)
+
+def node_find_links(node, index):
+  """Search node tree for URL references and their positions in the source."""
+  links = []
+  if node.tagname == 'reference':
+    url = node.attributes['refuri']
+    links = [(node.attributes['refuri'], index, index + len(node_string(node)))]
+  for child in node.children:
+    links.extend(node_find_links(child, index))
+    index += len(node_string(child))
+  return links
+
+def combine_links(links, highlighted):
+  """Splice the URL references into the Pygments output."""
+  for url, start, end in reversed(links):
+    index = 0
+    raw_index = 0
+    # You can't parse HTML with regex, but what the hell. Pygments outputs a
+    # very constrained sort of HTML.
+    start_index = -1
+    tag = False
+    for char in highlighted:
+      if char == '<':
+        tag = True
+
+      if not tag:
+        if index == start and start_index < 0:
+          start_index = raw_index
+        if index == end:
+          end_index = raw_index
+          break
+        index += 1
+
+      raw_index += 1
+      if char == '>':
+        tag = False
+
+    highlighted = (highlighted[:start_index] +
+                   '<a href="%s" class="code-ref">' % url +
+                   highlighted[start_index:end_index] +
+                   '</a>' +
+                   highlighted[end_index:])
+
+  return highlighted
 
 class Html(html.SmartyPantsHTMLTranslator):
   def __init__(self, *args, **kwargs):
     self.desc = False
     html.SmartyPantsHTMLTranslator.__init__(self, *args, **kwargs)
 
-  def visit_desc(self, node):
-    self.desc = True
-    self.body.append(self.starttag(node, 'dl', CLASS=node['objtype']))
-  def depart_desc(self, node):
-    self.desc = False
-    self.body.append('</dl>\n\n')
+  def visit_desc_signature(self, node):
+    self.body.append(self.starttag(node, 'dt'))
+    if node.parent['objtype'] != 'describe' and node['ids'] and node['first']:
+      self.body.append('<!--[%s]-->' % node['ids'][0])
 
-  def visit_desc_addname(self, node):
-    pass
-  def depart_desc_addname(self, node):
-    pass
+    def warner(msg):
+      self.builder.warn(msg, (self.builder.current_docname, node.line))
+    highlighted = self.highlighter.highlight_block(
+        node_string(node), self.highlightlang, warn=warner)
+    self.body.append(combine_links(node_find_links(node, 0), highlighted))
+    raise nodes.SkipNode
 
-  def visit_desc_name(self, node):
-    pass
-  def depart_desc_name(self, node):
-    pass
+  def depart_desc_signature(self, node):
+    self.add_permalink_ref(node, 'definition')
+    self.body.append('</dt>\n')
 
-  def visit_desc_parameterlist(self, node):
-    self.body.append('(')
-    self.first_parameter = True
-  def depart_desc_parameterlist(self, node):
-    self.body.append(')')
-    self.first_parameter = False
 
-  def visit_desc_parameter(self, node):
-    if not self.first_parameter:
-      self.body.append(', ')
-    self.first_parameter = False
-  def depart_desc_parameter(self, node):
-    pass
+# -- Set up all the extra functionality  ----------------------------------
 
-  def visit_desc_annotation(self, node):
-    pass
-  def depart_desc_annotation(self, node):
-    pass
+sys.path.append(os.path.dirname(os.path.realpath(__file__)))
+primary_domain = 'yang'
+highlight_language = 'cpp'
+html_translator_class = 'conf.Html'
 
-  def visit_emphasis(self, node):
-    if not self.desc:
-      self.body.append(self.starttag(node, 'em', ''))
-  def depart_emphasis(self, node):
-    if not self.desc:
-      self.body.append('</em>')
-
-def html_init(self):
-  self.translator_class = Html
-html_builder.StandaloneHTMLBuilder.init_translator_class = html_init
+import traceback
+def setup(app):
+  app.add_domain(YangDomain)
+  app.add_autodocumenter(CppDocumenter)

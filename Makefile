@@ -98,9 +98,10 @@ DEP_FILES=\
 	$(SOURCE_FILES) $(TOOL_CPP_FILES) $(TEST_CPP_FILES)))
 
 DOC_FILES=\
-	$(wildcard $(DOCS)/source/*.*) \
-	$(wildcard $(DOCS)/source/*/*.*) \
-	$(wildcard $(DOCS)/source/*/*/*.*)
+	$(DOCS)/source/conf.py \
+	$(DOCS)/source/yang/theme.conf \
+	$(DOCS)/source/yang/static/yang.css \
+	$(wildcard $(DOCS)/source/*.rst)
 MISC_FILES=Makefile README.md LICENSE .gitignore
 ALL_FILES=\
 	$(CPP_FILES) $(TOOL_CPP_FILES) $(TEST_CPP_FILES) \
@@ -139,7 +140,7 @@ clean:
 	rm -rf $(OUTDIR)
 	rm -rf $(GEN)
 	rm -rf $(LLVM_LIB_DIR)/*.o
-	rm -rf $(DOCS)/doctrees $(DOCS)/text $(DOCS)/html $(DOCS)/latex
+	rm -rf $(DOCS)/doctrees $(DOCS)/html
 
 # Dependency generation. Each source file generates a corresponding .deps file
 # (a Makefile containing a .build target), which is then included. Inclusion

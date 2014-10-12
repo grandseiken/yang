@@ -10,38 +10,57 @@
 #include "error.h"
 #include "internals.h"
 
+/** #sumline ## */
 namespace yang {
 class Context;
 
+/** #class */
 class Program {
+/** #sumline */
 public:
 
-  // Errors and warnings will be appended to the diagnostic_output string if
-  // the pointer is non-null; otherwise, they will go to stderr.
+  /**
+   * #member ##
+   *
+   *   By default, errors and warnings will be printed to standard error. If a
+   *   non-null pointer is given as the ``diagnostic_output`` parameter, errors
+   *   and warnings will be appended to the target string instead.
+   *
+   *   For even finer-grained control, the error data structures can be accessed
+   *   for raw error message strings and detailed information about the position
+   *   of errors in the source text. See ``ErrorInfo`` for more information.
+   */
   Program(const Context& context, const std::string& name,
           const std::string& contents, bool optimise = true,
           std::string* diagnostic_output = nullptr);
-
-  // By default, errors and warnings will be printed to standard error. By
-  // passing diagnostic_output to the Program constructor, this behaviour can be
-  // overridden, and something else can be done with the diagnostic information.
-  //
-  // For even finer-grained control, these data structures can be accessed for
-  // raw error message strings and detailed information about the position of
-  // errors in the source text. See error.h for more information.
-  typedef std::vector<ErrorInfo> error_list;
-  const error_list& get_errors() const;
-  const error_list& get_warnings() const;
+  /** #member */
+  const std::vector<ErrorInfo>& get_errors() const;
+  /** #member */
+  const std::vector<ErrorInfo>& get_warnings() const;
+  /**
+   * #member ##
+   *
+   *   Returns the ``name`` parameter that was passed in to this ``Program``'s
+   *   constructor.
+   */
   const std::string& get_name() const;
 
-  // Returns true if the contents parsed and checked successfully (i.e., if
-  // get_errors().size() is zero). Otherwise, none of the following functions
-  // will do anything useful.
+  /**
+   * #member ##
+   *
+   *   Returns ``true`` if the contents parsed and checked successfully (i.e.,
+   *   if ``get_errors().size()`` is zero). Otherwise, none of the following
+   *   functions will do anything useful.
+   */
   bool success() const;
+  /** #member */
   std::string print_ast() const;
+  /** #member ## */
   std::string print_ir() const;
 
+  /** #member */
   const function_table& get_functions() const;
+  /** #member */
   const global_table& get_globals() const;
 
 private:
@@ -51,9 +70,11 @@ private:
   friend class Instance;
   internal::RefcountHook<internal::ProgramInternals> _internals;
 
+/** #sumline ## */
 };
 
 // End namespace yang.
+/** #sumline */
 }
 
 #endif

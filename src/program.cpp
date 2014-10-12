@@ -104,12 +104,12 @@ Program::Program(const Context& context, const std::string& name,
   generate_ir(optimise, nonexported_globals);
 }
 
-const Program::error_list& Program::get_errors() const
+const std::vector<ErrorInfo>& Program::get_errors() const
 {
   return _internals->errors;
 }
 
-const Program::error_list& Program::get_warnings() const
+const std::vector<ErrorInfo>& Program::get_warnings() const
 {
   return _internals->warnings;
 }

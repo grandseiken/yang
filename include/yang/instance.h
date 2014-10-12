@@ -14,30 +14,66 @@ namespace llvm {
   class Function;
 }
 
+/** #sumline ## */
 namespace yang {
 class Program;
 namespace internal {
   struct ProgramInternals;
 }
 
+/** #class */
 class Instance {
+/** #sumline */
 public:
 
+  /** #member ## */
   Instance(const Program& program);
 
+  /** #member ## */
   template<typename T>
   T get_global(const std::string& name) const;
+  /** #member ## */
   template<typename T>
   void set_global(const std::string& name, const T& value);
 
+  /**
+   * #member ##
+   *
+   *   This is convenient shorthand for a call to ``get_function`` followed by
+   *   an invocation of the resulting ``yang::Function`` object with some
+   *   arguments. The template argument ``R``, which must be supplied,
+   *   corresponds to the result type of the function called ``name``;
+   *   ``Args...`` corresponds to its argument types.
+   *
+   *   For example, the following two approaches are equivalent::
+   *
+   *     // Using a yang::Function object.
+   *     typedef yang::Function<yang::int_t(yang::int_t)> function_t;
+   *     function_t foo = inst.get_function<function_t>("foo");
+   *     yang::int_t result_a = foo(42);
+   *
+   *     // Using the "call" method.
+   *     yang::int_t result_b = inst.call<yang::int_t>("foo", yang::int_t{42});
+   */
   template<typename R, typename... Args>
   R call(const std::string& name, const Args&... args);
+  /** #member ## */
   template<typename T>
   T get_function(const std::string& name);
 
-  // Convenience functions (equivalent to calling the same on the Program the
-  // Instance was compiled from).
+  /**
+   * #member
+   *
+   *   This convenience function is equivalent to calling ``get_functions()``
+   *   on the ``Program`` this ``Instance`` was compiled from.
+   */
   const function_table& get_functions() const;
+  /**
+   * #member
+   *
+   *   This convenience function is equivalent to calling ``get_globals()``
+   *   on the ``Program`` this ``Instance`` was compiled from.
+   */
   const global_table& get_globals() const;
 
 private:
@@ -60,6 +96,7 @@ private:
   internal::RefcountHook<internal::Prefix> _global_data;
   internal::ProgramInternals* _program;
 
+/** #sumline ## */
 };
 
 template<typename T>
@@ -98,6 +135,7 @@ R Instance::call(const std::string& name, const Args&... args)
 }
 
 // End namespace yang.
+/** #sumline */
 }
 
 #endif
