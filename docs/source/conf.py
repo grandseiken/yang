@@ -266,17 +266,38 @@ texinfo_documents = [
 
 import re
 from docutils import nodes
+from sphinx import addnodes
 from sphinx import directives
 from sphinx import domains
-from sphinx import roles
+from sphinx.util import nodes as util_nodes
 
+IDENTIFIER_RE = re.compile(r'\w+')
 class YangObject(directives.ObjectDescription):
-
   TEMPLATE_RE = re.compile(r'template\s*<[^>]*>')
 
   def add_target_and_index(self, name, sig, signode):
     signode['ids'].append(name)
     self.indexnode['entries'].append(('single', 'yang::' + name, name, ''))
+
+    objects = self.env.domaindata['yang']['objects']
+    objects[name] = self.env.docname
+
+  def add_nodes(self, signode, text):
+    last_index = 0
+    match = IDENTIFIER_RE.search(text, last_index)
+    while match:
+      signode += nodes.Text(text[last_index:match.start(0)])
+
+      link = text[match.start(0):match.end(0)]
+      xref = addnodes.pending_xref(
+          refdomain='yang', reftype='class', reftarget=link)
+      xref += nodes.Text(link)
+      signode += xref
+
+      last_index = match.end(0)
+      match = IDENTIFIER_RE.search(text, last_index)
+
+    signode += nodes.Text(text[last_index:])
 
   def handle_signature(self, sig, signode):
     lines = [line for line in sig.split('\\n') if line.strip()]
@@ -294,14 +315,13 @@ class YangObject(directives.ObjectDescription):
       first = False
 
     text = '\n'.join(line[indent:] for line in lines)
-    signode += nodes.Text(text)
+    self.add_nodes(signode, text)
 
     match = YangObject.TEMPLATE_RE.search(sig)
     if match:
       return self.parse_name(sig[match.end():])
     return self.parse_name(sig)
 
-FUNCTION_RE = re.compile(r'\w+')
 def function_name(text):
   started = False
   depth = 0
@@ -316,7 +336,7 @@ def function_name(text):
     if started and not depth:
       break
     index += 1
-  match = FUNCTION_RE.search(rev, index)
+  match = IDENTIFIER_RE.search(rev, index)
   return match.group()[::-1]
 
 class YangMemberObject(YangObject):
@@ -346,6 +366,23 @@ class YangDomain(domains.Domain):
     'function': YangFunctionObject,
     'member': YangMemberObject,
   }
+  initial_data = {
+    'objects': {},
+  }
+
+  def resolve_xref(self, env, fromdocname, builder,
+                   type, target, node, contnode):
+    name = node.attributes['reftarget']
+    if name not in self.data['objects']:
+      return None
+    docname = self.data['objects'][name]
+
+    return util_nodes.make_refnode(
+        builder, fromdocname, docname, name, contnode, name)
+
+  def get_objects(self):
+    # TODO: implement for searching?
+    return []
 
 
 # -- Yang autodocumenter --------------------------------------------------
@@ -465,7 +502,7 @@ def node_string(node):
 def node_find_links(node, index):
   """Search node tree for URL references and their positions in the source."""
   links = []
-  if node.tagname == 'reference':
+  if node.tagname == 'reference' and 'refuri' in node.attributes:
     url = node.attributes['refuri']
     links = [(node.attributes['refuri'], index, index + len(node_string(node)))]
   for child in node.children:
