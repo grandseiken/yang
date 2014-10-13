@@ -264,6 +264,10 @@ texinfo_documents = [
 
 # -- Yang custom domain ---------------------------------------------------
 
+# TODO: get rid of class at the top entirely and link straight to document.
+# TODO: fix scoping of constructors by picking out things that could be
+# function references.
+# TODO: extend operators and make them highlight properly.
 import re
 from docutils import nodes
 from sphinx import addnodes
@@ -271,6 +275,7 @@ from sphinx import directives
 from sphinx import domains
 from sphinx.util import compat
 
+IDENTIFIER_RE = re.compile(r'operator *\(\)|\w+')
 def make_source_literal(env, text):
   literal = nodes.literal_block()
 
@@ -305,7 +310,6 @@ class YangCodeDirective(compat.Directive):
     self.add_name(node)
     return [node]
 
-IDENTIFIER_RE = re.compile(r'\w+')
 class YangObject(directives.ObjectDescription):
   TEMPLATE_RE = re.compile(r'template\s*<[^>]*>')
 
@@ -339,6 +343,7 @@ class YangObject(directives.ObjectDescription):
       return self.parse_name(sig[match.end():])
     return self.parse_name(sig)
 
+FUNCTION_RE = re.compile(r'(\)\(|) *\w+')
 def function_name(text):
   started = False
   depth = 0
@@ -353,7 +358,7 @@ def function_name(text):
     if started and not depth:
       break
     index += 1
-  match = IDENTIFIER_RE.search(rev, index)
+  match = FUNCTION_RE.search(rev, 1 + index)
   return match.group()[::-1]
 
 class YangMemberObject(YangObject):
@@ -365,11 +370,9 @@ class YangFunctionObject(YangObject):
     return function_name(sig)
 
 class YangClassObject(YangObject):
-  REGEX = re.compile(r'class (\w+)')
 
   def parse_name(self, sig):
-    match = YangClassObject.REGEX.search(sig)
-    self.name = match.group(1)
+    self.name = self.arguments[0]
     return self.name
 
   def before_content(self):
@@ -457,9 +460,6 @@ class CppDocumenter(autodoc.Documenter):
   def handle(self, lines, rest, summary, output):
     rest = rest[1 + rest.find('\n'):]
 
-    def add_summary(code):
-      summary.extend(code.split('\n'))
-
     def substitute(string, keyword, function):
       while string.find(keyword) >= 0:
         string = string.replace(keyword, function() or '', 1)
@@ -468,22 +468,24 @@ class CppDocumenter(autodoc.Documenter):
     def substitute_syntax(string, keyword, end_syntax):
       def f():
         syntax = rest[:1 + rest.find(end_syntax)]
-        add_summary(syntax)
+        summary.extend(syntax.split('\n'))
         syntax = syntax[:-len(end_syntax)].rstrip()
         processed = '\\\\n' + syntax.replace('\n', '\\\\n')
         return '\n\n.. ' + keyword[1:] + ':: ' + processed
       return substitute(string, keyword, f)
 
     for line in lines:
-      line = substitute_syntax(line, '#class', '{')
+      classext = lambda: summary.extend(rest[:1 + rest.find('{')].split('\n'))
+      line = substitute(line, '#class', classext)
+
       line = substitute_syntax(line, '#member', ';')
       line = substitute_syntax(line, '#function', ';')
 
-      line = substitute(line, '#sumline',
-                        lambda: add_summary(rest[:rest.find('\n')]))
-      line = substitute(line, '#summary',
-                        lambda: add_summary(rest[:rest.find('/**')]))
-      line = substitute(line, '##', lambda: add_summary(''))
+      sumline = lambda: summary.append(rest[:rest.find('\n')])
+      sumext = lambda: summary.extend(rest[:rest.find('/**')].split('\n'))
+      line = substitute(line, '#sumline', sumline)
+      line = substitute(line, '#summary', sumext)
+      line = substitute(line, '##', lambda: summary.append(''))
       output.extend(line.split('\n'))
 
   def generate(self, more_content=None, real_modname=None,
@@ -523,8 +525,12 @@ from docutils import nodes
 from sphinx.builders import html as html_builder
 from sphinx.writers import html
 
+HTML_ENCODE = {'<': '&lt;', '>': '&gt;', '"': '&quot;'}
 def htmlencode(text):
-  return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+  text = text.replace('&', '&amp;')
+  for k, v in HTML_ENCODE.iteritems():
+    text = text.replace(k, v)
+  return text
 
 def node_string(node, encode):
   """Assemble string from a particular node without formatting."""
