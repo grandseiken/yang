@@ -54,6 +54,7 @@
 // TODO: add a layer of abstraction so the LLVM backend can be swapped out
 // easily (e.g. for a bytecode backend). In fact, the bytecode backend should
 // really be an intermediate step for the LLVM backend.
+/** #sumline ## */
 namespace yang {
 class Instance;
 
@@ -95,14 +96,28 @@ struct ContextInternals {
 
 } // ::internal
 
+/** #class */
 class Context {
+/** #sumline */
 public:
 
+  /** #member ## */
   Context();
-  // Dump the contents of another Context into a namespace in this one.
+
+  /**
+   * #member
+   *
+   *   Dumps the contents of another ``yang::Context`` into a namespace inside
+   *   this one.
+   */
   void register_namespace(const std::string& name, const Context& context);
-  // Add an Instance as a namespace. Everything compiled with this Context will
-  // share the state of the single given Instance.
+  /**
+   * #member ##
+   *
+   *   Adds a ``yang::Instance`` as a namespace inside this ``yang::Context``.
+   *   Every ``yang::Program`` compiled against this ``yang::Context`` will
+   *   share the state of the single given ``yang::Instance``.
+   */
   void register_namespace(const std::string& name, const Instance& instance);
 
   // A slightly different kind of code-sharing between scripts would be to add
@@ -112,36 +127,63 @@ public:
   // own Instance namespace and recompiling every time, or plain old textual
   // includes. Direct support might be nice.
 
-  // Add a user type. Note that the template argument should be T rather than T*
-  // or Ref<T>.
-  // TODO: should that be changed? It's less error-prone to require explicit
-  // types, but then somewhat inconsistent with the other register_* template
-  // arguments.
+  // TODO: should the below be changed? It's less error-prone to require
+  // explicit types, but then somewhat inconsistent with the other register_*
+  // template arguments.
+  /**
+   * #member ##
+   *
+   *   Add a user type. Note that the template argument should be ``T``, rather
+   *   than ``T*`` or ``yang::Ref<T>``.
+   */
   template<typename T>
   void register_type(const std::string& name, bool managed = false);
 
-  // Add a managed user type constructor/destructor pair.
+  /**
+   * #member ##
+   *
+   *   Add a managed user type constructor/destructor pair.
+   */
   template<typename T, typename... Args>
   void register_constructor(const std::string& name,
                             const Function<T*(Args...)>& constructor,
                             const Function<void(T*)>& destructor);
 
-  // Shorthand for registering a managed type with constructor named the same.
+  /**
+   * #member ##
+   *
+   *   Shorthand for registering a managed type with an identically-named
+   *   constructor.
+   */
   template<typename T, typename... Args>
   void register_type(const std::string& name,
                      const Function<T*(Args...)>& constructor,
                      const Function<void(T*)>& destructor);
 
-  // Add a member function to a user type. Raw types must use the first
-  // overload, and managed types must use the second.
+  /**
+   * #member
+   *
+   *   Adds a member function to a user type. Raw types should use this
+   *   overload.
+   */
   template<typename T, typename R, typename... Args>
   void register_member_function(
       const std::string& name, const Function<R(T*, Args...)>& f);
+  /**
+   * #member ##
+   *
+   *   Adds a member function to a user type. Managed types should use this
+   *   overload.
+   */
   template<typename T, typename R, typename... Args>
   void register_member_function(
       const std::string& name, const Function<R(Ref<T>, Args...)>& f);
 
-  // Add a free function to the context.
+  /**
+   * #member
+   *
+   *   Adds a free function to the context.
+   */
   template<typename R, typename... Args>
   void register_function(
       const std::string& name, const Function<R(Args...)>& f);
@@ -161,6 +203,7 @@ private:
   friend class Type;
   std::shared_ptr<internal::ContextInternals> _internals;
 
+/** #sumline ## */
 };
 
 template<typename T>
@@ -225,6 +268,7 @@ void Context::register_function(
   _internals->functions[name] = f.get_erased_representation();
 }
 
+/** #sumline */
 } // ::yang
 
 #endif
