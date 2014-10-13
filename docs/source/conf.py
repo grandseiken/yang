@@ -265,9 +265,7 @@ texinfo_documents = [
 # -- Yang custom domain ---------------------------------------------------
 
 # TODO: get rid of class at the top entirely and link straight to document.
-# TODO: fix scoping of constructors by picking out things that could be
-# function references.
-# TODO: extend operators and make them highlight properly.
+# TODO: fix Pygments operator lexing.
 import re
 from docutils import nodes
 from sphinx import addnodes
@@ -275,26 +273,29 @@ from sphinx import directives
 from sphinx import domains
 from sphinx.util import compat
 
-IDENTIFIER_RE = re.compile(r'operator *\(\)|\w+')
+IDENTIFIER_RE = re.compile(r'operator *(\(\)|[^(]+)|\w+')
+AFTER_FUNCTION_RE = re.compile(r' *\(')
+
 def make_source_literal(env, text):
   literal = nodes.literal_block()
 
   last_index = 0
   match = IDENTIFIER_RE.search(text, last_index)
   while match:
-    literal += nodes.Text(text[last_index:match.start(0)])
+    literal += nodes.Text(text[last_index:match.start()])
+    last_index = match.end()
 
-    link = text[match.start(0):match.end(0)]
-    yang_class = ''
-    if 'yang:class' in env.ref_context:
-      yang_class = env.ref_context['yang:class']
+    link_text = text[match.start():last_index]
+    target = link_text
+    if ('yang:class' in env.ref_context and
+        AFTER_FUNCTION_RE.match(text[last_index:])):
+      target = env.ref_context['yang:class'] + '::' + link_text
+
     xref = addnodes.pending_xref(
-        refdomain='yang', reftype='yang', reftarget=link,
-        yang_class=yang_class)
-    xref += nodes.Text(link)
+        refdomain='yang', reftype='yang', reftarget=target)
+    xref += nodes.Text(link_text)
     literal += xref
 
-    last_index = match.end(0)
     match = IDENTIFIER_RE.search(text, last_index)
 
   literal += nodes.Text(text[last_index:])
@@ -343,23 +344,20 @@ class YangObject(directives.ObjectDescription):
       return self.parse_name(sig[match.end():])
     return self.parse_name(sig)
 
-FUNCTION_RE = re.compile(r'(\)\(|) *\w+')
 def function_name(text):
-  started = False
-  depth = 0
-  index = 0
-  rev = text[::-1]
-  for char in rev:
-    if char == ')':
-      started = True
-      depth += 1
-    if char == '(':
-      depth -= 1
-    if started and not depth:
-      break
-    index += 1
-  match = FUNCTION_RE.search(rev, 1 + index)
-  return match.group()[::-1]
+  last_index = 0
+  match = IDENTIFIER_RE.search(text, last_index)
+  while match:
+    last_index = match.end()
+    depth = 0
+    for char in text[:match.start()]:
+      if char == ')':
+        depth += 1
+      elif char == '(':
+        depth -= 1
+    if depth == 0 and AFTER_FUNCTION_RE.match(text[last_index:]):
+      return match.group()
+    match = IDENTIFIER_RE.search(text, last_index)
 
 class YangMemberObject(YangObject):
   def parse_name(self, sig):
@@ -402,15 +400,8 @@ class YangDomain(domains.Domain):
 
   def resolve_xref(self, env, from_docname, builder,
                    type, target, node, cont_node):
-    name = None
     if target in self.data['objects']:
-      name = target
-    member_target = node.attributes['yang_class'] + '::' + target
-    if member_target in self.data['objects']:
-      name = member_target
-
-    if name:
-      return self.resolve_xref_name(name, from_docname, builder, cont_node)
+      return self.resolve_xref_name(target, from_docname, builder, cont_node)
     return None
 
   def get_objects(self):
