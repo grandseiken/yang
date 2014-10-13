@@ -373,6 +373,4 @@ yang::ErrorInfo ParseData::format_error(
   return info;
 }
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal

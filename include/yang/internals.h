@@ -53,8 +53,6 @@ struct ProgramInternals {
   llvm::Module* module;
 };
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal
 
 #endif

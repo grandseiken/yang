@@ -26,8 +26,7 @@ inline void ignore(const T&...)
 {
 }
 
-// End namespace internal.
-}
+} // ::internal
 
 template<typename... T>
 inline void log_debug(const T&... args)

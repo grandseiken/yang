@@ -32,8 +32,7 @@ const void* type_uid()
   return &NativeTypeId<T>::id;
 }
 
-// End namespace internal.
-}
+} // ::internal
 
 class Type {
 public:
@@ -137,8 +136,7 @@ Type Type::managed_user_t()
   return t;
 }
 
-// End namespace yang.
-}
+} // ::yang
 
 namespace std {
   template<>

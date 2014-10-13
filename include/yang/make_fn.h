@@ -53,8 +53,7 @@ struct GetSignature<R(*)(Args...)> {
 template<typename T>
 using make_fn_type = Function<typename GetSignature<T>::type>;
 
-// End namespace internal.
-}
+} // ::internal
 
 // Convenient template-deduction constructor function. Creates a yang::Function
 // of the correct type from an unambiguous callable or lambda.
@@ -75,7 +74,6 @@ Function<R(Args...)> make_fn(Function<R(Args...)>&& f)
   return f;
 }
 
-// End namespace yang.
-}
+} // ::yang
 
 #endif

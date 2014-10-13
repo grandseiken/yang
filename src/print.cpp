@@ -252,6 +252,4 @@ std::string AstPrinter::indent() const
   return std::string(2 * _indent, ' ');
 }
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal

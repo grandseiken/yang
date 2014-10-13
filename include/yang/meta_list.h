@@ -103,8 +103,6 @@ R list_call(const std::function<R(Args...)>& f, const List<Args...>& args)
   return list_call(f, args, range<0, sizeof...(Args)>());
 }
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal
 
 #endif

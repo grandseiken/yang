@@ -32,6 +32,4 @@ void_fp get_global_trampoline_function(const Type& type)
   return YangTrampolineGlobals::get_trampoline_function(type);
 }
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal

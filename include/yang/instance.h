@@ -134,8 +134,7 @@ R Instance::call(const std::string& name, const Args&... args)
   return get_function<Function<R(Args...)>>(name)(args...);
 }
 
-// End namespace yang.
 /** #sumline */
-}
+} // ::yang
 
 #endif

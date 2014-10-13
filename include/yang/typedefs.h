@@ -462,7 +462,6 @@ using ivec_t = vec<int_t, N>;
 template<std::size_t N, typename = internal::enable_if<(N > 1)>>
 using fvec_t = vec<float_t, N>;
 
-// End namespace yang.
-}
+} // ::yang
 
 #endif

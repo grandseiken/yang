@@ -56,8 +56,7 @@ const ErasedFunction& ContextInternals::member_lookup(
   return member_jt == member_it->second.end() ? none : member_jt->second;
 }
 
-// End namespace internal.
-}
+} // ::internal
 
 Context::Context()
   : _internals{new internal::ContextInternals{{}, {}, {}, {}, {}, false}}
@@ -221,5 +220,4 @@ void Context::copy_internals()
   }
 }
 
-// End namespace yang.
-}
+} // ::yang

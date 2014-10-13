@@ -196,8 +196,7 @@ void RefcountHook<T>::destructor(Prefix* structure)
 template<typename T>
 Vtable RefcountHook<T>::vtable(destructor, 0, nullptr);
 
-// End namespace internal.
-}
+} // ::internal
 
 // Functions for debugging refcounting or memory issues.
 std::size_t heap_objects_count();
@@ -244,7 +243,6 @@ Ref<T>::Ref(internal::Prefix* wrap)
 {
 }
 
-// End namespace yang.
-}
+} // ::yang
 
 #endif

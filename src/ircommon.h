@@ -94,8 +94,6 @@ private:
 
 };
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal
 
 #endif

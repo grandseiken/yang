@@ -196,8 +196,7 @@ void cleanup_structures()
   while (!get_structure_cleanup_list().empty());
 }
 
-// End namespace internal.
-}
+} // ::internal
 
 std::size_t heap_objects_count()
 {
@@ -229,5 +228,4 @@ std::string heap_dump()
   return ss.str();
 }
 
-// End namespace yang.
-}
+} // ::yang

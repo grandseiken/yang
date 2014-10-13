@@ -220,8 +220,6 @@ V& SymbolTable<K, V>::get(const K& symbol, std::size_t frame)
   return _default;
 }
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal
 
 #endif

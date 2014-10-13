@@ -249,7 +249,7 @@ SPHINX_BUILD=\
 	PYTHONPATH=$${PWD}/$(DEPEND_DIR)/$(PYTHON_INSTALL_DIR) \
 	$(DEPEND_DIR)/install/bin/sphinx-build
 SPHINX_BUILD_OPTS=\
-	-a -E -n $(DOCS)/source
+	-a -E $(DOCS)/source
 $(DOCS)/html/index.html: \
 	$(DEPEND_DIR)/sphinx.build $(DOC_FILES) $(INCLUDE_FILES) \
 	$(DEPEND_DIR)/pygments.build

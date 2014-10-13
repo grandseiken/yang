@@ -29,8 +29,7 @@ ProgramInternals::~ProgramInternals()
 {
 }
 
-// End namespace internal.
-}
+} // ::internal
 
 Program::Program(const Context& context, const std::string& name,
                  const std::string& contents, bool optimise,
@@ -202,5 +201,4 @@ void Program::generate_ir(bool optimise,
   irgen.obtain_function_pointers();
 }
 
-// End namespace yang.
-}
+} // ::yang

@@ -46,8 +46,6 @@ struct NativeFunctionInternals {
   }
 };
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal
 
 #endif

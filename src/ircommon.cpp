@@ -478,6 +478,4 @@ llvm::Module* YangTrampolineGlobals::create_module()
   return new llvm::Module("!trampoline_globals", _context);
 }
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal

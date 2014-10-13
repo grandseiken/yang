@@ -224,8 +224,6 @@ struct ParseData {
   std::unordered_set<Node*> orphans;
 };
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal
 
 #endif

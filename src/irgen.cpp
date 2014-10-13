@@ -1512,6 +1512,4 @@ Value IrGenerator::fold(const Node& node, const Value& value,
   return v;
 }
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal

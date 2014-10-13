@@ -62,7 +62,6 @@ struct ErrorInfo {
   ErrorPositionInfo tree;
 };
 
-// End namespace yang.
-}
+} // ::yang
 
 #endif

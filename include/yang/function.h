@@ -42,8 +42,7 @@ struct ErasedFunction {
   void* yang_function;
 };
 
-// End namespace internal.
-}
+} // ::internal
 
 /** #summary */
 template<typename T>
@@ -146,8 +145,7 @@ R call_via_trampoline(void_fp target, void* env, const Args&... args)
   return call_type()(trampoline_expanded, args..., env, target);
 }
 
-// End namespace internal.
-}
+} // ::internal
 
 template<typename R, typename... Args>
 Function<R(Args...)>::Function(const std::function<R(Args...)>& function)
@@ -202,8 +200,7 @@ const internal::ErasedFunction& Function<R(Args...)>::get_erased_representation(
   return _data;
 }
 
-// End namespace yang.
 /** #sumline */
-}
+} // ::yang
 
 #endif

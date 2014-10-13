@@ -164,8 +164,6 @@ using AstWalker = AstWalkerBase<T, false>;
 template<typename T>
 using ConstAstWalker = AstWalkerBase<T, true>;
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal
 
 #endif

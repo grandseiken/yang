@@ -27,6 +27,4 @@ void instrumented_free(void* ptr)
   free(ptr);
 }
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal

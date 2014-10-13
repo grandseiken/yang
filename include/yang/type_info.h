@@ -152,8 +152,7 @@ struct TypeInfo<const T&> : TypeInfoError<T> {};
 template<typename T>
 struct TypeInfo<const T&&> : TypeInfoError<T> {};
 
-// End namespace internal.
-}
+} // ::internal
 
 template<typename T>
 Type type_of()
@@ -161,7 +160,6 @@ Type type_of()
   return internal::TypeInfo<T>()();
 }
 
-// End namespace yang.
-}
+} // ::yang
 
 #endif

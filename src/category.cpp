@@ -172,6 +172,4 @@ bool Category::is_assign_binary_match(const Category& c) const
       c._type.vector_size() == 1;
 }
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal

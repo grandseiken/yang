@@ -72,8 +72,7 @@ private:
 /** #sumline ## */
 };
 
-// End namespace yang.
 /** #sumline */
-}
+} // ::yang
 
 #endif

@@ -406,8 +406,6 @@ struct GenerateReverseTrampolineLookupTableInner<Function<R()>> {
   }
 };
 
-// End namespace internal.
-}
-}
+}} // ::yang::internal
 
 #endif

@@ -623,6 +623,4 @@ void LexScope::dereference_loop_locals()
   dereference_scoped_locals(_rc_loop_indices.back());
 }
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal

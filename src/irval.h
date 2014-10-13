@@ -202,9 +202,7 @@ private:
 
 };
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal
 
 namespace std {
   template<>

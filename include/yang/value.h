@@ -83,7 +83,6 @@ void Value::deleter<T>::operator()(void* data) const
   delete (T*)data;
 }
 
-// End namespace yang.
-}
+} // ::yang
 
 #endif

@@ -93,8 +93,7 @@ struct ContextInternals {
   mutable bool immutable;
 };
 
-// End namespace internal.
-}
+} // ::internal
 
 class Context {
 public:
@@ -226,7 +225,6 @@ void Context::register_function(
   _internals->functions[name] = f.get_erased_representation();
 }
 
-// End namepsace yang.
-}
+} // ::yang
 
 #endif

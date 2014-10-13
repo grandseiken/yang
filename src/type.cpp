@@ -264,8 +264,7 @@ Global::Global(const Type& type, bool is_const)
 {
 }
 
-// End namespace yang.
-}
+} // ::yang
 
 namespace {
   // Taken from boost.

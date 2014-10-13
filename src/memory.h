@@ -17,9 +17,7 @@ std::unordered_set<Prefix*>& get_instrumented_heap();
 void* instrumented_malloc(std::size_t size);
 void instrumented_free(void* ptr);
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal
 
 #ifdef DEBUG
 #define YANG_MALLOC yang::internal::instrumented_malloc

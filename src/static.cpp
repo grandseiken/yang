@@ -1129,6 +1129,4 @@ StaticChecker::lex_scope_t::lex_scope_t(
 {
 }
 
-// End namespace yang::internal.
-}
-}
+}} // ::yang::internal

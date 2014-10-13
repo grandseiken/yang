@@ -94,5 +94,4 @@ void Instance::check_function(const std::string& name, const Type& type) const
   }
 }
 
-// End namespace yang.
-}
+} // ::yang
