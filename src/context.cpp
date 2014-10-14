@@ -4,6 +4,7 @@
 //============================================================================//
 #include <yang/context.h>
 #include <yang/instance.h>
+#include <yang/runtime_error.h>
 
 namespace yang {
 namespace internal {

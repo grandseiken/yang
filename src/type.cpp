@@ -3,8 +3,9 @@
 // MIT License. See LICENSE file for details.
 //============================================================================//
 #include <yang/type.h>
+
 #include <yang/context.h>
-#include <yang/error.h>
+#include <yang/runtime_error.h>
 
 namespace yang {
 

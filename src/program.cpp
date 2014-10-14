@@ -12,6 +12,7 @@
 #include <llvm/Support/TargetSelect.h>
 
 #include <yang/context.h>
+#include <yang/runtime_error.h>
 #include "ast.h"
 #include "irgen.h"
 #include "log.h"

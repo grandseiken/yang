@@ -11,7 +11,7 @@
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/PassManager.h>
 #include <llvm/Support/TargetSelect.h>
-#include <yang/error.h>
+#include <yang/runtime_error.h>
 #include <yang/trampoline.h>
 
 namespace yang {

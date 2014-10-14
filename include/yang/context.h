@@ -8,7 +8,6 @@
 #include <string>
 #include <unordered_map>
 
-#include "error.h"
 #include "function.h"
 #include "type.h"
 #include "type_info.h"

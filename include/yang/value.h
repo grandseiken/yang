@@ -6,7 +6,7 @@
 #define YANG_INCLUDE_YANG_VALUE_H
 
 #include <memory>
-#include "error.h"
+#include "runtime_error.h"
 #include "type.h"
 #include "type_info.h"
 

@@ -7,7 +7,7 @@
 
 #include <memory>
 #include <vector>
-#include "error.h"
+#include "error_info.h"
 #include "refcounting.h"
 #include "typedefs.h"
 #include "type.h"

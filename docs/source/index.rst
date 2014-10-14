@@ -10,6 +10,7 @@ Contents:
    function
    instance
    program
+   runtime_error
 
 Special pages:
 

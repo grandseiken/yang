@@ -10,7 +10,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <vector>
-#include <yang/error.h>
+#include <yang/error_info.h>
 #include <yang/typedefs.h>
 #include <yang/type.h>
 

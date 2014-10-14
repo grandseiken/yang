@@ -7,12 +7,13 @@
 
 // Convenience header that includes all user-visible headers.
 #include "context.h"
-#include "error.h"
+#include "error_info.h"
 #include "function.h"
 #include "instance.h"
 #include "make_fn.h"
 #include "program.h"
 #include "refcounting.h"
+#include "runtime_error.h"
 #include "typedefs.h"
 #include "type.h"
 #include "value.h"

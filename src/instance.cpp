@@ -7,6 +7,7 @@
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/Module.h>
 #include <yang/program.h>
+#include <yang/runtime_error.h>
 
 namespace yang {
 

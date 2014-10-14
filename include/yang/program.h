@@ -7,7 +7,7 @@
 
 #include <string>
 #include <vector>
-#include "error.h"
+#include "error_info.h"
 #include "internals.h"
 
 /** #sumline ## */

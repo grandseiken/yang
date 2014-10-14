@@ -273,7 +273,7 @@ from sphinx import domains
 from sphinx.util import compat
 
 OPERATOR = r'operator *(\(\)|[^(]+)'
-IDENTIFIER_RE = re.compile(OPERATOR + r'|\w+')
+IDENTIFIER_RE = re.compile(OPERATOR + r'|(\w+::)*\w+')
 AFTER_FUNCTION_RE = re.compile(r' *\(')
 
 def make_source_literal(env, text):
@@ -419,6 +419,7 @@ class CppDocumenter(autodoc.Documenter):
 
   DOC_REGEX = re.compile(r'/\*\*(([^*]|\*[^/])*)\*/')
   DOC_LINE_PREFIX_REGEX = re.compile(r'(\s*\*)')
+  END_FUNCTION_RE = re.compile(r';|{}')
 
   def write(self, text):
     self.add_line(text, '<autocpp>')
@@ -456,11 +457,12 @@ class CppDocumenter(autodoc.Documenter):
         string = string.replace(keyword, function() or '', 1)
       return string
 
-    def substitute_syntax(string, keyword, end_syntax):
+    def substitute_syntax(string, keyword, end_re):
       def f():
-        syntax = rest[:1 + rest.find(end_syntax)]
+        match = end_re.search(rest)
+        syntax = rest[:match.end()]
         summary.extend(syntax.split('\n'))
-        syntax = syntax[:-len(end_syntax)].rstrip()
+        syntax = syntax[:-(match.end() - match.start())].rstrip()
         processed = '\\\\n' + syntax.replace('\n', '\\\\n')
         return '\n\n.. ' + keyword[1:] + ':: ' + processed
       return substitute(string, keyword, f)
@@ -469,8 +471,8 @@ class CppDocumenter(autodoc.Documenter):
       classext = lambda: summary.extend(rest[:1 + rest.find('{')].split('\n'))
       line = substitute(line, '#class', classext)
 
-      line = substitute_syntax(line, '#member', ';')
-      line = substitute_syntax(line, '#function', ';')
+      line = substitute_syntax(line, '#member', CppDocumenter.END_FUNCTION_RE)
+      line = substitute_syntax(line, '#function', CppDocumenter.END_FUNCTION_RE)
 
       sumline = lambda: summary.append(rest[:rest.find('\n')])
       sumext = lambda: summary.extend(rest[:rest.find('/**')].split('\n'))
@@ -621,7 +623,8 @@ class YangCppLexer(compiled.CFamilyLexer):
        r'typeid|typename|using|virtual)\b', token.Keyword),
       (r'(class)(\s+)', lexer.bygroups(token.Keyword, token.Text), 'classname'),
       (r'(std)(\s*::\s*)'
-       r'(string|vector|function|set|map|unordered_set|unordered_map)',
+       r'(string|vector|function|runtime_error|'
+       r'set|map|unordered_set|unordered_map)',
        lexer.bygroups(token.Keyword.Type, token.Keyword.Text, token.Keyword.Type)),
       lexer.inherit,
     ],
