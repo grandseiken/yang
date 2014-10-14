@@ -22,13 +22,13 @@ public:
   /**
    * #member ##
    *
-   *   By default, errors and warnings will be printed to standard error. If a
-   *   non-null pointer is given as the ``diagnostic_output`` parameter, errors
-   *   and warnings will be appended to the target string instead.
+   * By default, errors and warnings will be printed to standard error. If a
+   * non-null pointer is given as the ``diagnostic_output`` parameter, errors
+   * and warnings will be appended to the target string instead.
    *
-   *   For even finer-grained control, the error data structures can be accessed
-   *   for raw error message strings and detailed information about the position
-   *   of errors in the source text. See ``ErrorInfo`` for more information.
+   * For even finer-grained control, the error data structures can be accessed
+   * for raw error message strings and detailed information about the position
+   * of errors in the source text. See ``ErrorInfo`` for more information.
    */
   Program(const Context& context, const std::string& name,
           const std::string& contents, bool optimise = true,
@@ -40,16 +40,16 @@ public:
   /**
    * #member ##
    *
-   *   Returns the ``name`` parameter given to this ``Program`` on construction.
+   * Returns the ``name`` parameter given to this ``Program`` on construction.
    */
   const std::string& get_name() const;
 
   /**
    * #member ##
    *
-   *   Returns ``true`` if the contents parsed and checked successfully (i.e.,
-   *   if ``get_errors().size()`` is zero). Otherwise, none of the following
-   *   functions will do anything useful.
+   * Returns ``true`` if the contents parsed and checked successfully (i.e. if
+   * ``get_errors().size() == 0``). Otherwise, none of the following functions
+   * will do anything useful.
    */
   bool success() const;
   /** #member */

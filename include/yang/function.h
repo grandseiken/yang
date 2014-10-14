@@ -75,31 +75,31 @@ public:
   /**
    * #member
    *
-   *   Converts an ``std::function`` into the equivalent ``yang::Function``.
+   * Converts an ``std::function`` into the equivalent ``yang::Function``.
    *
-   *   Invoking the constructed object is equivalent to invoking the original
-   *   ``std::function``. It can be transferred to Yang code anywhere a value of
-   *   the equivalent Yang function type is expected.
+   * Invoking the constructed object is equivalent to invoking the original
+   * ``std::function``. It can be transferred to Yang code anywhere a value of
+   * the equivalent Yang function type is expected.
    *
-   *   The ``std::function`` is copied into a reference-counted structure in
-   *   Yang's internal memory, to which this object holds a reference. Thus,
-   *   once the value is transferred to Yang code it is not dependent on the
-   *   lifetime of either this ``yang::Function`` or the original
-   *   ``std::function`` argument.
+   * The ``std::function`` is copied into a reference-counted structure in
+   * Yang's internal memory, to which this object holds a reference. Thus, once
+   * the value is transferred to Yang code it is not dependent on the lifetime
+   * of either this ``yang::Function`` or the original ``std::function``
+   * argument.
    *
-   *   However, the value (of course) depends on the lifetimes of any objects
-   *   which the original ``std::function`` depends on. For example, if a C++
-   *   lambda is converted to a ``yang::Function`` object, it is the user's
-   *   responsibility to ensure any captured variables still exist when the
-   *   function is eventually invoked.
+   * However, the value (of course) depends on the lifetimes of any objects that
+   * the original ``std::function`` depends on. For example, if a C++ lambda is
+   * converted to a ``yang::Function`` object, it is the user's responsibility
+   * to ensure any captured variables still exist when the function is
+   * eventually invoked.
    */
   Function(const std::function<R(Args...)>& cpp_function);
 
   /**
    * #member
    *
-   *   Invokes the target of this ``yang::Function`` object, whether that is a
-   *   C++ or Yang function.
+   * Invokes the target of this ``yang::Function`` object, whether that is a C++
+   * or Yang function.
    */
   R operator()(const Args&... args) const;
 

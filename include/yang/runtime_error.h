@@ -28,8 +28,8 @@ public:
   /**
    * #member
    *
-   *   Construct the error with some descriptive message. Use the ``what()``
-   *   method inherited from ``std::runtime_error`` to retrieve the message.
+   * Construct the error with some descriptive message. Use the ``what()``
+   * method inherited from ``std::runtime_error`` to retrieve the message.
    */
   runtime_error(const std::string& what)
     : std::runtime_error(what) {}

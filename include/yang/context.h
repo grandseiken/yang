@@ -106,16 +106,16 @@ public:
   /**
    * #member
    *
-   *   Dumps the contents of another ``yang::Context`` into a namespace inside
-   *   this one.
+   * Dumps the contents of another ``yang::Context`` into a namespace inside
+   * this one.
    */
   void register_namespace(const std::string& name, const Context& context);
   /**
    * #member ##
    *
-   *   Adds a ``yang::Instance`` as a namespace inside this ``yang::Context``.
-   *   Every ``yang::Program`` compiled against this ``yang::Context`` will
-   *   share the state of the single given ``yang::Instance``.
+   * Adds a ``yang::Instance`` as a namespace inside this ``yang::Context``.
+   * Every ``yang::Program`` compiled against this ``yang::Context`` will share
+   * the state of the single given ``yang::Instance``.
    */
   void register_namespace(const std::string& name, const Instance& instance);
 
@@ -132,8 +132,8 @@ public:
   /**
    * #member ##
    *
-   *   Add a user type. Note that the template argument should be ``T``, rather
-   *   than ``T*`` or ``yang::Ref<T>``.
+   * Add a user type. Note that the template argument should be ``T``, rather
+   * than ``T*`` or ``yang::Ref<T>``.
    */
   template<typename T>
   void register_type(const std::string& name, bool managed = false);
@@ -141,7 +141,7 @@ public:
   /**
    * #member ##
    *
-   *   Add a managed user type constructor/destructor pair.
+   * Add a managed user type constructor/destructor pair.
    */
   template<typename T, typename... Args>
   void register_constructor(const std::string& name,
@@ -151,8 +151,8 @@ public:
   /**
    * #member ##
    *
-   *   Shorthand for registering a managed type with an identically-named
-   *   constructor.
+   * Shorthand for registering a managed type with an identically-named
+   * constructor.
    */
   template<typename T, typename... Args>
   void register_type(const std::string& name,
@@ -162,8 +162,7 @@ public:
   /**
    * #member
    *
-   *   Adds a member function to a user type. Raw types should use this
-   *   overload.
+   * Adds a member function to a user type. Raw types should use this overload.
    */
   template<typename T, typename R, typename... Args>
   void register_member_function(
@@ -171,8 +170,8 @@ public:
   /**
    * #member ##
    *
-   *   Adds a member function to a user type. Managed types should use this
-   *   overload.
+   * Adds a member function to a user type. Managed types should use this
+   * overload.
    */
   template<typename T, typename R, typename... Args>
   void register_member_function(
@@ -181,7 +180,7 @@ public:
   /**
    * #member
    *
-   *   Adds a free function to the context.
+   * Adds a free function to the context.
    */
   template<typename R, typename... Args>
   void register_function(

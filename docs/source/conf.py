@@ -452,13 +452,20 @@ class CppDocumenter(autodoc.Documenter):
   def handle(self, lines, rest, summary, output):
     rest = rest[1 + rest.find('\n'):]
 
+    replaced = [False]
     def substitute(string, keyword, function):
       while string.find(keyword) >= 0:
         string = string.replace(keyword, function() or '', 1)
+        replaced[0] = True
       return string
 
+    indent = ['']
     def substitute_syntax(string, keyword, end_re):
       def f():
+        # Automatically indent the rest of the documentation text for #function
+        # and #member.
+        indent[0] += '  '
+
         match = end_re.search(rest)
         syntax = rest[:match.end()]
         summary.extend(syntax.split('\n'))
@@ -468,6 +475,7 @@ class CppDocumenter(autodoc.Documenter):
       return substitute(string, keyword, f)
 
     for line in lines:
+      replaced[0] = False
       classext = lambda: summary.extend(rest[:1 + rest.find('{')].split('\n'))
       line = substitute(line, '#class', classext)
 
@@ -479,7 +487,11 @@ class CppDocumenter(autodoc.Documenter):
       line = substitute(line, '#sumline', sumline)
       line = substitute(line, '#summary', sumext)
       line = substitute(line, '##', lambda: summary.append(''))
-      output.extend(line.split('\n'))
+      # Only auto-indent if there wasn't a command in it.
+      if replaced[0]:
+        output.extend(line.split('\n'))
+      else:
+        output.extend(indent[0] + t for t in line.split('\n'))
 
   def generate(self, more_content=None, real_modname=None,
                check_module=False, all_members=False):
