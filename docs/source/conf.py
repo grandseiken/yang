@@ -265,7 +265,6 @@ texinfo_documents = [
 # -- Yang custom domain ---------------------------------------------------
 
 # TODO: get rid of class at the top entirely and link straight to document.
-# TODO: fix Pygments operator lexing.
 import re
 from docutils import nodes
 from sphinx import addnodes
@@ -273,7 +272,8 @@ from sphinx import directives
 from sphinx import domains
 from sphinx.util import compat
 
-IDENTIFIER_RE = re.compile(r'operator *(\(\)|[^(]+)|\w+')
+OPERATOR = r'operator *(\(\)|[^(]+)'
+IDENTIFIER_RE = re.compile(OPERATOR + r'|\w+')
 AFTER_FUNCTION_RE = re.compile(r' *\(')
 
 def make_source_literal(env, text):
@@ -599,12 +599,58 @@ class Html(html.SmartyPantsHTMLTranslator):
     pass
 
 
+# -- Custom Pygments lexer ------------------------------------------------
+
+from pygments import lexer
+from pygments import token
+from pygments.lexers import compiled
+
+class YangCppLexer(compiled.CFamilyLexer):
+  aliases = ['yang']
+  name = 'Yang'
+
+  tokens = {
+    # Instead of the default C++ lexer behaviour, treat the whole operator
+    # name override as a single token.
+    'statements': [
+      (OPERATOR, token.Name),
+      (r'(asm|catch|const_cast|delete|dynamic_cast|explicit|'
+       r'export|friend|mutable|namespace|new|'
+       r'private|protected|public|reinterpret_cast|'
+       r'restrict|static_cast|template|this|throw|throws|'
+       r'typeid|typename|using|virtual)\b', token.Keyword),
+      (r'(class)(\s+)', lexer.bygroups(token.Keyword, token.Text), 'classname'),
+      (r'(std)(\s*::\s*)'
+       r'(string|vector|function|set|map|unordered_set|unordered_map)',
+       lexer.bygroups(token.Keyword.Type, token.Keyword.Text, token.Keyword.Type)),
+      lexer.inherit,
+    ],
+    # Don't include function lexing, which doesn't work in general and leads to
+    # inconsistency.
+    'root': [
+      lexer.include('whitespace'),
+      ('', token.Text, 'statement'),
+    ],
+    'classname': [
+      (r'[a-zA-Z_][a-zA-Z0-9_]*', token.Name.Class, '#pop'),
+      (r'\s*(?=>)', token.Text, '#pop'),
+    ],
+  }
+
+
 # -- Set up all the extra functionality  ----------------------------------
+
+from pygments.lexers import _mapping
 
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 primary_domain = 'yang'
-highlight_language = 'cpp'
+highlight_language = 'yang'
 html_translator_class = 'conf.Html'
+
+__all__ = ['YangCppLexer']
+_mapping.LEXERS['YangCppLexer'] = (
+    'conf', YangCppLexer.name, tuple(YangCppLexer.aliases),
+    tuple(YangCppLexer.filenames), tuple(YangCppLexer.mimetypes))
 
 import traceback
 def setup(app):

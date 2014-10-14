@@ -69,10 +69,10 @@ private:
   friend class Instance;
   internal::RefcountHook<internal::ProgramInternals> _internals;
 
-/** #sumline ## */
+/** #summary */
 };
 
-/** #sumline */
 } // ::yang
+/**/
 
 #endif

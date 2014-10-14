@@ -736,10 +736,6 @@ div.admonition {
     padding: 10px 20px 10px 60px;
 }
 
-div.highlight{
-    background-color: white;
-}
-
 div.note {
     border: 2px solid #7a9eec;
     border-right-style: none;
@@ -793,7 +789,6 @@ p.admonition-title:after {
  
 pre {
     padding: 10px;
-    background-color: #0f140f;
     margin: 1.5em 0 1.5em 0;
 }
  
@@ -829,10 +824,11 @@ div.code-block-caption {
 /* -- custom Yang stuff ----------------------------------------------------- */
 
 a.code-ref {
-  color: inherit;
+  color: #1b61d6;
 }
 
 a.code-ref:hover {
+  color: #fff;
   font-weight: bold;
   text-decoration: none;
 }
