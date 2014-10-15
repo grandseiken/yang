@@ -285,13 +285,14 @@ def make_source_literal(env, text):
     last_index = match.end()
 
     link_text = text[match.start():last_index]
-    target = link_text
+    yang_class = ''
     if ('yang:class' in env.ref_context and
         AFTER_NAME_RE.match(text[last_index:])):
-      target = env.ref_context['yang:class'] + '::' + link_text
+      yang_class = env.ref_context['yang:class']
 
     xref = addnodes.pending_xref(
-        refdomain='yang', reftype='yang', reftarget=target)
+        refdomain='yang', reftype='yang',
+        yang_class=yang_class, reftarget=link_text)
     xref += nodes.Text(link_text)
     literal += xref
 
@@ -411,6 +412,9 @@ class YangDomain(domains.Domain):
                    type, target, node, cont_node):
     if target in self.data['objects']:
       return self.resolve_xref_name(target, from_docname, builder, cont_node)
+    target = node.attributes['yang_class'] + '::' + target
+    if target in self.data['objects']:
+      return self.resolve_xref_name(target, from_docname, builder, cont_node)
     return None
 
   def get_objects(self):
@@ -474,7 +478,8 @@ class CppDocumenter(autodoc.Documenter):
       def f():
         # Automatically indent the rest of the documentation text for #function
         # and #member.
-        indent[0] += '  '
+        if keyword == '#member':
+          indent[0] += '  '
 
         match = end_re.search(rest)
         syntax = rest[:match.end()]
@@ -645,15 +650,13 @@ class YangCppLexer(compiled.CFamilyLexer):
     # name override as a single token.
     'statements': [
       (OPERATOR, token.Name),
-      (r'(asm|catch|const_cast|delete|dynamic_cast|explicit|'
-       r'export|friend|mutable|namespace|new|'
+      (r'(asm|catch|const_cast|decltype|delete|dynamic_cast|'
+       r'explicit|export|friend|mutable|namespace|new|'
        r'private|protected|public|reinterpret_cast|'
        r'restrict|static_cast|template|this|throw|throws|'
        r'typeid|typename|using|virtual)\b', token.Keyword),
       (r'(class)(\s+)', lexer.bygroups(token.Keyword, token.Text), 'classname'),
-      (r'(std)(\s*::\s*)'
-       r'(string|vector|function|runtime_error|'
-       r'set|map|unordered_set|unordered_map)',
+      (r'(std|internal)(\s*::\s*)(\w+)',
        lexer.bygroups(token.Keyword.Type, token.Keyword.Text, token.Keyword.Type)),
       lexer.inherit,
     ],

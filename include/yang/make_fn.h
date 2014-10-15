@@ -6,6 +6,7 @@
 #define YANG_INCLUDE_YANG_MAKE_FN_H
 
 #include <type_traits>
+#include <utility>
 
 namespace yang {
 template<typename>
@@ -53,10 +54,6 @@ struct GetSignature<R(*)(Args...)> {
 template<typename T>
 using make_fn_type = Function<typename GetSignature<T>::type>;
 
-} // ::internal
-
-// Convenient template-deduction constructor function. Creates a yang::Function
-// of the correct type from an unambiguous callable or lambda.
 template<typename T>
 internal::make_fn_type<T> make_fn(T&& t)
 {
@@ -74,6 +71,6 @@ Function<R(Args...)> make_fn(Function<R(Args...)>&& f)
   return f;
 }
 
-} // ::yang
+}} // ::yang::internal
 
 #endif

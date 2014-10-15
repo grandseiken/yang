@@ -5,6 +5,7 @@
 #ifndef YANG_INCLUDE_YANG_FUNCTION_H
 #define YANG_INCLUDE_YANG_FUNCTION_H
 
+#include "make_fn.h"
 #include "native.h"
 #include "refcounting.h"
 #include "trampoline.h"
@@ -117,6 +118,16 @@ private:
 /** #sumline ## */
 };
 
+/**
+ * #function ##
+ *
+ * Convenient template-deduction constructor function. Creates a
+ * ``yang::Function`` of the correct type from an unambiguous callable or
+ * lambda.
+ */
+template<typename T>
+auto make_fn(T&& t) -> decltype(internal::make_fn(std::forward<T>(t)));
+
 namespace internal {
 
 template<typename>
@@ -198,6 +209,12 @@ const internal::ErasedFunction& Function<R(Args...)>::get_erased_representation(
 {
   internal::GenerateReverseTrampolineLookupTable<Function<R(Args...)>>()();
   return _data;
+}
+
+template<typename T>
+auto make_fn(T&& t) -> decltype(internal::make_fn(std::forward<T>(t)))
+{
+  return internal::make_fn(std::forward<T>(t));
 }
 
 /** #sumline */
