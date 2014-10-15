@@ -264,7 +264,6 @@ texinfo_documents = [
 
 # -- Yang custom domain ---------------------------------------------------
 
-# TODO: get rid of class at the top entirely and link straight to document.
 import re
 from docutils import nodes
 from sphinx import addnodes
@@ -311,15 +310,34 @@ class YangCodeDirective(compat.Directive):
     self.add_name(node)
     return [node]
 
+class YangClassDirective(compat.Directive):
+  required_arguments = 1
+
+  def run(self):
+    env = self.state.document.settings.env
+    self.name = self.arguments[0]
+    env.ref_context['yang:class'] = self.name
+    name = 'yang::' + self.name
+
+    title = nodes.title()
+    title += nodes.literal(text=name)
+
+    section = nodes.section()
+    section += title
+    section['ids'].append(self.name)
+
+    index = addnodes.index(entries=[])
+    index['entries'].append(('single', name, self.name, ''))
+    env.domaindata['yang']['objects'][self.name] = env.docname
+    return [index, section]
+
 class YangObject(directives.ObjectDescription):
   TEMPLATE_RE = re.compile(r'template\s*<[^>]*>')
 
   def add_target_and_index(self, name, sig, signode):
     signode['ids'].append(name)
     self.indexnode['entries'].append(('single', 'yang::' + name, name, ''))
-
-    objects = self.env.domaindata['yang']['objects']
-    objects[name] = self.env.docname
+    self.env.domaindata['yang']['objects'][name] = self.env.docname
 
   def handle_signature(self, sig, signode):
     lines = [line for line in sig.split('\\n') if line.strip()]
@@ -367,20 +385,11 @@ class YangFunctionObject(YangObject):
   def parse_name(self, sig):
     return function_name(sig)
 
-class YangClassObject(YangObject):
-
-  def parse_name(self, sig):
-    self.name = self.arguments[0]
-    return self.name
-
-  def before_content(self):
-    self.env.ref_context['yang:class'] = self.name
-
 class YangDomain(domains.Domain):
   name = 'yang'
   label = 'C++'
   directives = {
-    'class': YangClassObject,
+    'class': YangClassDirective,
     'function': YangFunctionObject,
     'member': YangMemberObject,
     'code': YangCodeDirective,
@@ -420,6 +429,7 @@ class CppDocumenter(autodoc.Documenter):
   DOC_REGEX = re.compile(r'/\*\*(([^*]|\*[^/])*)\*/')
   DOC_LINE_PREFIX_REGEX = re.compile(r'(\s*\*)')
   END_FUNCTION_RE = re.compile(r';|{}')
+  CLASS_RE = re.compile(r'class\s+(\w+)')
 
   def write(self, text):
     self.add_line(text, '<autocpp>')
@@ -449,7 +459,7 @@ class CppDocumenter(autodoc.Documenter):
       return None
     return output[first:1 + last]
 
-  def handle(self, lines, rest, summary, output):
+  def handle(self, lines, rest, preamble, summary, output):
     rest = rest[1 + rest.find('\n'):]
 
     replaced = [False]
@@ -474,11 +484,14 @@ class CppDocumenter(autodoc.Documenter):
         return '\n\n.. ' + keyword[1:] + ':: ' + processed
       return substitute(string, keyword, f)
 
+    def class_header():
+      preamble.append(
+          '.. class:: ' + CppDocumenter.CLASS_RE.search(rest).group(1))
+      summary.extend(rest[:1 + rest.find('{')].split('\n'))
+
     for line in lines:
       replaced[0] = False
-      classext = lambda: summary.extend(rest[:1 + rest.find('{')].split('\n'))
-      line = substitute(line, '#class', classext)
-
+      line = substitute(line, '#class', class_header)
       line = substitute_syntax(line, '#member', CppDocumenter.END_FUNCTION_RE)
       line = substitute_syntax(line, '#function', CppDocumenter.END_FUNCTION_RE)
 
@@ -498,6 +511,7 @@ class CppDocumenter(autodoc.Documenter):
     with open(self.name) as f:
       text = f.read()
 
+    preamble = []
     summary = []
     output = []
 
@@ -511,10 +525,13 @@ class CppDocumenter(autodoc.Documenter):
         if not first:
           output.append('')
         first = False
-        self.handle(doc, text[match.end():], summary, output)
+        self.handle(doc, text[match.end():], preamble, summary, output)
 
       match = CppDocumenter.DOC_REGEX.search(text, match.end())
 
+    for line in preamble:
+      self.write(line)
+    self.write('')
     self.write('.. code::')
     self.write('')
     for line in summary:
