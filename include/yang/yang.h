@@ -9,6 +9,7 @@
 #include "context.h"
 #include "error_info.h"
 #include "function.h"
+#include "global.h"
 #include "instance.h"
 #include "program.h"
 #include "refcounting.h"

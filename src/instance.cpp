@@ -27,12 +27,12 @@ Instance::Instance(const Program& program)
   internal::update_structure_refcount((internal::Prefix*)_program, 1);
 }
 
-const function_table& Instance::get_functions() const
+const std::unordered_map<std::string, Type>& Instance::get_functions() const
 {
   return _program->functions;
 }
 
-const global_table& Instance::get_globals() const
+const std::unordered_map<std::string, Global>& Instance::get_globals() const
 {
   return _program->globals;
 }

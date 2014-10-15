@@ -6,8 +6,12 @@ Core API:
 .. toctree::
    context
    function
+   global
    instance
+   refcounting
    program
+   type
+   value
 
 Error-reporting:
 

@@ -11,6 +11,7 @@
 #include "typedefs.h"
 #include "type.h"
 
+/** #sumline ## */
 namespace yang {
 namespace internal {
 template<typename>
@@ -198,17 +199,21 @@ Vtable RefcountHook<T>::vtable(destructor, 0, nullptr);
 
 } // ::internal
 
-// Functions for debugging refcounting or memory issues.
-std::size_t heap_objects_count();
-std::string heap_dump();
-
-// Refcount a managed user type on the C++ side.
+/**
+ * #class
+ *
+ * Class for safely holding a reference to a managed user type in C++.
+ */
 template<typename T>
 class Ref {
+/** #sumline */
 public:
 
+  /** #member */
   T& operator*() const;
+  /** #member */
   T* operator->() const;
+  /** #member */
   T* get() const;
 
 private:
@@ -217,7 +222,24 @@ private:
   Ref(internal::Prefix* wrap);
   internal::RefcountHook<internal::Prefix> _wrap;
 
+/** #sumline ## */
 };
+
+/**
+ * #function
+ *
+ * When the Yang library is compiled in debug mode, this function returns the
+ * number of objects currently allocated by Yang.
+ */
+std::size_t heap_objects_count();
+/**
+ * #function ##
+ *
+ * When the Yang library is compiled in debug mode, this function prints
+ * information about each heap-allocated object, including parent pointers,
+ * vtables, reference counts, and acquired references.
+ */
+std::string heap_dump();
 
 template<typename T>
 T& Ref<T>::operator*() const
@@ -243,6 +265,7 @@ Ref<T>::Ref(internal::Prefix* wrap)
 {
 }
 
+/** #sumline */
 } // ::yang
 
 #endif

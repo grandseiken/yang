@@ -27,7 +27,8 @@ struct ProgramInternals;
 class IrGenerator : public IrCommon, public ConstAstWalker<Value> {
 public:
 
-  IrGenerator(ProgramInternals& program_internals, const global_table& globals);
+  IrGenerator(ProgramInternals& program_internals,
+              const std::unordered_map<std::string, Global>& globals);
 
   // Emit functions for allocating, freeing, reading and writing to instances
   // of the global structure. This should be called after the tree has been

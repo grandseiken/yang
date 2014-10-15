@@ -10,6 +10,7 @@
 #include <string>
 #include <unordered_map>
 
+#include <yang/global.h>
 #include <yang/type.h>
 #include "category.h"
 #include "table.h"
@@ -24,8 +25,9 @@ class StaticChecker : public ConstAstWalker<Category> {
 public:
 
   StaticChecker(const ContextInternals& context, ParseData& data,
-                function_table& functions_output,
-                global_table& globals_output, global_table& globals_internal);
+                std::unordered_map<std::string, Type>& functions_output,
+                std::unordered_map<std::string, Global>& globals_output,
+                std::unordered_map<std::string, Global>& globals_internal);
   ~StaticChecker();
 
 protected:
@@ -100,9 +102,9 @@ private:
 
   const ContextInternals& _context;
   ParseData& _data;
-  function_table& _functions_output;
-  global_table& _globals_output;
-  global_table& _globals_internal;
+  std::unordered_map<std::string, Type>& _functions_output;
+  std::unordered_map<std::string, Global>& _globals_output;
+  std::unordered_map<std::string, Global>& _globals_internal;
 
 };
 

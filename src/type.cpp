@@ -259,12 +259,6 @@ std::string Type::string(const internal::ContextInternals& context) const
   return s;
 }
 
-Global::Global(const Type& type, bool is_const)
-  : type(type)
-  , is_const(is_const)
-{
-}
-
 } // ::yang
 
 namespace {

@@ -410,9 +410,9 @@ class YangDomain(domains.Domain):
 
   def resolve_xref(self, env, from_docname, builder,
                    type, target, node, cont_node):
-    if target in self.data['objects']:
-      return self.resolve_xref_name(target, from_docname, builder, cont_node)
-    target = node.attributes['yang_class'] + '::' + target
+    mtarget = node.attributes['yang_class'] + '::' + target
+    if mtarget in self.data['objects']:
+      return self.resolve_xref_name(mtarget, from_docname, builder, cont_node)
     if target in self.data['objects']:
       return self.resolve_xref_name(target, from_docname, builder, cont_node)
     return None

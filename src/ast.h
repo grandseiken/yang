@@ -183,7 +183,7 @@ struct Node {
   // checker and the IR generator, except for closure scope information.
   struct mutable_struct {
     std::size_t scope_number = 0;
-    type_table closed_environment;
+    std::unordered_map<std::string, Type> closed_environment;
   };
   mutable mutable_struct static_info;
 };

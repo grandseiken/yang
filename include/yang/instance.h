@@ -6,7 +6,9 @@
 #define YANG_INCLUDE_YANG_INSTANCE_H
 
 #include <string>
+#include <unordered_map>
 #include "function.h"
+#include "global.h"
 #include "type.h"
 #include "type_info.h"
 
@@ -67,14 +69,14 @@ public:
    * This convenience function is equivalent to calling ``get_functions()`` on
    * the ``Program`` this ``Instance`` was compiled from.
    */
-  const function_table& get_functions() const;
+  const std::unordered_map<std::string, Type>& get_functions() const;
   /**
    * #member
    *
    * This convenience function is equivalent to calling ``get_globals()`` on the
    * ``Program`` this ``Instance`` was compiled from.
    */
-  const global_table& get_globals() const;
+  const std::unordered_map<std::string, Global>& get_globals() const;
 
 private:
 

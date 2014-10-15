@@ -6,8 +6,11 @@
 #define YANG_INCLUDE_YANG_INTERNALS_H
 
 #include <memory>
+#include <string>
+#include <unordered_map>
 #include <vector>
 #include "error_info.h"
+#include "global.h"
 #include "refcounting.h"
 #include "typedefs.h"
 #include "type.h"
@@ -40,8 +43,8 @@ struct ProgramInternals {
   std::string name;
 
   StaticData static_data;
-  function_table functions;
-  global_table globals;
+  std::unordered_map<std::string, Type> functions;
+  std::unordered_map<std::string, Global> globals;
 
   typedef std::vector<ErrorInfo> error_list;
   error_list errors;

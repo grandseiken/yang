@@ -33,8 +33,9 @@ namespace internal {
 // all over the place even when analysis could show it's unnecessary. Fix that.
 // Write benchmarks to show improvement.
 
-IrGenerator::IrGenerator(ProgramInternals& program_internals,
-                         const global_table& globals)
+IrGenerator::IrGenerator(
+    ProgramInternals& program_internals,
+    const std::unordered_map<std::string, Global>& globals)
   : IrCommon(*program_internals.module, *program_internals.engine,
              program_internals.static_data)
   , _program_internals(program_internals)
@@ -46,7 +47,7 @@ IrGenerator::IrGenerator(ProgramInternals& program_internals,
   // define a structure type with a field for each global variable. Each
   // function will take a pointer to the global data structure as an implicit
   // final parameter.
-  type_table global_types;
+  std::unordered_map<std::string, Type> global_types;
   for (const auto& pair : globals) {
     global_types.emplace(pair.first, pair.second.type);
   }
@@ -58,7 +59,7 @@ IrGenerator::IrGenerator(ProgramInternals& program_internals,
   // Rather than transforming the AST to do this, we do it manually: use a
   // single closure structure type with just a void pointer, and transform t.f
   // to (mem[T::f], env_mem(t)).
-  type_table user_type;
+  std::unordered_map<std::string, Type> user_type;
   user_type.emplace("object", Type::raw_user_t<void>());
   _chunk.init_structure_type("chunk", user_type, false);
 

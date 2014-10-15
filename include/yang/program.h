@@ -6,8 +6,10 @@
 #define YANG_INCLUDE_YANG_PROGRAM_H
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "error_info.h"
+#include "global.h"
 #include "internals.h"
 
 /** #sumline ## */
@@ -58,13 +60,15 @@ public:
   std::string print_ir() const;
 
   /** #member */
-  const function_table& get_functions() const;
+  const std::unordered_map<std::string, Type>& get_functions() const;
   /** #member */
-  const global_table& get_globals() const;
+  const std::unordered_map<std::string, Global>& get_globals() const;
 
 private:
 
-  void generate_ir(bool optimise, const global_table& nonexported_globals);
+  void generate_ir(
+      bool optimise,
+      const std::unordered_map<std::string, Global>& nonexported_globals);
 
   friend class Instance;
   internal::RefcountHook<internal::ProgramInternals> _internals;

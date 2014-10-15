@@ -84,7 +84,7 @@ Program::Program(const Context& context, const std::string& name,
     return;
   }
 
-  global_table nonexported_globals;
+  std::unordered_map<std::string, Global> nonexported_globals;
   internal::StaticChecker checker(
       *context._internals, data, _internals->functions,
       _internals->globals, nonexported_globals);
@@ -146,18 +146,19 @@ std::string Program::print_ir() const
   return output;
 }
 
-const function_table& Program::get_functions() const
+const std::unordered_map<std::string, Type>& Program::get_functions() const
 {
   return _internals->functions;
 }
 
-const global_table& Program::get_globals() const
+const std::unordered_map<std::string, Global>& Program::get_globals() const
 {
   return _internals->globals;
 }
 
-void Program::generate_ir(bool optimise,
-                          const global_table& nonexported_globals)
+void Program::generate_ir(
+    bool optimise,
+    const std::unordered_map<std::string, Global>& nonexported_globals)
 {
   std::string error;
   llvm::InitializeNativeTarget();
@@ -180,7 +181,7 @@ void Program::generate_ir(bool optimise,
   // functions.
   _internals->engine->DisableSymbolSearching();
 
-  global_table all_globals = nonexported_globals;
+  std::unordered_map<std::string, Global> all_globals = nonexported_globals;
   for (const auto& pair : _internals->globals) {
     all_globals.emplace(pair);
   }

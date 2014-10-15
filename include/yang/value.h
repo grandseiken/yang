@@ -10,9 +10,9 @@
 #include "type.h"
 #include "type_info.h"
 
+/** #sumline ## */
 namespace yang {
 
-// A generic value wrapper than can store a value of any Yang type.
 // TODO: can this be used for anything useful? For example, calling Yang
 // functions using only Values rather than explicit types.
 // Context::register_namespace(const std::string&, const Instance&) is an
@@ -21,15 +21,24 @@ namespace yang {
 // Context.
 // Ideally the example compiler tool should be able to use this to print
 // arbitrary return values or do a simple REPL.
+/**
+ * #class
+ *
+ * A generic value wrapper than can store a value of any Yang type.
+ */
 class Value {
 public:
 
+  /** #member */
   template<typename T>
   Value(const T& t);
+  /** #member ## */
   inline ~Value();
 
+  /** #member */
   inline const Type& type() const;
   template<typename T>
+  /** #member */
   const T& as() const;
 
 private:
@@ -46,6 +55,7 @@ private:
   void* _data;
   std::unique_ptr<deleter_base> _deleter;
 
+/** #sumline ## */
 };
 
 template<typename T>
@@ -83,6 +93,7 @@ void Value::deleter<T>::operator()(void* data) const
   delete (T*)data;
 }
 
+/** #sumline */
 } // ::yang
 
 #endif

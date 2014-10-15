@@ -338,7 +338,8 @@ void LexScope::pop_scope(bool loop_scope)
 }
 
 void LexScope::init_structure_type(
-    const std::string& name, const type_table& symbols, bool global_data)
+    const std::string& name,
+    const std::unordered_map<std::string, Type>& symbols, bool global_data)
 {
   // Since the structure may contain pointers to functions which take the type
   // itself as an argument, the variable must be set (to an opaque type).

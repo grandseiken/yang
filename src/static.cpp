@@ -146,8 +146,9 @@ Category binary_type(const Category& a, const Category& b, bool is_float)
 
 StaticChecker::StaticChecker(
     const ContextInternals& context, ParseData& data,
-    function_table& functions_output,
-    global_table& globals_output, global_table& globals_internal)
+    std::unordered_map<std::string, Type>& functions_output,
+    std::unordered_map<std::string, Global>& globals_output,
+    std::unordered_map<std::string, Global>& globals_internal)
   : _context(context)
   , _data(data)
   , _functions_output(functions_output)
