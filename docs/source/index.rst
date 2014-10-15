@@ -1,15 +1,19 @@
 ``#include <yang/yang.h>``
 ==========================
 
-Contents:
+Core API:
 
 .. toctree::
-   :maxdepth: 2
-
    context
    function
    instance
    program
+
+Error-reporting:
+
+.. toctree::
+   error_info
+   error_position_info
    runtime_error
 
 Special pages:

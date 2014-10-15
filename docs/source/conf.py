@@ -273,7 +273,7 @@ from sphinx.util import compat
 
 OPERATOR = r'operator *(\(\)|[^(]+)'
 IDENTIFIER_RE = re.compile(OPERATOR + r'|(\w+::)*\w+')
-AFTER_FUNCTION_RE = re.compile(r' *\(')
+AFTER_NAME_RE = re.compile(r'\s*(\(|$|;)')
 
 def make_source_literal(env, text):
   literal = nodes.literal_block()
@@ -287,7 +287,7 @@ def make_source_literal(env, text):
     link_text = text[match.start():last_index]
     target = link_text
     if ('yang:class' in env.ref_context and
-        AFTER_FUNCTION_RE.match(text[last_index:])):
+        AFTER_NAME_RE.match(text[last_index:])):
       target = env.ref_context['yang:class'] + '::' + link_text
 
     xref = addnodes.pending_xref(
@@ -373,7 +373,7 @@ def function_name(text):
         depth += 1
       elif char == '(':
         depth -= 1
-    if depth == 0 and AFTER_FUNCTION_RE.match(text[last_index:]):
+    if depth == 0 and AFTER_NAME_RE.match(text[last_index:]):
       return match.group()
     match = IDENTIFIER_RE.search(text, last_index)
 
@@ -429,7 +429,7 @@ class CppDocumenter(autodoc.Documenter):
   DOC_REGEX = re.compile(r'/\*\*(([^*]|\*[^/])*)\*/')
   DOC_LINE_PREFIX_REGEX = re.compile(r'(\s*\*)')
   END_FUNCTION_RE = re.compile(r';|{}')
-  CLASS_RE = re.compile(r'class\s+(\w+)')
+  CLASS_RE = re.compile(r'(class|struct)\s+(\w+)')
 
   def write(self, text):
     self.add_line(text, '<autocpp>')
@@ -481,12 +481,12 @@ class CppDocumenter(autodoc.Documenter):
         summary.extend(syntax.split('\n'))
         syntax = syntax[:-(match.end() - match.start())].rstrip()
         processed = '\\\\n' + syntax.replace('\n', '\\\\n')
-        return '\n\n.. ' + keyword[1:] + ':: ' + processed
+        return '\n\n========\n\n.. ' + keyword[1:] + ':: ' + processed
       return substitute(string, keyword, f)
 
     def class_header():
       preamble.append(
-          '.. class:: ' + CppDocumenter.CLASS_RE.search(rest).group(1))
+          '.. class:: ' + CppDocumenter.CLASS_RE.search(rest).group(2))
       summary.extend(rest[:1 + rest.find('{')].split('\n'))
 
     for line in lines:
