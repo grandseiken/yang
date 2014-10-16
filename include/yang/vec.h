@@ -63,12 +63,18 @@ public:
   vec operator-(const vec& arg) const;
   /** #member */
   vec operator*(const vec& arg) const;
-  /** #member */
+  /** #member ## */
   vec operator/(const vec& arg) const;
+
+  /** #member */
+  vec operator+(const T& arg) const;
+  /** #member */
+  vec operator-(const T& arg) const;
   /** #member */
   vec operator*(const T& arg) const;
-  /** #member */
+  /** #member ##*/
   vec operator/(const T& arg) const;
+
   /** #member ## */
   vec operator-() const;
 
@@ -78,8 +84,13 @@ public:
   vec& operator-=(const vec& arg);
   /** #member */
   vec& operator*=(const vec& arg);
-  /** #member */
+  /** #member ## */
   vec& operator/=(const vec& arg);
+
+  /** #member */
+  vec& operator+=(const T& arg);
+  /** #member */
+  vec& operator-=(const T& arg);
   /** #member */
   vec& operator*=(const T& arg);
   /** #member ## */
@@ -88,6 +99,26 @@ public:
 /** #sumline ## */
 };
 
+namespace internal {
+  template<typename T, std::size_t N, typename F>
+  vec<T, N> map_vec(const F& f)
+  {
+    vec<T, N> v;
+    for (std::size_t i = 0; i < N; ++i) {
+      v.elements[i] = f(i);
+    }
+    return v;
+  }
+} // ::internal
+#define MAP_VEC(T, N, expr) \
+    internal::map_vec<T, N>([&](std::size_t i){return (expr);})
+
+/** #function */
+template<typename T, std::size_t N>
+vec<T, N> operator+(const T& t, const vec<T, N>& v);
+/** #function ## */
+template<typename T, std::size_t N>
+vec<T, N> operator-(const T& t, const vec<T, N>& v);
 /** #function */
 template<typename T, std::size_t N>
 vec<T, N> operator*(const T& t, const vec<T, N>& v);
@@ -136,9 +167,7 @@ template<typename U>
 vec<T, N>::vec(const vec<U, N>& arg)
   : elements{}
 {
-  for (std::size_t i = 0; i < N; ++i) {
-    elements[i] = T(arg.elements[i]);
-  }
+  *this = MAP_VEC(T, N, arg.elements[i]);
 }
 
 template<typename T, std::size_t N>
@@ -187,61 +216,49 @@ bool vec<T, N>::operator!=(const vec& arg) const
 template<typename T, std::size_t N>
 vec<T, N> vec<T, N>::operator+(const vec& arg) const
 {
-  vec v;
-  for (std::size_t i = 0; i < N; ++i) {
-    v[i] = elements[i] + arg[i];
-  }
-  return v;
+  return MAP_VEC(T, N, elements[i] + arg[i]);
 }
 
 template<typename T, std::size_t N>
 vec<T, N> vec<T, N>::operator-(const vec& arg) const
 {
-  vec v;
-  for (std::size_t i = 0; i < N; ++i) {
-    v[i] = elements[i] - arg[i];
-  }
-  return v;
+  return MAP_VEC(T, N, elements[i] - arg[i]);
 }
 
 template<typename T, std::size_t N>
 vec<T, N> vec<T, N>::operator*(const vec& arg) const
 {
-  vec v;
-  for (std::size_t i = 0; i < N; ++i) {
-    v[i] = elements[i] * arg[i];
-  }
-  return v;
+  return MAP_VEC(T, N, elements[i] * arg[i]);
 }
 
 template<typename T, std::size_t N>
 vec<T, N> vec<T, N>::operator/(const vec& arg) const
 {
-  vec v;
-  for (std::size_t i = 0; i < N; ++i) {
-    v[i] = elements[i] / arg[i];
-  }
-  return v;
+  return MAP_VEC(T, N, elements[i] / arg[i]);
+}
+
+template<typename T, std::size_t N>
+vec<T, N> vec<T, N>::operator+(const T& arg) const
+{
+  return MAP_VEC(T, N, elements[i] + arg);
+}
+
+template<typename T, std::size_t N>
+vec<T, N> vec<T, N>::operator-(const T& arg) const
+{
+  return MAP_VEC(T, N, elements[i] - arg);
 }
 
 template<typename T, std::size_t N>
 vec<T, N> vec<T, N>::operator*(const T& arg) const
 {
-  vec v;
-  for (std::size_t i = 0; i < N; ++i) {
-    v[i] = elements[i] * arg;
-  }
-  return v;
+  return MAP_VEC(T, N, elements[i] * arg);
 }
 
 template<typename T, std::size_t N>
 vec<T, N> vec<T, N>::operator/(const T& arg) const
 {
-  vec v;
-  for (std::size_t i = 0; i < N; ++i) {
-    v[i] = elements[i] / arg;
-  }
-  return v;
+  return MAP_VEC(T, N, elements[i] / arg);
 }
 
 template<typename T, std::size_t N>
@@ -275,6 +292,18 @@ vec<T, N>& vec<T, N>::operator/=(const vec& arg)
 }
 
 template<typename T, std::size_t N>
+vec<T, N>& vec<T, N>::operator+=(const T& arg)
+{
+  return *this = operator+(arg);
+}
+
+template<typename T, std::size_t N>
+vec<T, N>& vec<T, N>::operator-=(const T& arg)
+{
+  return *this = operator-(arg);
+}
+
+template<typename T, std::size_t N>
 vec<T, N>& vec<T, N>::operator*=(const T& arg)
 {
   return *this = operator*(arg);
@@ -287,83 +316,63 @@ vec<T, N>& vec<T, N>::operator/=(const T& arg)
 }
 
 template<typename T, std::size_t N>
+vec<T, N> operator+(const T& t, const vec<T, N>& v)
+{
+  return MAP_VEC(T, N, t + v[i]);
+}
+
+template<typename T, std::size_t N>
+vec<T, N> operator-(const T& t, const vec<T, N>& v)
+{
+  return MAP_VEC(T, N, t - v[i]);
+}
+
+template<typename T, std::size_t N>
 vec<T, N> operator*(const T& t, const vec<T, N>& v)
 {
-  vec<T, N> u;
-  for (std::size_t i = 0; i < N; ++i) {
-    u[i] = t * v[i];
-  }
-  return u;
+  return MAP_VEC(T, N, t * v[i]);
 }
 
 template<typename T, std::size_t N>
 vec<T, N> operator/(const T& t, const vec<T, N>& v)
 {
-  vec<T, N> u;
-  for (std::size_t i = 0; i < N; ++i) {
-    u[i] = t / v[i];
-  }
-  return u;
+  return MAP_VEC(T, N, t / v[i]);
 }
 
 template<typename T, std::size_t N>
 vec<T, N> euclidean_div(const vec<T, N>& v, const vec<T, N>& u)
 {
-  vec<T, N> r;
-  for (std::size_t i = 0; i < N; ++i) {
-    r[i] = euclidean_div(v[i], u[i]);
-  }
-  return r;
+  return MAP_VEC(T, N, euclidean_div(v[i], u[i]));
 }
 
 template<typename T, std::size_t N>
 vec<T, N> euclidean_mod(const vec<T, N>& v, const vec<T, N>& u)
 {
-  vec<T, N> r;
-  for (std::size_t i = 0; i < N; ++i) {
-    r[i] = euclidean_mod(v[i], u[i]);
-  }
-  return r;
+  return MAP_VEC(T, N, euclidean_mod(v[i], u[i]));
 }
 
 template<typename T, std::size_t N>
 vec<T, N> euclidean_div(const vec<T, N>& v, const T& t)
 {
-  vec<T, N> r;
-  for (std::size_t i = 0; i < N; ++i) {
-    r[i] = euclidean_div(v[i], t);
-  }
-  return r;
+  return MAP_VEC(T, N, euclidean_div(v[i], t));
 }
 
 template<typename T, std::size_t N>
 vec<T, N> euclidean_mod(const vec<T, N>& v, const T& t)
 {
-  vec<T, N> r;
-  for (std::size_t i = 0; i < N; ++i) {
-    r[i] = euclidean_mod(v[i], t);
-  }
-  return r;
+  return MAP_VEC(T, N, euclidean_mod(v[i], t));
 }
 
 template<typename T, std::size_t N>
 vec<T, N> euclidean_div(const T& t, const vec<T, N>& v)
 {
-  vec<T, N> r;
-  for (std::size_t i = 0; i < N; ++i) {
-    r[i] = euclidean_div(t, v[i]);
-  }
-  return r;
+  return MAP_VEC(T, N, euclidean_div(t, v[i]));
 }
 
 template<typename T, std::size_t N>
 vec<T, N> euclidean_mod(const T& t, const vec<T, N>& v)
 {
-  vec<T, N> r;
-  for (std::size_t i = 0; i < N; ++i) {
-    r[i] = euclidean_mod(t, v[i]);
-  }
-  return r;
+  return MAP_VEC(T, N, euclidean_mod(t, v[i]));
 }
 
 template<typename T, std::size_t N>
@@ -379,6 +388,7 @@ std::ostream& operator<<(std::ostream& stream, const vec<T, N>& arg)
   return stream << ")";
 }
 
+#undef MAP_VEC
 template<std::size_t N>
 const element_accessor<N> element_accessor<N>::instance;
 

@@ -90,6 +90,10 @@ TEST_F(ApiTest, VecOperations)
   EXPECT_EQ((ivec_t<4>{0, 2, 4, 6}), 2 * v);
   EXPECT_EQ((ivec_t<4>{0, 0, 1, 1}), v / 2);
   EXPECT_EQ((ivec_t<4>{1, 1, 1, 2}), 2 / u);
+  EXPECT_EQ((ivec_t<4>{2, 3, 4, 5}), v + 2);
+  EXPECT_EQ((ivec_t<4>{2, 3, 4, 5}), 2 + v);
+  EXPECT_EQ((ivec_t<4>{-2, -1, 0, 1}), v - 2);
+  EXPECT_EQ((ivec_t<4>{2, 1, 0, -1}), 2 - v);
   EXPECT_EQ((ivec_t<4>{0, -1, -2, -3}), -v);
 
   v += u;
@@ -97,8 +101,10 @@ TEST_F(ApiTest, VecOperations)
   v -= u;
   v /= u;
   v *= 2;
-  v /= 1;
-  EXPECT_EQ((ivec_t<4>{2, 4, 6, 6}), v);
+  v += 2;
+  v /= 2;
+  v -= 1;
+  EXPECT_EQ((ivec_t<4>{1, 2, 3, 3}), v);
 }
 
 TEST_F(ApiTest, EuclideanOperations)
