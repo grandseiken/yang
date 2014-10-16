@@ -89,7 +89,7 @@ exclude_patterns = []
 #show_authors = False
 
 # The name of the Pygments (syntax highlighting) style to use.
-pygments_style = 'fruity'
+pygments_style = 'monokai'
 
 # A list of ignored prefixes for module index sorting.
 #modindex_common_prefix = []
@@ -264,6 +264,7 @@ texinfo_documents = [
 
 # -- Yang custom domain ---------------------------------------------------
 
+# TODO: fix linking to free functions with same name as member functions.
 import re
 from docutils import nodes
 from sphinx import addnodes
@@ -273,7 +274,7 @@ from sphinx.util import compat
 
 OPERATOR = r'operator *(\(\)|[^(]+)'
 IDENTIFIER_RE = re.compile(OPERATOR + r'|(\w+::)*\w+')
-AFTER_NAME_RE = re.compile(r'\s*(\(|$|;)')
+AFTER_NAME_RE = re.compile(r'\s*(\(|$|;|\[)')
 
 def make_source_literal(env, text):
   literal = nodes.literal_block()

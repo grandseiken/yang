@@ -104,9 +104,9 @@ private:
 template<typename T>
 T Instance::get_global(const std::string& name) const
 {
-  // type_of will fail at compile-time for completely unsupported types; will
+  // Type::of will fail at compile-time for completely unsupported types; will
   // fail at runtime for incorrect (but plausible) types.
-  check_global(name, type_of<T>(), false);
+  check_global(name, Type::of<T>(), false);
   auto fp = (internal::void_fp)
       (std::intptr_t)get_native_fp("!global_get_" + name);
   return internal::call_via_trampoline<T>(fp, _global_data.get());
@@ -115,7 +115,7 @@ T Instance::get_global(const std::string& name) const
 template<typename T>
 void Instance::set_global(const std::string& name, const T& value)
 {
-  check_global(name, type_of<T>(), true);
+  check_global(name, Type::of<T>(), true);
   auto fp = (internal::void_fp)
       (std::intptr_t)get_native_fp("!global_set_" + name);
   internal::call_via_trampoline<void>(fp, _global_data.get(), value);
@@ -125,7 +125,7 @@ template<typename T>
 T Instance::get_function(const std::string& name)
 {
   static_assert(internal::IsFunction<T>::value, "use of non-function type");
-  check_function(name, type_of<T>());
+  check_function(name, Type::of<T>());
   internal::RawFunction raw{get_native_fp(name), _global_data.get()};
   return internal::Raw<T>().from(raw);
 }

@@ -146,7 +146,7 @@ void_fp get_global_trampoline_function(const Type& type);
 template<typename R, typename... Args>
 R call_via_trampoline(void_fp target, void* env, const Args&... args)
 {
-  Type type = Type::erased_t(type_of<Function<R(Args...)>>());
+  Type type = Type::erased_t(Type::of<Function<R(Args...)>>());
   void_fp trampoline = get_global_trampoline_function(type);
   // Generate the C++ side of the trampoline at compile-time.
   internal::GenerateForwardTrampolineLookupTable<Function<R(Args...)>>()();
@@ -161,7 +161,7 @@ R call_via_trampoline(void_fp target, void* env, const Args&... args)
 template<typename R, typename... Args>
 Function<R(Args...)>::Function(const std::function<R(Args...)>& function)
 {
-  _data.type = type_of<Function<R(Args...)>>();
+  _data.type = Type::of<Function<R(Args...)>>();
   _data.native_ref =
       internal::RefcountHook<internal::NativeFunctionInternals>();
   _data.native_ref->erased_function.reset(
@@ -189,7 +189,7 @@ R Function<R(Args...)>::operator()(const Args&... args) const
 template<typename R, typename... Args>
 Function<R(Args...)>::Function(const internal::RawFunction& raw)
 {
-  _data.type = type_of<Function<R(Args...)>>();
+  _data.type = Type::of<Function<R(Args...)>>();
   _data.native_ref = raw.environment_ptr ? nullptr :
       (internal::NativeFunctionInternals*)raw.function_ptr;
   _data.env_ref = raw.environment_ptr;

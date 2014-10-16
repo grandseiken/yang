@@ -41,36 +41,108 @@ global {
   }
 };
 
+TEST_F(ApiTest, VecConstructors)
+{
+  std::stringstream ss;
+  ss << ivec_t<4>{};
+  EXPECT_EQ("(0, 0, 0, 0)", ss.str());
+
+  ss.str(std::string{});
+  ss << ivec_t<2>{1, 1.9f};
+  EXPECT_EQ("(1, 1)", ss.str());
+
+  ss.str(std::string{});
+  ss << ivec_t<2>{fvec_t<2>{1, 1.9f}};
+  EXPECT_EQ("(1, 1)", ss.str());
+}
+
+TEST_F(ApiTest, VecIndices)
+{
+  ivec_t<2> v{1, 2};
+  EXPECT_EQ(1, v[0]);
+  EXPECT_EQ(2, v[element_accessor<1>{}]);
+  EXPECT_EQ(2, v[y]);
+
+  v[1] = 3;
+  v[x] = 4;
+  EXPECT_EQ(4, v[element_accessor<0>{}]);
+  EXPECT_EQ(3, v[1]);
+}
+
+TEST_F(ApiTest, VecEquality)
+{
+  ivec_t<3> v{0, 1, 2};
+  EXPECT_TRUE((v == ivec_t<3>{0, 1, 2}));
+  EXPECT_FALSE((v == ivec_t<3>{0, 1, 1}));
+  EXPECT_FALSE((v != ivec_t<3>{0, 1, 2}));
+  EXPECT_TRUE((v != ivec_t<3>{0, 1, 1}));
+}
+
+TEST_F(ApiTest, VecOperations)
+{
+  ivec_t<4> v{0, 1, 2, 3};
+  ivec_t<4> u{2, 2, 2, 1};
+  EXPECT_EQ((ivec_t<4>{2, 3, 4, 4}), v + u);
+  EXPECT_EQ((ivec_t<4>{-2, -1, 0, 2}), v - u);
+  EXPECT_EQ((ivec_t<4>{0, 2, 4, 3}), v * u);
+  EXPECT_EQ((ivec_t<4>{0, 0, 1, 3}), v / u);
+  EXPECT_EQ((ivec_t<4>{0, 2, 4, 6}), v * 2);
+  EXPECT_EQ((ivec_t<4>{0, 2, 4, 6}), 2 * v);
+  EXPECT_EQ((ivec_t<4>{0, 0, 1, 1}), v / 2);
+  EXPECT_EQ((ivec_t<4>{1, 1, 1, 2}), 2 / u);
+  EXPECT_EQ((ivec_t<4>{0, -1, -2, -3}), -v);
+
+  v += u;
+  v *= u;
+  v -= u;
+  v /= u;
+  v *= 2;
+  v /= 1;
+  EXPECT_EQ((ivec_t<4>{2, 4, 6, 6}), v);
+}
+
+TEST_F(ApiTest, EuclideanOperations)
+{
+  ivec_t<4> v{0, -1, 1, -3};
+  ivec_t<4> u{4, 3, -2, 2};
+  EXPECT_EQ((ivec_t<4>{0, 2, 1, 1}), euclidean_mod(v, u));
+  EXPECT_EQ((ivec_t<4>{0, 3, 1, 1}), euclidean_mod(v, 4));
+  EXPECT_EQ((ivec_t<4>{0, 1, 0, 0}), euclidean_mod(4, u));
+  EXPECT_EQ((ivec_t<4>{0, -1, 0, -2}), euclidean_div(v, u));
+  EXPECT_EQ((ivec_t<4>{0, -1, 0, -1}), euclidean_div(v, 4));
+  EXPECT_EQ((ivec_t<4>{1, 1, -2, 2}), euclidean_div(4, u));
+}
+
 TEST_F(ApiTest, TypeOfInt)
 {
-  EXPECT_TRUE(type_of<int_t>().is_int());
-  EXPECT_FALSE(type_of<int_t>().is_ivec());
+  EXPECT_TRUE(Type::of<int_t>().is_int());
+  EXPECT_FALSE(Type::of<int_t>().is_ivec());
 }
 
 TEST_F(ApiTest, TypeOfFvec)
 {
-  EXPECT_TRUE(type_of<fvec_t<3>>().is_fvec());
-  EXPECT_EQ(3, type_of<fvec_t<3>>().vector_size());
+  EXPECT_TRUE(Type::of<fvec_t<3>>().is_fvec());
+  EXPECT_EQ(3, Type::of<fvec_t<3>>().vector_size());
 }
 
 TEST_F(ApiTest, TypeOfFunction)
 {
   typedef Function<user_type*(int_t)> ft;
-  EXPECT_TRUE(type_of<ft>().is_function());
-  EXPECT_EQ(1, type_of<ft>().function_num_args());
-  EXPECT_TRUE(type_of<ft>().function_return().is_user_type());
-  EXPECT_FALSE(type_of<ft>().function_return().is_managed_user_type());
+  EXPECT_TRUE(Type::of<ft>().is_function());
+  EXPECT_EQ(1, Type::of<ft>().function_num_args());
+  EXPECT_TRUE(Type::of<ft>().function_return().is_user_type());
+  EXPECT_FALSE(Type::of<ft>().function_return().is_managed_user_type());
 }
 
 TEST_F(ApiTest, TypeOfUserType)
 {
   struct a {};
   struct b {};
-  EXPECT_EQ(type_of<a*>(), type_of<a*>());
-  EXPECT_EQ(type_of<Ref<a>>(), type_of<Ref<a>>());
-  EXPECT_NE(type_of<a*>(), type_of<b*>());
-  EXPECT_NE(type_of<Ref<a>>(), type_of<Ref<b>>());
-  EXPECT_NE(type_of<a*>(), type_of<Ref<a>>());
+  EXPECT_EQ(Type::of<a*>(), Type::of<a*>());
+  EXPECT_EQ(Type::of<Ref<a>>(), Type::of<Ref<a>>());
+  EXPECT_NE(Type::of<a*>(), Type::of<b*>());
+  EXPECT_NE(Type::of<Ref<a>>(), Type::of<Ref<b>>());
+  EXPECT_NE(Type::of<a*>(), Type::of<Ref<a>>());
 }
 
 TEST_F(ApiTest, Function)

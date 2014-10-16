@@ -7,6 +7,7 @@
 
 #include "type.h"
 #include "typedefs.h"
+#include "vec.h"
 
 namespace yang {
 template<typename>

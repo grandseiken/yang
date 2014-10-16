@@ -106,8 +106,17 @@ public:
   /** #member */
   template<typename>
   static Type managed_user_t();
-  /** #member */
+  /** #member ## */
   static Type managed_user_t(const Type& user_type);
+
+  /**
+   * #member
+   *
+   * Constructs the ``Type`` object corresponding to the C++ type given as the
+   * template argument.
+   */
+  template<typename>
+  static Type of();
   /**
    * #member
    *
@@ -143,9 +152,11 @@ private:
 /** #sumline ## */
 };
 
-/** #function ## */
 template<typename T>
-Type type_of();
+Type Type::of()
+{
+  return internal::type_of<T>();
+}
 
 template<typename T>
 Type Type::raw_user_t()
@@ -163,12 +174,6 @@ Type Type::managed_user_t()
   t._base = MANAGED_USER_TYPE;
   t._user_type_uid = internal::type_uid<T>();
   return t;
-}
-
-template<typename T>
-Type type_of()
-{
-  return internal::type_of<T>();
 }
 
 /** #summary */

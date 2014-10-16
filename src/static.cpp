@@ -336,7 +336,7 @@ void StaticChecker::before(const Node& node)
   CONSTANT_FOR(EMPTY_EXPR) {return Type::int_t();};
   CONSTANT_FOR(INT_LITERAL) {return Type::int_t();};
   CONSTANT_FOR(FLOAT_LITERAL) {return Type::float_t();};
-  CONSTANT_FOR(STRING_LITERAL) {return type_of<Ref<const char>>();};
+  CONSTANT_FOR(STRING_LITERAL) {return Type::managed_user_t<const char>();};
   RESULT_FOR_ANY(node.type == Node::POW || node.type == Node::MOD ||
                  node.type == Node::ADD || node.type == Node::SUB ||
                  node.type == Node::MUL || node.type == Node::DIV) {

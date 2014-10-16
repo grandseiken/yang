@@ -60,7 +60,7 @@ private:
 
 template<typename T>
 Value::Value(const T& t)
-  : _type(type_of<T>())
+  : _type(Type::of<T>())
   , _data(new T(t))
   , _deleter(new deleter<T>)
 {
@@ -79,7 +79,7 @@ const Type& Value::type() const
 template<typename T>
 const T& Value::as() const
 {
-  Type type = type_of<T>();
+  Type type = Type::of<T>();
   if (_type != type) {
     throw runtime_error("accessed " + _type.string(Context()) +
                         " value as " + type.string(Context()));

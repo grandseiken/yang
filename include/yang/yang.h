@@ -17,5 +17,6 @@
 #include "typedefs.h"
 #include "type.h"
 #include "value.h"
+#include "vec.h"
 
 #endif

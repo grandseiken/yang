@@ -11,6 +11,7 @@
 #include "native.h"
 #include "refcounting.h"
 #include "type_info.h"
+#include "vec.h"
 
 namespace yang {
 namespace internal {

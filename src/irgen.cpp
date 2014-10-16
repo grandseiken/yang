@@ -279,7 +279,7 @@ void IrGenerator::before(const Node& node)
     llvm::Value* chunk = _chunk.allocate_closure_struct(
         _b.constant_ptr(&_program_internals));
     _chunk.memory_store(_b.constant_ptr(s->value.c_str()), chunk, "object");
-    return Value(type_of<Ref<const char>>(),
+    return Value(Type::managed_user_t<const char>(),
                  _b.b.CreateBitCast(chunk, _b.void_ptr_type()));
   };
   // Most binary operators map directly to (vectorisations of) LLVM IR

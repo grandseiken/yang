@@ -10,8 +10,10 @@ Core API:
    instance
    refcounting
    program
+   typedefs
    type
    value
+   vec
 
 Error-reporting:
 
