@@ -99,24 +99,10 @@ public:
 /** #sumline ## */
 };
 
-namespace internal {
-  template<typename T, std::size_t N, typename F>
-  vec<T, N> map_vec(const F& f)
-  {
-    vec<T, N> v;
-    for (std::size_t i = 0; i < N; ++i) {
-      v.elements[i] = f(i);
-    }
-    return v;
-  }
-} // ::internal
-#define MAP_VEC(T, N, expr) \
-    internal::map_vec<T, N>([&](std::size_t i){return (expr);})
-
 /** #function */
 template<typename T, std::size_t N>
 vec<T, N> operator+(const T& t, const vec<T, N>& v);
-/** #function ## */
+/** #function */
 template<typename T, std::size_t N>
 vec<T, N> operator-(const T& t, const vec<T, N>& v);
 /** #function */
@@ -148,6 +134,20 @@ vec<T, N> euclidean_mod(const T& t, const vec<T, N>& v);
 /** #function ## */
 template<typename T, std::size_t N>
 std::ostream& operator<<(std::ostream& stream, const vec<T, N>& v);
+
+namespace internal {
+  template<typename T, std::size_t N, typename F>
+  vec<T, N> map_vec(const F& f)
+  {
+    vec<T, N> v;
+    for (std::size_t i = 0; i < N; ++i) {
+      v.elements[i] = f(i);
+    }
+    return v;
+  }
+} // ::internal
+#define MAP_VEC(T, N, expr) \
+    internal::map_vec<T, N>([&](std::size_t i){return (expr);})
 
 template<typename T, std::size_t N>
 vec<T, N>::vec()
@@ -213,130 +213,46 @@ bool vec<T, N>::operator!=(const vec& arg) const
   return !operator==(arg);
 }
 
-template<typename T, std::size_t N>
-vec<T, N> vec<T, N>::operator+(const vec& arg) const
-{
-  return MAP_VEC(T, N, elements[i] + arg[i]);
-}
+#define DEFINE_VEC_OPS(op)\
+  template<typename T, std::size_t N>\
+  vec<T, N> vec<T, N>::operator op(const vec& arg) const\
+  {\
+    return MAP_VEC(T, N, elements[i] op arg[i]);\
+  }\
+  \
+  template<typename T, std::size_t N>\
+  vec<T, N> vec<T, N>::operator op(const T& arg) const\
+  {\
+    return MAP_VEC(T, N, elements[i] op arg);\
+  }\
+  \
+  template<typename T, std::size_t N>\
+  vec<T, N> operator op(const T& t, const vec<T, N>& v)\
+  {\
+    return MAP_VEC(T, N, t op v[i]);\
+  }\
+  template<typename T, std::size_t N>\
+  vec<T, N>& vec<T, N>::operator op##=(const vec& arg)\
+  {\
+    return *this = operator op(arg);\
+  }\
+  \
+  template<typename T, std::size_t N>\
+  vec<T, N>& vec<T, N>::operator op##=(const T& arg)\
+  {\
+    return *this = operator op(arg);\
+  }
 
-template<typename T, std::size_t N>
-vec<T, N> vec<T, N>::operator-(const vec& arg) const
-{
-  return MAP_VEC(T, N, elements[i] - arg[i]);
-}
-
-template<typename T, std::size_t N>
-vec<T, N> vec<T, N>::operator*(const vec& arg) const
-{
-  return MAP_VEC(T, N, elements[i] * arg[i]);
-}
-
-template<typename T, std::size_t N>
-vec<T, N> vec<T, N>::operator/(const vec& arg) const
-{
-  return MAP_VEC(T, N, elements[i] / arg[i]);
-}
-
-template<typename T, std::size_t N>
-vec<T, N> vec<T, N>::operator+(const T& arg) const
-{
-  return MAP_VEC(T, N, elements[i] + arg);
-}
-
-template<typename T, std::size_t N>
-vec<T, N> vec<T, N>::operator-(const T& arg) const
-{
-  return MAP_VEC(T, N, elements[i] - arg);
-}
-
-template<typename T, std::size_t N>
-vec<T, N> vec<T, N>::operator*(const T& arg) const
-{
-  return MAP_VEC(T, N, elements[i] * arg);
-}
-
-template<typename T, std::size_t N>
-vec<T, N> vec<T, N>::operator/(const T& arg) const
-{
-  return MAP_VEC(T, N, elements[i] / arg);
-}
+DEFINE_VEC_OPS(+)
+DEFINE_VEC_OPS(-)
+DEFINE_VEC_OPS(*)
+DEFINE_VEC_OPS(/)
+#undef DEFINE_VEC_OPS
 
 template<typename T, std::size_t N>
 vec<T, N> vec<T, N>::operator-() const
 {
   return vec().operator-(*this);
-}
-
-template<typename T, std::size_t N>
-vec<T, N>& vec<T, N>::operator+=(const vec& arg)
-{
-  return *this = operator+(arg);
-}
-
-template<typename T, std::size_t N>
-vec<T, N>& vec<T, N>::operator-=(const vec& arg)
-{
-  return *this = operator-(arg);
-}
-
-template<typename T, std::size_t N>
-vec<T, N>& vec<T, N>::operator*=(const vec& arg)
-{
-  return *this = operator*(arg);
-}
-
-template<typename T, std::size_t N>
-vec<T, N>& vec<T, N>::operator/=(const vec& arg)
-{
-  return *this = operator/(arg);
-}
-
-template<typename T, std::size_t N>
-vec<T, N>& vec<T, N>::operator+=(const T& arg)
-{
-  return *this = operator+(arg);
-}
-
-template<typename T, std::size_t N>
-vec<T, N>& vec<T, N>::operator-=(const T& arg)
-{
-  return *this = operator-(arg);
-}
-
-template<typename T, std::size_t N>
-vec<T, N>& vec<T, N>::operator*=(const T& arg)
-{
-  return *this = operator*(arg);
-}
-
-template<typename T, std::size_t N>
-vec<T, N>& vec<T, N>::operator/=(const T& arg)
-{
-  return *this = operator/(arg);
-}
-
-template<typename T, std::size_t N>
-vec<T, N> operator+(const T& t, const vec<T, N>& v)
-{
-  return MAP_VEC(T, N, t + v[i]);
-}
-
-template<typename T, std::size_t N>
-vec<T, N> operator-(const T& t, const vec<T, N>& v)
-{
-  return MAP_VEC(T, N, t - v[i]);
-}
-
-template<typename T, std::size_t N>
-vec<T, N> operator*(const T& t, const vec<T, N>& v)
-{
-  return MAP_VEC(T, N, t * v[i]);
-}
-
-template<typename T, std::size_t N>
-vec<T, N> operator/(const T& t, const vec<T, N>& v)
-{
-  return MAP_VEC(T, N, t / v[i]);
 }
 
 template<typename T, std::size_t N>
