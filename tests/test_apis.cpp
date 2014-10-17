@@ -69,54 +69,152 @@ TEST_F(ApiTest, VecIndices)
   EXPECT_EQ(3, v[1]);
 }
 
-TEST_F(ApiTest, VecEquality)
+TEST_F(ApiTest, VecLogicalOps)
 {
-  ivec_t<3> v{0, 1, 2};
-  EXPECT_TRUE((v == ivec_t<3>{0, 1, 2}));
-  EXPECT_FALSE((v == ivec_t<3>{0, 1, 1}));
-  EXPECT_FALSE((v != ivec_t<3>{0, 1, 2}));
-  EXPECT_TRUE((v != ivec_t<3>{0, 1, 1}));
+  ivec_t<3> v{0, 0, 2};
+  ivec_t<3> u{1, 0, 1};
+
+  EXPECT_EQ((ivec_t<3>{0, 0, 1}), v && u);
+  EXPECT_EQ((ivec_t<3>{1, 0, 1}), v || u);
+  EXPECT_EQ((ivec_t<3>{0, 0, 0}), v && 0);
+  EXPECT_EQ((ivec_t<3>{0, 0, 1}), v || 0);
+  EXPECT_EQ((ivec_t<3>{1, 0, 1}), 1 && u);
+  EXPECT_EQ((ivec_t<3>{1, 1, 1}), 1 || u);
 }
 
-TEST_F(ApiTest, VecOperations)
+TEST_F(ApiTest, VecEqualityOps)
+{
+  ivec_t<3> v{0, 1, 2};
+  ivec_t<3> u{1, 1, 1};
+
+  EXPECT_EQ((ivec_t<3>{0, 1, 0}), v == u);
+  EXPECT_EQ((ivec_t<3>{1, 0, 1}), v != u);
+  EXPECT_EQ((ivec_t<3>{0, 1, 1}), v >= u);
+  EXPECT_EQ((ivec_t<3>{1, 1, 0}), v <= u);
+  EXPECT_EQ((ivec_t<3>{0, 0, 1}), v > u);
+  EXPECT_EQ((ivec_t<3>{1, 0, 0}), v < u);
+
+  EXPECT_EQ((ivec_t<3>{0, 0, 1}), v == 2);
+  EXPECT_EQ((ivec_t<3>{1, 1, 0}), v != 2);
+  EXPECT_EQ((ivec_t<3>{0, 0, 1}), v >= 2);
+  EXPECT_EQ((ivec_t<3>{1, 1, 1}), v <= 2);
+  EXPECT_EQ((ivec_t<3>{0, 0, 0}), v > 2);
+  EXPECT_EQ((ivec_t<3>{1, 1, 0}), v < 2);
+
+  EXPECT_EQ((ivec_t<3>{1, 0, 0}), 0 == v);
+  EXPECT_EQ((ivec_t<3>{0, 1, 1}), 0 != v);
+  EXPECT_EQ((ivec_t<3>{1, 0, 0}), 0 >= v);
+  EXPECT_EQ((ivec_t<3>{1, 1, 1}), 0 <= v);
+  EXPECT_EQ((ivec_t<3>{0, 0, 0}), 0 > v);
+  EXPECT_EQ((ivec_t<3>{0, 1, 1}), 0 < v);
+}
+
+TEST_F(ApiTest, VecArithmeticOps)
 {
   ivec_t<4> v{0, 1, 2, 3};
   ivec_t<4> u{2, 2, 2, 1};
+
   EXPECT_EQ((ivec_t<4>{2, 3, 4, 4}), v + u);
   EXPECT_EQ((ivec_t<4>{-2, -1, 0, 2}), v - u);
   EXPECT_EQ((ivec_t<4>{0, 2, 4, 3}), v * u);
   EXPECT_EQ((ivec_t<4>{0, 0, 1, 3}), v / u);
-  EXPECT_EQ((ivec_t<4>{0, 2, 4, 6}), v * 2);
-  EXPECT_EQ((ivec_t<4>{0, 2, 4, 6}), 2 * v);
-  EXPECT_EQ((ivec_t<4>{0, 0, 1, 1}), v / 2);
-  EXPECT_EQ((ivec_t<4>{1, 1, 1, 2}), 2 / u);
-  EXPECT_EQ((ivec_t<4>{2, 3, 4, 5}), v + 2);
-  EXPECT_EQ((ivec_t<4>{2, 3, 4, 5}), 2 + v);
-  EXPECT_EQ((ivec_t<4>{-2, -1, 0, 1}), v - 2);
-  EXPECT_EQ((ivec_t<4>{2, 1, 0, -1}), 2 - v);
-  EXPECT_EQ((ivec_t<4>{0, -1, -2, -3}), -v);
+  EXPECT_EQ((ivec_t<4>{0, 1, 0, 0}), v % u);
 
-  v += u;
-  v *= u;
-  v -= u;
-  v /= u;
-  v *= 2;
-  v += 2;
-  v /= 2;
-  v -= 1;
-  EXPECT_EQ((ivec_t<4>{1, 2, 3, 3}), v);
+  EXPECT_EQ((ivec_t<4>{2, 3, 4, 5}), v + 2);
+  EXPECT_EQ((ivec_t<4>{-2, -1, 0, 1}), v - 2);
+  EXPECT_EQ((ivec_t<4>{0, 2, 4, 6}), v * 2);
+  EXPECT_EQ((ivec_t<4>{0, 0, 1, 1}), v / 2);
+  EXPECT_EQ((ivec_t<4>{0, 1, 0, 1}), v % 2);
+
+  EXPECT_EQ((ivec_t<4>{2, 3, 4, 5}), 2 + v);
+  EXPECT_EQ((ivec_t<4>{2, 1, 0, -1}), 2 - v);
+  EXPECT_EQ((ivec_t<4>{0, 2, 4, 6}), 2 * v);
+  EXPECT_EQ((ivec_t<4>{1, 1, 1, 2}), 2 / u);
+  EXPECT_EQ((ivec_t<4>{0, 0, 0, 0}), 2 % u);
 }
 
-TEST_F(ApiTest, EuclideanOperations)
+TEST_F(ApiTest, VecArithmeticAssignOps)
+{
+  ivec_t<4> v{0, 1, 2, 3};
+  ivec_t<4> u{2, 2, 2, 1};
+
+  EXPECT_EQ((ivec_t<4>{2, 3, 4, 4}), v += u);
+  EXPECT_EQ((ivec_t<4>{4, 6, 8, 4}), v *= u);
+  EXPECT_EQ((ivec_t<4>{2, 4, 6, 3}), v -= u);
+  EXPECT_EQ((ivec_t<4>{1, 2, 3, 3}), v /= u);
+  EXPECT_EQ((ivec_t<4>{2, 4, 6, 6}), v *= 2);
+  EXPECT_EQ((ivec_t<4>{4, 6, 8, 8}), v += 2);
+  EXPECT_EQ((ivec_t<4>{2, 3, 4, 4}), v /= 2);
+  EXPECT_EQ((ivec_t<4>{1, 2, 3, 3}), v -= 1);
+  EXPECT_EQ((ivec_t<4>{1, 2, 3, 3}), v %= 4);
+  EXPECT_EQ((ivec_t<4>{1, 0, 1, 0}), v %= u);
+}
+
+TEST_F(ApiTest, VecBitwiseOps)
+{
+  ivec_t<4> v{0, 1, 2, 3};
+  ivec_t<4> u{2, 2, 2, 1};
+
+  EXPECT_EQ((ivec_t<4>{0, 0, 2, 1}), v & u);
+  EXPECT_EQ((ivec_t<4>{2, 3, 2, 3}), v | u);
+  EXPECT_EQ((ivec_t<4>{2, 3, 0, 2}), v ^ u);
+  EXPECT_EQ((ivec_t<4>{0, 4, 8, 6}), v << u);
+  EXPECT_EQ((ivec_t<4>{0, 0, 0, 1}), v >> u);
+
+  EXPECT_EQ((ivec_t<4>{0, 0, 2, 2}), v & 2);
+  EXPECT_EQ((ivec_t<4>{2, 3, 2, 3}), v | 2);
+  EXPECT_EQ((ivec_t<4>{2, 3, 0, 1}), v ^ 2);
+  EXPECT_EQ((ivec_t<4>{0, 4, 8, 12}), v << 2);
+  EXPECT_EQ((ivec_t<4>{0, 0, 0, 0}), v >> 2);
+
+  EXPECT_EQ((ivec_t<4>{0, 0, 2, 2}), 2 & v);
+  EXPECT_EQ((ivec_t<4>{2, 3, 2, 3}), 2 | v);
+  EXPECT_EQ((ivec_t<4>{2, 3, 0, 1}), 2 ^ v);
+  EXPECT_EQ((ivec_t<4>{2, 4, 8, 16}), 2 << v);
+  EXPECT_EQ((ivec_t<4>{0, 0, 0, 1}), 2 >> u);
+}
+
+TEST_F(ApiTest, VecBitwiseAssignOps)
+{
+  ivec_t<4> v{0, 1, 2, 3};
+  ivec_t<4> u{2, 3, 2, 1};
+
+  EXPECT_EQ((ivec_t<4>{0, 1, 2, 1}), v &= u);
+  EXPECT_EQ((ivec_t<4>{2, 2, 0, 0}), v ^= u);
+  EXPECT_EQ((ivec_t<4>{2, 3, 2, 1}), v |= u);
+  EXPECT_EQ((ivec_t<4>{8, 24, 8, 2}), v <<= u);
+  EXPECT_EQ((ivec_t<4>{9, 25, 9, 3}), v |= 1);
+  EXPECT_EQ((ivec_t<4>{1, 17, 1, 3}), v &= 19);
+  EXPECT_EQ((ivec_t<4>{0, 8, 0, 1}), v >>= 1);
+  EXPECT_EQ((ivec_t<4>{1, 9, 1, 0}), v ^= 1);
+  EXPECT_EQ((ivec_t<4>{2, 18, 2, 0}), v <<= 1);
+  EXPECT_EQ((ivec_t<4>{0, 2, 0, 0}), v >>= u);
+}
+
+TEST_F(ApiTest, VecUnaryOps)
+{
+  ivec_t<3> v{0, 1, 2};
+
+  EXPECT_EQ((ivec_t<3>{1, 0, 0}), !v);
+  EXPECT_EQ((ivec_t<3>{0, 1, 2}), +v);
+  EXPECT_EQ((ivec_t<3>{0, -1, -2}), -v);
+  EXPECT_EQ((ivec_t<3>{-1, -2, -3}), ~v);
+  EXPECT_EQ((ivec_t<3>{0, 1, 2}), v++);
+  EXPECT_EQ((ivec_t<3>{2, 3, 4}), ++v);
+  EXPECT_EQ((ivec_t<3>{1, 2, 3}), --v);
+  EXPECT_EQ((ivec_t<3>{1, 2, 3}), v--);
+}
+
+TEST_F(ApiTest, VecEuclideanOps)
 {
   ivec_t<4> v{0, -1, 1, -3};
   ivec_t<4> u{4, 3, -2, 2};
-  EXPECT_EQ((ivec_t<4>{0, 2, 1, 1}), euclidean_mod(v, u));
-  EXPECT_EQ((ivec_t<4>{0, 3, 1, 1}), euclidean_mod(v, 4));
-  EXPECT_EQ((ivec_t<4>{0, 1, 0, 0}), euclidean_mod(4, u));
   EXPECT_EQ((ivec_t<4>{0, -1, 0, -2}), euclidean_div(v, u));
+  EXPECT_EQ((ivec_t<4>{0, 2, 1, 1}), euclidean_mod(v, u));
   EXPECT_EQ((ivec_t<4>{0, -1, 0, -1}), euclidean_div(v, 4));
+  EXPECT_EQ((ivec_t<4>{0, 3, 1, 1}), euclidean_mod(v, 4));
   EXPECT_EQ((ivec_t<4>{1, 1, -2, 2}), euclidean_div(4, u));
+  EXPECT_EQ((ivec_t<4>{0, 1, 0, 0}), euclidean_mod(4, u));
 }
 
 TEST_F(ApiTest, TypeOfInt)
