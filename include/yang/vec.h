@@ -9,7 +9,6 @@
 #include <ostream>
 #include "typedefs.h"
 
-// TODO: fix / deduce operator return types. Test with float equality, etc.
 /** #summary */
 namespace yang {
 
@@ -54,22 +53,22 @@ public:
   const T& operator[](const element_accessor<M>&) const;
 
   /** #member */
-  vec operator&&(const vec& arg) const;
+  vec<bool, N> operator&&(const vec& arg) const;
   /** #member ## */
-  vec operator||(const vec& arg) const;
+  vec<bool, N> operator||(const vec& arg) const;
 
   /** #member */
-  vec operator==(const vec& arg) const;
+  vec<bool, N> operator==(const vec& arg) const;
   /** #member */
-  vec operator!=(const vec& arg) const;
+  vec<bool, N> operator!=(const vec& arg) const;
   /** #member */
-  vec operator>=(const vec& arg) const;
+  vec<bool, N> operator>=(const vec& arg) const;
   /** #member */
-  vec operator<=(const vec& arg) const;
+  vec<bool, N> operator<=(const vec& arg) const;
   /** #member */
-  vec operator>(const vec& arg) const;
+  vec<bool, N> operator>(const vec& arg) const;
   /** #member ## */
-  vec operator<(const vec& arg) const;
+  vec<bool, N> operator<(const vec& arg) const;
 
   /** #member */
   vec operator+(const vec& arg) const;
@@ -116,22 +115,22 @@ public:
   vec& operator>>=(const vec& arg);
 
   /** #member */
-  vec operator&&(const T& arg) const;
+  vec<bool, N> operator&&(const T& arg) const;
   /** #member ## */
-  vec operator||(const T& arg) const;
+  vec<bool, N> operator||(const T& arg) const;
 
   /** #member */
-  vec operator==(const T& arg) const;
+  vec<bool, N> operator==(const T& arg) const;
   /** #member */
-  vec operator!=(const T& arg) const;
+  vec<bool, N> operator!=(const T& arg) const;
   /** #member */
-  vec operator>=(const T& arg) const;
+  vec<bool, N> operator>=(const T& arg) const;
   /** #member */
-  vec operator<=(const T& arg) const;
+  vec<bool, N> operator<=(const T& arg) const;
   /** #member */
-  vec operator>(const T& arg) const;
+  vec<bool, N> operator>(const T& arg) const;
   /** #member ## */
-  vec operator<(const T& arg) const;
+  vec<bool, N> operator<(const T& arg) const;
 
   /** #member */
   vec operator+(const T& arg) const;
@@ -178,7 +177,7 @@ public:
   vec& operator>>=(const T& arg);
 
   /** #member */
-  vec operator!() const;
+  vec<bool, N> operator!() const;
   /** #member */
   vec operator+() const;
   /** #member */
@@ -199,29 +198,29 @@ public:
 
 /** #function */
 template<typename T, std::size_t N>
-vec<T, N> operator&&(const T& t, const vec<T, N>& v);
+vec<bool, N> operator&&(const T& t, const vec<T, N>& v);
 /** #function ## */
 template<typename T, std::size_t N>
-vec<T, N> operator||(const T& t, const vec<T, N>& v);
+vec<bool, N> operator||(const T& t, const vec<T, N>& v);
 
 /** #function */
 template<typename T, std::size_t N>
-vec<T, N> operator==(const T& t, const vec<T, N>& v);
+vec<bool, N> operator==(const T& t, const vec<T, N>& v);
 /** #function */
 template<typename T, std::size_t N>
-vec<T, N> operator!=(const T& t, const vec<T, N>& v);
+vec<bool, N> operator!=(const T& t, const vec<T, N>& v);
 /** #function */
 template<typename T, std::size_t N>
-vec<T, N> operator>=(const T& t, const vec<T, N>& v);
+vec<bool, N> operator>=(const T& t, const vec<T, N>& v);
 /** #function */
 template<typename T, std::size_t N>
-vec<T, N> operator<=(const T& t, const vec<T, N>& v);
+vec<bool, N> operator<=(const T& t, const vec<T, N>& v);
 /** #function */
 template<typename T, std::size_t N>
-vec<T, N> operator>(const T& t, const vec<T, N>& v);
+vec<bool, N> operator>(const T& t, const vec<T, N>& v);
 /** #function ## */
 template<typename T, std::size_t N>
-vec<T, N> operator<(const T& t, const vec<T, N>& v);
+vec<bool, N> operator<(const T& t, const vec<T, N>& v);
 
 /** #function */
 template<typename T, std::size_t N>
@@ -351,9 +350,9 @@ const T& vec<T, N>::operator[](const element_accessor<M>&) const
 }
 
 template<typename T, std::size_t N>
-vec<T, N> vec<T, N>::operator!() const
+vec<bool, N> vec<T, N>::operator!() const
 {
-  return MAP_VEC(T, N, !elements[i]);
+  return MAP_VEC(bool, N, !elements[i]);
 }
 
 template<typename T, std::size_t N>
@@ -402,53 +401,53 @@ vec<T, N>& vec<T, N>::operator--()
   return operator-=(T{1});
 }
 
-#define DEFINE_VEC_OPS_NO_ASSIGN(op)\
+#define DEFINE_VEC_OPS_NO_ASSIGN(R, OP)\
   template<typename T, std::size_t N>\
-  vec<T, N> vec<T, N>::operator op(const vec& arg) const\
+  vec<R, N> vec<T, N>::operator OP(const vec& arg) const\
   {\
-    return MAP_VEC(T, N, elements[i] op arg[i]);\
+    return MAP_VEC(R, N, elements[i] OP arg[i]);\
   }\
   template<typename T, std::size_t N>\
-  vec<T, N> vec<T, N>::operator op(const T& arg) const\
+  vec<R, N> vec<T, N>::operator OP(const T& arg) const\
   {\
-    return MAP_VEC(T, N, elements[i] op arg);\
+    return MAP_VEC(R, N, elements[i] OP arg);\
   }\
   template<typename T, std::size_t N>\
-  vec<T, N> operator op(const T& t, const vec<T, N>& v)\
+  vec<R, N> operator OP(const T& t, const vec<T, N>& v)\
   {\
-    return MAP_VEC(T, N, t op v[i]);\
+    return MAP_VEC(R, N, t OP v[i]);\
   }
-#define DEFINE_VEC_OPS(op)\
-  DEFINE_VEC_OPS_NO_ASSIGN(op)\
+#define DEFINE_VEC_OPS(R, OP)\
+  DEFINE_VEC_OPS_NO_ASSIGN(R, OP)\
   template<typename T, std::size_t N>\
-  vec<T, N>& vec<T, N>::operator op##=(const vec& arg)\
+  vec<R, N>& vec<T, N>::operator OP##=(const vec& arg)\
   {\
-    return *this = operator op(arg);\
+    return *this = operator OP(arg);\
   }\
   template<typename T, std::size_t N>\
-  vec<T, N>& vec<T, N>::operator op##=(const T& arg)\
+  vec<R, N>& vec<T, N>::operator OP##=(const T& arg)\
   {\
-    return *this = operator op(arg);\
+    return *this = operator OP(arg);\
   }
 
-DEFINE_VEC_OPS_NO_ASSIGN(&&)
-DEFINE_VEC_OPS_NO_ASSIGN(||)
-DEFINE_VEC_OPS_NO_ASSIGN(==)
-DEFINE_VEC_OPS_NO_ASSIGN(!=)
-DEFINE_VEC_OPS_NO_ASSIGN(>=)
-DEFINE_VEC_OPS_NO_ASSIGN(<=)
-DEFINE_VEC_OPS_NO_ASSIGN(>)
-DEFINE_VEC_OPS_NO_ASSIGN(<)
-DEFINE_VEC_OPS(+)
-DEFINE_VEC_OPS(-)
-DEFINE_VEC_OPS(*)
-DEFINE_VEC_OPS(/)
-DEFINE_VEC_OPS(%)
-DEFINE_VEC_OPS(&)
-DEFINE_VEC_OPS(|)
-DEFINE_VEC_OPS(^)
-DEFINE_VEC_OPS(<<)
-DEFINE_VEC_OPS(>>)
+DEFINE_VEC_OPS_NO_ASSIGN(bool, &&)
+DEFINE_VEC_OPS_NO_ASSIGN(bool, ||)
+DEFINE_VEC_OPS_NO_ASSIGN(bool, ==)
+DEFINE_VEC_OPS_NO_ASSIGN(bool, !=)
+DEFINE_VEC_OPS_NO_ASSIGN(bool, >=)
+DEFINE_VEC_OPS_NO_ASSIGN(bool, <=)
+DEFINE_VEC_OPS_NO_ASSIGN(bool, >)
+DEFINE_VEC_OPS_NO_ASSIGN(bool, <)
+DEFINE_VEC_OPS(T, +)
+DEFINE_VEC_OPS(T, -)
+DEFINE_VEC_OPS(T, *)
+DEFINE_VEC_OPS(T, /)
+DEFINE_VEC_OPS(T, %)
+DEFINE_VEC_OPS(T, &)
+DEFINE_VEC_OPS(T, |)
+DEFINE_VEC_OPS(T, ^)
+DEFINE_VEC_OPS(T, <<)
+DEFINE_VEC_OPS(T, >>)
 #undef DEFINE_VEC_OPS
 
 template<typename T, std::size_t N>
@@ -512,6 +511,8 @@ namespace {
   static const auto& w = element_accessor<3>::instance;
 }
 
+template<std::size_t N, typename = internal::enable_if<(N > 1)>>
+using bvec_t = vec<bool, N>;
 template<std::size_t N, typename = internal::enable_if<(N > 1)>>
 using ivec_t = vec<int_t, N>;
 template<std::size_t N, typename = internal::enable_if<(N > 1)>>

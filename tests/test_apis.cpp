@@ -74,39 +74,39 @@ TEST_F(ApiTest, VecLogicalOps)
   ivec_t<3> v{0, 0, 2};
   ivec_t<3> u{1, 0, 1};
 
-  EXPECT_EQ((ivec_t<3>{0, 0, 1}), v && u);
-  EXPECT_EQ((ivec_t<3>{1, 0, 1}), v || u);
-  EXPECT_EQ((ivec_t<3>{0, 0, 0}), v && 0);
-  EXPECT_EQ((ivec_t<3>{0, 0, 1}), v || 0);
-  EXPECT_EQ((ivec_t<3>{1, 0, 1}), 1 && u);
-  EXPECT_EQ((ivec_t<3>{1, 1, 1}), 1 || u);
+  EXPECT_EQ((bvec_t<3>{0, 0, 1}), v && u);
+  EXPECT_EQ((bvec_t<3>{1, 0, 1}), v || u);
+  EXPECT_EQ((bvec_t<3>{0, 0, 0}), v && 0);
+  EXPECT_EQ((bvec_t<3>{0, 0, 1}), v || 0);
+  EXPECT_EQ((bvec_t<3>{1, 0, 1}), 1 && u);
+  EXPECT_EQ((bvec_t<3>{1, 1, 1}), 1 || u);
 }
 
 TEST_F(ApiTest, VecEqualityOps)
 {
-  ivec_t<3> v{0, 1, 2};
-  ivec_t<3> u{1, 1, 1};
+  fvec_t<3> v{0, 1, 2};
+  fvec_t<3> u{1, 1, 1};
 
-  EXPECT_EQ((ivec_t<3>{0, 1, 0}), v == u);
-  EXPECT_EQ((ivec_t<3>{1, 0, 1}), v != u);
-  EXPECT_EQ((ivec_t<3>{0, 1, 1}), v >= u);
-  EXPECT_EQ((ivec_t<3>{1, 1, 0}), v <= u);
-  EXPECT_EQ((ivec_t<3>{0, 0, 1}), v > u);
-  EXPECT_EQ((ivec_t<3>{1, 0, 0}), v < u);
+  EXPECT_EQ((bvec_t<3>{0, 1, 0}), v == u);
+  EXPECT_EQ((bvec_t<3>{1, 0, 1}), v != u);
+  EXPECT_EQ((bvec_t<3>{0, 1, 1}), v >= u);
+  EXPECT_EQ((bvec_t<3>{1, 1, 0}), v <= u);
+  EXPECT_EQ((bvec_t<3>{0, 0, 1}), v > u);
+  EXPECT_EQ((bvec_t<3>{1, 0, 0}), v < u);
 
-  EXPECT_EQ((ivec_t<3>{0, 0, 1}), v == 2);
-  EXPECT_EQ((ivec_t<3>{1, 1, 0}), v != 2);
-  EXPECT_EQ((ivec_t<3>{0, 0, 1}), v >= 2);
-  EXPECT_EQ((ivec_t<3>{1, 1, 1}), v <= 2);
-  EXPECT_EQ((ivec_t<3>{0, 0, 0}), v > 2);
-  EXPECT_EQ((ivec_t<3>{1, 1, 0}), v < 2);
+  EXPECT_EQ((bvec_t<3>{0, 0, 1}), v == 2.);
+  EXPECT_EQ((bvec_t<3>{1, 1, 0}), v != 2.);
+  EXPECT_EQ((bvec_t<3>{0, 0, 1}), v >= 2.);
+  EXPECT_EQ((bvec_t<3>{1, 1, 1}), v <= 2.);
+  EXPECT_EQ((bvec_t<3>{0, 0, 0}), v > 2.);
+  EXPECT_EQ((bvec_t<3>{1, 1, 0}), v < 2.);
 
-  EXPECT_EQ((ivec_t<3>{1, 0, 0}), 0 == v);
-  EXPECT_EQ((ivec_t<3>{0, 1, 1}), 0 != v);
-  EXPECT_EQ((ivec_t<3>{1, 0, 0}), 0 >= v);
-  EXPECT_EQ((ivec_t<3>{1, 1, 1}), 0 <= v);
-  EXPECT_EQ((ivec_t<3>{0, 0, 0}), 0 > v);
-  EXPECT_EQ((ivec_t<3>{0, 1, 1}), 0 < v);
+  EXPECT_EQ((bvec_t<3>{1, 0, 0}), 0. == v);
+  EXPECT_EQ((bvec_t<3>{0, 1, 1}), 0. != v);
+  EXPECT_EQ((bvec_t<3>{1, 0, 0}), 0. >= v);
+  EXPECT_EQ((bvec_t<3>{1, 1, 1}), 0. <= v);
+  EXPECT_EQ((bvec_t<3>{0, 0, 0}), 0. > v);
+  EXPECT_EQ((bvec_t<3>{0, 1, 1}), 0. < v);
 }
 
 TEST_F(ApiTest, VecArithmeticOps)
@@ -195,7 +195,7 @@ TEST_F(ApiTest, VecUnaryOps)
 {
   ivec_t<3> v{0, 1, 2};
 
-  EXPECT_EQ((ivec_t<3>{1, 0, 0}), !v);
+  EXPECT_EQ((bvec_t<3>{1, 0, 0}), !v);
   EXPECT_EQ((ivec_t<3>{0, 1, 2}), +v);
   EXPECT_EQ((ivec_t<3>{0, -1, -2}), -v);
   EXPECT_EQ((ivec_t<3>{-1, -2, -3}), ~v);
