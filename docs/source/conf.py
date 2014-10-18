@@ -264,7 +264,8 @@ texinfo_documents = [
 
 # -- Yang custom domain ---------------------------------------------------
 
-# TODO: fix linking to free functions with same name as member functions.
+# TODO: handle links/search of objects with the same name.
+import collections
 import re
 from docutils import nodes
 from sphinx import addnodes
@@ -276,7 +277,7 @@ OPERATOR = r'operator *(\(\)|[^(]+)'
 IDENTIFIER_RE = re.compile(OPERATOR + r'|(\w+::)*\w+')
 AFTER_NAME_RE = re.compile(r'\s*(\(|$|;|\[)')
 
-def make_source_literal(env, text):
+def make_source_literal(env, text, all_indented):
   literal = nodes.literal_block()
 
   last_index = 0
@@ -287,8 +288,10 @@ def make_source_literal(env, text):
 
     link_text = text[match.start():last_index]
     yang_class = ''
+    line_first_char = text[1 + text.rfind('\n', 0, last_index)]
     if ('yang:class' in env.ref_context and
-        AFTER_NAME_RE.match(text[last_index:])):
+        AFTER_NAME_RE.match(text[last_index:]) and
+        (all_indented or line_first_char == ' ')):
       yang_class = env.ref_context['yang:class']
 
     xref = addnodes.pending_xref(
@@ -308,7 +311,7 @@ class YangCodeDirective(compat.Directive):
   def run(self):
     env = self.state.document.settings.env
     self.assert_has_content()
-    node = make_source_literal(env, '\n'.join(self.content))
+    node = make_source_literal(env, '\n'.join(self.content), False)
     self.add_name(node)
     return [node]
 
@@ -330,16 +333,21 @@ class YangClassDirective(compat.Directive):
 
     index = addnodes.index(entries=[])
     index['entries'].append(('single', name, self.name, ''))
-    env.domaindata['yang']['objects'][self.name] = env.docname
+    env.domaindata['yang']['objects'][self.name] = {
+        'docname': env.docname, 'type': 'class'}
+        
     return [index, section]
 
 class YangObject(directives.ObjectDescription):
   TEMPLATE_RE = re.compile(r'template\s*<[^>]*>')
+  ALL_INDENTED = False
+  TYPE_NAME = 'object'
 
   def add_target_and_index(self, name, sig, signode):
     signode['ids'].append(name)
     self.indexnode['entries'].append(('single', 'yang::' + name, name, ''))
-    self.env.domaindata['yang']['objects'][name] = self.env.docname
+    self.env.domaindata['yang']['objects'][name] = {
+        'docname': self.env.docname, 'type': self.TYPE_NAME}
 
   def handle_signature(self, sig, signode):
     lines = [line for line in sig.split('\\n') if line.strip()]
@@ -357,7 +365,7 @@ class YangObject(directives.ObjectDescription):
       first = False
 
     text = '\n'.join(line[indent:] for line in lines)
-    signode += make_source_literal(self.env, text)
+    signode += make_source_literal(self.env, text, self.ALL_INDENTED)
 
     match = YangObject.TEMPLATE_RE.search(sig)
     if match:
@@ -380,10 +388,13 @@ def function_name(text):
     match = IDENTIFIER_RE.search(text, last_index)
 
 class YangMemberObject(YangObject):
+  ALL_INDENTED = True
+  TYPE_NAME = 'member'
   def parse_name(self, sig):
     return self.env.ref_context['yang:class'] + '::' + function_name(sig)
 
 class YangFunctionObject(YangObject):
+  TYPE_NAME = 'top-level'
   def parse_name(self, sig):
     return function_name(sig)
 
@@ -401,7 +412,7 @@ class YangDomain(domains.Domain):
   }
 
   def resolve_xref_name(self, name, from_docname, builder, cont_node):
-    to_docname = self.data['objects'][name]
+    to_docname = self.data['objects'][name]['docname']
     node = nodes.reference('', '', internal=True)
     rel_uri = builder.get_relative_uri(from_docname, to_docname)
     node['refuri'] = rel_uri + '#' + name
@@ -419,8 +430,9 @@ class YangDomain(domains.Domain):
     return None
 
   def get_objects(self):
-    # TODO: implement for searching?
-    return []
+    repeats = {}
+    for name, info in self.data['objects'].iteritems():
+      yield 'yang::' + name, name, info['type'], info['docname'], 'anchor', 0
 
 
 # -- Yang autodocumenter --------------------------------------------------
