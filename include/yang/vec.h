@@ -54,125 +54,119 @@ public:
 
   /** #member */
   vec<bool, N> operator&&(const vec& arg) const;
-  /** #member ## */
-  vec<bool, N> operator||(const vec& arg) const;
-
-  /** #member */
-  vec<bool, N> operator==(const vec& arg) const;
-  /** #member */
-  vec<bool, N> operator!=(const vec& arg) const;
-  /** #member */
-  vec<bool, N> operator>=(const vec& arg) const;
-  /** #member */
-  vec<bool, N> operator<=(const vec& arg) const;
-  /** #member */
-  vec<bool, N> operator>(const vec& arg) const;
-  /** #member ## */
-  vec<bool, N> operator<(const vec& arg) const;
-
-  /** #member */
-  vec operator+(const vec& arg) const;
-  /** #member */
-  vec operator-(const vec& arg) const;
-  /** #member */
-  vec operator*(const vec& arg) const;
-  /** #member */
-  vec operator/(const vec& arg) const;
-  /** #member ## */
-  vec operator%(const vec& arg) const;
-
-  /** #member */
-  vec operator&(const vec& arg) const;
-  /** #member */
-  vec operator|(const vec& arg) const;
-  /** #member */
-  vec operator^(const vec& arg) const;
-  /** #member */
-  vec operator<<(const vec& arg) const;
-  /** #member ## */
-  vec operator>>(const vec& arg) const;
-
-  /** #member */
-  vec& operator+=(const vec& arg);
-  /** #member */
-  vec& operator-=(const vec& arg);
-  /** #member */
-  vec& operator*=(const vec& arg);
-  /** #member */
-  vec& operator/=(const vec& arg);
-  /** #member ## */
-  vec& operator%=(const vec& arg);
-
-  /** #member */
-  vec& operator&=(const vec& arg);
-  /** #member */
-  vec& operator|=(const vec& arg);
-  /** #member */
-  vec& operator^=(const vec& arg);
-  /** #member */
-  vec& operator<<=(const vec& arg);
-  /** #member ## */
-  vec& operator>>=(const vec& arg);
-
   /** #member */
   vec<bool, N> operator&&(const T& arg) const;
+  /** #member */
+  vec<bool, N> operator||(const vec& arg) const;
   /** #member ## */
   vec<bool, N> operator||(const T& arg) const;
 
   /** #member */
+  vec<bool, N> operator==(const vec& arg) const;
+  /** #member */
   vec<bool, N> operator==(const T& arg) const;
+  /** #member */
+  vec<bool, N> operator!=(const vec& arg) const;
   /** #member */
   vec<bool, N> operator!=(const T& arg) const;
   /** #member */
+  vec<bool, N> operator>=(const vec& arg) const;
+  /** #member */
   vec<bool, N> operator>=(const T& arg) const;
+  /** #member */
+  vec<bool, N> operator<=(const vec& arg) const;
   /** #member */
   vec<bool, N> operator<=(const T& arg) const;
   /** #member */
+  vec<bool, N> operator>(const vec& arg) const;
+  /** #member */
   vec<bool, N> operator>(const T& arg) const;
+  /** #member */
+  vec<bool, N> operator<(const vec& arg) const;
   /** #member ## */
   vec<bool, N> operator<(const T& arg) const;
 
   /** #member */
+  vec operator+(const vec& arg) const;
+  /** #member */
   vec operator+(const T& arg) const;
+  /** #member */
+  vec operator-(const vec& arg) const;
   /** #member */
   vec operator-(const T& arg) const;
   /** #member */
+  vec operator*(const vec& arg) const;
+  /** #member */
   vec operator*(const T& arg) const;
   /** #member */
+  vec operator/(const vec& arg) const;
+  /** #member */
   vec operator/(const T& arg) const;
+  /** #member */
+  vec operator%(const vec& arg) const;
   /** #member ##*/
   vec operator%(const T& arg) const;
 
   /** #member */
+  vec operator&(const vec& arg) const;
+  /** #member */
   vec operator&(const T& arg) const;
+  /** #member */
+  vec operator|(const vec& arg) const;
   /** #member */
   vec operator|(const T& arg) const;
   /** #member */
+  vec operator^(const vec& arg) const;
+  /** #member */
   vec operator^(const T& arg) const;
   /** #member */
+  vec operator<<(const vec& arg) const;
+  /** #member */
   vec operator<<(const T& arg) const;
+  /** #member */
+  vec operator>>(const vec& arg) const;
   /** #member ## */
   vec operator>>(const T& arg) const;
 
   /** #member */
+  vec& operator+=(const vec& arg);
+  /** #member */
   vec& operator+=(const T& arg);
+  /** #member */
+  vec& operator-=(const vec& arg);
   /** #member */
   vec& operator-=(const T& arg);
   /** #member */
+  vec& operator*=(const vec& arg);
+  /** #member */
   vec& operator*=(const T& arg);
   /** #member */
+  vec& operator/=(const vec& arg);
+  /** #member */
   vec& operator/=(const T& arg);
+  /** #member */
+  vec& operator%=(const vec& arg);
   /** #member ## */
   vec& operator%=(const T& arg);
 
   /** #member */
+  vec& operator&=(const vec& arg);
+  /** #member */
   vec& operator&=(const T& arg);
+  /** #member */
+  vec& operator|=(const vec& arg);
   /** #member */
   vec& operator|=(const T& arg);
   /** #member */
+  vec& operator^=(const vec& arg);
+  /** #member */
   vec& operator^=(const T& arg);
   /** #member */
+  vec& operator<<=(const vec& arg);
+  /** #member */
   vec& operator<<=(const T& arg);
+  /** #member */
+  vec& operator>>=(const vec& arg);
   /** #member ## */
   vec& operator>>=(const T& arg);
 
@@ -196,84 +190,85 @@ public:
 /** #sumline ## */
 };
 
-/** #function */
+/** #toplevel */
 template<typename T, std::size_t N>
 vec<bool, N> operator&&(const T& t, const vec<T, N>& v);
-/** #function ## */
+/** #toplevel ## */
 template<typename T, std::size_t N>
 vec<bool, N> operator||(const T& t, const vec<T, N>& v);
 
-/** #function */
+/** #toplevel */
 template<typename T, std::size_t N>
 vec<bool, N> operator==(const T& t, const vec<T, N>& v);
-/** #function */
+/** #toplevel */
 template<typename T, std::size_t N>
 vec<bool, N> operator!=(const T& t, const vec<T, N>& v);
-/** #function */
+/** #toplevel */
 template<typename T, std::size_t N>
 vec<bool, N> operator>=(const T& t, const vec<T, N>& v);
-/** #function */
+/** #toplevel */
 template<typename T, std::size_t N>
 vec<bool, N> operator<=(const T& t, const vec<T, N>& v);
-/** #function */
+/** #toplevel */
 template<typename T, std::size_t N>
 vec<bool, N> operator>(const T& t, const vec<T, N>& v);
-/** #function ## */
+/** #toplevel ## */
 template<typename T, std::size_t N>
 vec<bool, N> operator<(const T& t, const vec<T, N>& v);
 
-/** #function */
+/** #toplevel */
 template<typename T, std::size_t N>
 vec<T, N> operator+(const T& t, const vec<T, N>& v);
-/** #function */
+/** #toplevel */
 template<typename T, std::size_t N>
 vec<T, N> operator-(const T& t, const vec<T, N>& v);
-/** #function */
+/** #toplevel */
 template<typename T, std::size_t N>
 vec<T, N> operator*(const T& t, const vec<T, N>& v);
-/** #function */
+/** #toplevel */
 template<typename T, std::size_t N>
 vec<T, N> operator/(const T& t, const vec<T, N>& v);
-/** #function ## */
+/** #toplevel ## */
 template<typename T, std::size_t N>
 vec<T, N> operator%(const T& t, const vec<T, N>& v);
 
-/** #function */
+/** #toplevel */
 template<typename T, std::size_t N>
 vec<T, N> operator&(const T& t, const vec<T, N>& v);
-/** #function */
+/** #toplevel */
 template<typename T, std::size_t N>
 vec<T, N> operator|(const T& t, const vec<T, N>& v);
-/** #function */
+/** #toplevel */
 template<typename T, std::size_t N>
 vec<T, N> operator^(const T& t, const vec<T, N>& v);
-/** #function */
+/** #toplevel */
 template<typename T, std::size_t N>
 vec<T, N> operator<<(const T& t, const vec<T, N>& v);
-/** #function ## */
+/** #toplevel ## */
 template<typename T, std::size_t N>
 vec<T, N> operator>>(const T& t, const vec<T, N>& v);
 
-/** #function */
+/** #toplevel */
 template<typename T, std::size_t N>
 vec<T, N> euclidean_div(const vec<T, N>& v, const vec<T, N>& u);
-/** #function */
-template<typename T, std::size_t N>
-vec<T, N> euclidean_mod(const vec<T, N>& v, const vec<T, N>& u);
-/** #function */
+/** #toplevel */
 template<typename T, std::size_t N>
 vec<T, N> euclidean_div(const vec<T, N>& v, const T& t);
-/** #function */
-template<typename T, std::size_t N>
-vec<T, N> euclidean_mod(const vec<T, N>& v, const T& t);
-/** #function */
+/** #toplevel ## */
 template<typename T, std::size_t N>
 vec<T, N> euclidean_div(const T& t, const vec<T, N>& v);
-/** #function ## */
+
+/** #toplevel */
+template<typename T, std::size_t N>
+vec<T, N> euclidean_mod(const vec<T, N>& v, const vec<T, N>& u);
+/** #toplevel */
+template<typename T, std::size_t N>
+vec<T, N> euclidean_mod(const vec<T, N>& v, const T& t);
+/** #toplevel ## */
 template<typename T, std::size_t N>
 vec<T, N> euclidean_mod(const T& t, const vec<T, N>& v);
 
-/** #function ## */
+/** #toplevel ## */
 template<typename T, std::size_t N>
 std::ostream& operator<<(std::ostream& stream, const vec<T, N>& v);
 

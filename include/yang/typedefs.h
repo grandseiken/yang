@@ -17,17 +17,17 @@ namespace internal {
   typedef void (*void_fp)();
 }
 
-/** #function */
+/** #toplevel */
 typedef int32_t int_t;
-/** #function */
+/** #toplevel */
 typedef uint32_t uint_t;
-/** #function ## */
+/** #toplevel ## */
 typedef double float_t;
 
-/** #function */
+/** #toplevel */
 inline int_t euclidean_div(int_t n, int_t d);
 
-/** #function ## */
+/** #toplevel ## */
 inline int_t euclidean_mod(int_t n, int_t d);
 
 inline int_t euclidean_div(int_t n, int_t d)

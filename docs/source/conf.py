@@ -264,8 +264,9 @@ texinfo_documents = [
 
 # -- Yang custom domain ---------------------------------------------------
 
-# TODO: search in document fulltext, somehow. Official sphinx manages this.
-# TODO: rewrite autodocumenter so that it's just generating the .rst files?
+# TODO: format index/search links for classes/members/etc as literal/monospace.
+# TODO: rewrite autodocumenter so that it's just generating the .rst files.
+# this should fix fulltext search snippets.
 import collections
 import re
 from docutils import nodes
@@ -326,7 +327,7 @@ def add_indices(name, node, index, type, env):
   if name_list:
     name += ' [%s]' % len(name_list)
   node['ids'].append(name)
-  index['entries'].append(('single', 'yang::' + name, name, ''))
+  index['entries'].append(('single', 'yang::' + name, name, None))
   name_list.append(
       {'name': name, 'docname': env.docname, 'type': type})
 
@@ -400,7 +401,7 @@ class YangMemberObject(YangObject):
   def parse_name(self, sig):
     return self.env.ref_context['yang:class'] + '::' + function_name(sig)
 
-class YangFunctionObject(YangObject):
+class YangTopLevelObject(YangObject):
   TYPE_NAME = 'top-level'
   def parse_name(self, sig):
     return function_name(sig)
@@ -414,7 +415,7 @@ class YangDomain(domains.Domain):
   label = 'a'
   directives = {
     'class': YangClassDirective,
-    'function': YangFunctionObject,
+    'toplevel': YangTopLevelObject,
     'member': YangMemberObject,
     'code': YangCodeDirective,
   }
@@ -518,8 +519,7 @@ class CppDocumenter(autodoc.Documenter):
     indent = ['']
     def substitute_syntax(string, keyword, end_re):
       def f():
-        # Automatically indent the rest of the documentation text for #function
-        # and #member.
+        # Automatically indent the rest of the documentation text for #member.
         if keyword == '#member':
           indent[0] += '  '
 
@@ -540,7 +540,7 @@ class CppDocumenter(autodoc.Documenter):
       replaced[0] = False
       line = substitute(line, '#class', class_header)
       line = substitute_syntax(line, '#member', CppDocumenter.END_FUNCTION_RE)
-      line = substitute_syntax(line, '#function', CppDocumenter.END_FUNCTION_RE)
+      line = substitute_syntax(line, '#toplevel', CppDocumenter.END_FUNCTION_RE)
 
       sumline = lambda: summary.append(rest[:rest.find('\n')])
       sumext = lambda: summary.extend(rest[:rest.find('/**')].split('\n'))

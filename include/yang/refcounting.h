@@ -226,14 +226,14 @@ private:
 };
 
 /**
- * #function
+ * #toplevel
  *
  * When the Yang library is compiled in debug mode, this function returns the
  * number of objects currently allocated by Yang.
  */
 std::size_t heap_objects_count();
 /**
- * #function ##
+ * #toplevel ##
  *
  * When the Yang library is compiled in debug mode, this function prints
  * information about each heap-allocated object, including parent pointers,

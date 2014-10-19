@@ -119,7 +119,7 @@ private:
 };
 
 /**
- * #function ##
+ * #toplevel ##
  *
  * Convenient template-deduction constructor function. Creates a
  * :yang:`Function` of the correct type from an unambiguous callable or

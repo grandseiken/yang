@@ -832,3 +832,7 @@ a.code-ref:hover {
   font-weight: bold;
   text-decoration: none;
 }
+
+span.highlighted {
+  background-color: #ff8000;
+}
