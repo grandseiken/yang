@@ -45,7 +45,7 @@ public:
   /**
    * #member ##
    *
-   * Return a string representation of the type in the given ``Context``.
+   * Return a string representation of the type in the given :yang:`Context`.
    */
   std::string string(const Context& context) const;
 
@@ -112,8 +112,8 @@ public:
   /**
    * #member
    *
-   * Constructs the ``Type`` object corresponding to the C++ type given as the
-   * template argument.
+   * Constructs the :yang:`Type` object corresponding to the C++ type given as
+   * the template argument.
    */
   template<typename>
   static Type of();

@@ -106,16 +106,16 @@ public:
   /**
    * #member
    *
-   * Dumps the contents of another ``yang::Context`` into a namespace inside
+   * Dumps the contents of another :yang:`Context` into a namespace inside
    * this one.
    */
   void register_namespace(const std::string& name, const Context& context);
   /**
    * #member ##
    *
-   * Adds a ``yang::Instance`` as a namespace inside this ``yang::Context``.
-   * Every ``yang::Program`` compiled against this ``yang::Context`` will share
-   * the state of the single given ``yang::Instance``.
+   * Adds a :yang:`Instance` as a namespace inside this :yang:`Context`.
+   * Every :yang:`Program` compiled against this :yang:`Context` will share
+   * the state of the single given :yang:`Instance`.
    */
   void register_namespace(const std::string& name, const Instance& instance);
 
@@ -133,7 +133,7 @@ public:
    * #member ##
    *
    * Add a user type. Note that the template argument should be ``T``, rather
-   * than ``T*`` or ``yang::Ref<T>``.
+   * than ``T*`` or :yang:`Ref\<T\> <Ref>`.
    */
   template<typename T>
   void register_type(const std::string& name, bool managed = false);

@@ -264,7 +264,7 @@ texinfo_documents = [
 
 # -- Yang custom domain ---------------------------------------------------
 
-# TODO: plaintext references.
+# TODO: search in document fulltext, somehow. Official sphinx manages this.
 # TODO: rewrite autodocumenter so that it's just generating the .rst files?
 import collections
 import re
@@ -272,6 +272,7 @@ from docutils import nodes
 from sphinx import addnodes
 from sphinx import directives
 from sphinx import domains
+from sphinx import roles
 from sphinx.util import compat
 
 OPERATOR = r'operator *(\(\)|[^(]+)'
@@ -404,9 +405,13 @@ class YangFunctionObject(YangObject):
   def parse_name(self, sig):
     return function_name(sig)
 
+class YangXrefRole(roles.XRefRole):
+  def process_link(self, env, refnode, has_explicit_title, title, target):
+    return title.split('::')[-1], target
+
 class YangDomain(domains.Domain):
   name = 'yang'
-  label = 'C++'
+  label = 'a'
   directives = {
     'class': YangClassDirective,
     'function': YangFunctionObject,
@@ -415,6 +420,9 @@ class YangDomain(domains.Domain):
   }
   initial_data = {
     'objects': {},
+  }
+  roles = {
+    'yang': YangXrefRole(),
   }
 
   def resolve_xref_info(self, name, info, from_docname, builder, cont_node):
@@ -437,20 +445,23 @@ class YangDomain(domains.Domain):
 
   def resolve_xref(self, env, from_docname, builder,
                    type, target, node, cont_node):
-    mtarget = node.attributes['yang_class'] + '::' + target
-    # Prefer member functions if in a member context.
-    if mtarget in self.data['objects']:
-      return self.resolve_xref_name(mtarget, from_docname, builder, cont_node)
+    """Automatically resolves pending xrefs in code."""
+    if 'yang_class' in node.attributes:
+      mtarget = node.attributes['yang_class'] + '::' + target
+      # Prefer member functions if in a member context.
+      if mtarget in self.data['objects']:
+        return self.resolve_xref_name(mtarget, from_docname, builder, cont_node)
     if target in self.data['objects']:
       return self.resolve_xref_name(target, from_docname, builder, cont_node)
     return None
 
   def get_objects(self):
+    """Provides objects for search index."""
     repeats = {}
     for info_list in self.data['objects'].values():
       for info in info_list:
         name = info['name']
-        yield 'yang::' + name, name, info['type'], info['docname'], 'anchor', 0
+        yield 'yang::' + name, name, info['type'], info['docname'], name, 0
 
 
 # -- Yang autodocumenter --------------------------------------------------

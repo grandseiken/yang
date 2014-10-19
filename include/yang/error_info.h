@@ -17,16 +17,17 @@ namespace yang {
  * Provides structured error and warning reporting.
  *
  * Each diagnostic is associated with two chunks of the source text. The first
- * (``node``) points to the exact node in the parse tree which caused the error;
- * the second (``tree``) points to the whole dependent subtree.
+ * (:yang:`ErrorInfo::node`) points to the exact node in the parse tree which
+ * caused the error; the second (:yang:`ErrorInfo::tree`) points to the entire
+ * dependent subtree.
  *
  * For example, a progam containing the expression ``(1.0 + 2 + 3)`` will report
- * an error about adding an ``int`` and a ``float``. The ``node`` of this error
- * will point at the first plus character and the ``tree`` will point at the
- * subtree ``1.0 + 2``.
+ * an error about adding an ``int`` and a ``float``. The :yang:`ErrorInfo::node`
+ * of this error will point at the first plus character and the
+ * :yang:`ErrorInfo::tree` will point at the subtree ``1.0 + 2``.
  *
- * The ``node`` is always contained inside the ``tree``, but they can be
- * identical.
+ * The :yang:`ErrorInfo::node` is always contained inside the
+ * :yang:`ErrorInfo::tree`, but they can be identical.
  */
 struct ErrorInfo {
   /**

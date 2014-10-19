@@ -41,11 +41,11 @@ public:
   /**
    * #member ##
    *
-   * This is convenient shorthand for a call to ``get_function`` followed by an
-   * invocation of the resulting ``yang::Function`` object with some arguments.
-   * The template argument ``R``, which must be supplied,  corresponds to the
-   * result type of the function called ``name``; ``Args...`` corresponds to its
-   * argument types.
+   * This is convenient shorthand for a call to :yang:`Instance::get_function`
+   * followed by an invocation of the resulting :yang:`Function` object with
+   * some arguments. The template argument ``R``, which must be supplied,
+   * corresponds to the result type of the function called ``name``;
+   * ``Args...`` corresponds to its argument types.
    *
    * For example, the following two approaches are equivalent::
    *
@@ -66,15 +66,17 @@ public:
   /**
    * #member
    *
-   * This convenience function is equivalent to calling ``get_functions()`` on
-   * the ``Program`` this ``Instance`` was compiled from.
+   * This convenience function is equivalent to calling
+   * :yang:`Program::get_functions` on the :yang:`Program` this :yang:`Instance`
+   * was compiled from.
    */
   const std::unordered_map<std::string, Type>& get_functions() const;
   /**
    * #member
    *
-   * This convenience function is equivalent to calling ``get_globals()`` on the
-   * ``Program`` this ``Instance`` was compiled from.
+   * This convenience function is equivalent to calling
+   * :yang:`Program::get_globals` on the :yang:`Program` this :yang:`Instance`
+   * was compiled from.
    */
   const std::unordered_map<std::string, Global>& get_globals() const;
 

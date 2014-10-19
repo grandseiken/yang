@@ -53,7 +53,7 @@ class Function {
 /**
  * #class
  *
- * ``yang::Function`` is the C++ equivalent of the Yang function types. It
+ * :yang:`Function` is the C++ equivalent of the Yang function types. It
  * provides an interface for manipulating functions defined in both C++ and Yang
  * in a language-agnostic way.
  *
@@ -61,9 +61,9 @@ class Function {
  * any ``std::function``, and also any function defined in Yang code (including
  * free functions, closures, member functions with bound object, and so on).
  *
- * In general, ``yang::Function`` objects targeting C++ functions can be
- * constructed directly, whereas ``yang::Function`` objects targeting Yang
- * functions must be retrieved from ``yang::Instance`` objects.
+ * In general, :yang:`Function` objects targeting C++ functions can be
+ * constructed directly, whereas :yang:`Function` objects targeting Yang
+ * functions must be retrieved from :yang:`Instance` objects.
  *
  * Invokable objects from either language can be passed back and forth, stored,
  * and called arbitrarily.
@@ -76,7 +76,7 @@ public:
   /**
    * #member
    *
-   * Converts an ``std::function`` into the equivalent ``yang::Function``.
+   * Converts an ``std::function`` into the equivalent :yang:`Function`.
    *
    * Invoking the constructed object is equivalent to invoking the original
    * ``std::function``. It can be transferred to Yang code anywhere a value of
@@ -85,12 +85,12 @@ public:
    * The ``std::function`` is copied into a reference-counted structure in
    * Yang's internal memory, to which this object holds a reference. Thus, once
    * the value is transferred to Yang code it is not dependent on the lifetime
-   * of either this ``yang::Function`` or the original ``std::function``
+   * of either this :yang:`Function` or the original ``std::function``
    * argument.
    *
    * However, the value (of course) depends on the lifetimes of any objects that
    * the original ``std::function`` depends on. For example, if a C++ lambda is
-   * converted to a ``yang::Function`` object, it is the user's responsibility
+   * converted to a :yang:`Function` object, it is the user's responsibility
    * to ensure any captured variables still exist when the function is
    * eventually invoked.
    */
@@ -99,7 +99,7 @@ public:
   /**
    * #member
    *
-   * Invokes the target of this ``yang::Function`` object, whether that is a C++
+   * Invokes the target of this :yang:`Function` object, whether that is a C++
    * or Yang function.
    */
   R operator()(const Args&... args) const;
@@ -122,7 +122,7 @@ private:
  * #function ##
  *
  * Convenient template-deduction constructor function. Creates a
- * ``yang::Function`` of the correct type from an unambiguous callable or
+ * :yang:`Function` of the correct type from an unambiguous callable or
  * lambda.
  */
 template<typename T>

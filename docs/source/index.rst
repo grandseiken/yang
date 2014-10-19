@@ -8,8 +8,8 @@ Core API:
    function
    global
    instance
-   refcounting
    program
+   refcounting
    typedefs
    type
    value

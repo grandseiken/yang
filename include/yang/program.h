@@ -30,7 +30,7 @@ public:
    *
    * For even finer-grained control, the error data structures can be accessed
    * for raw error message strings and detailed information about the position
-   * of errors in the source text. See ``ErrorInfo`` for more information.
+   * of errors in the source text. See :yang:`ErrorInfo` for more information.
    */
   Program(const Context& context, const std::string& name,
           const std::string& contents, bool optimise = true,
@@ -42,7 +42,8 @@ public:
   /**
    * #member ##
    *
-   * Returns the ``name`` parameter given to this ``Program`` on construction.
+   * Returns the ``name`` parameter given to this :yang:`Program` on
+   * construction.
    */
   const std::string& get_name() const;
 
@@ -50,8 +51,8 @@ public:
    * #member ##
    *
    * Returns ``true`` if the contents parsed and checked successfully (i.e. if
-   * ``get_errors().size() == 0``). Otherwise, none of the following functions
-   * will do anything useful.
+   * :yang:`get_errors().size() == 0 <Program::get_errors>`). Otherwise, none
+   * of the following functions will do anything useful.
    */
   bool success() const;
   /** #member */
