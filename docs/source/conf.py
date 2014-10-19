@@ -264,7 +264,8 @@ texinfo_documents = [
 
 # -- Yang custom domain ---------------------------------------------------
 
-# TODO: handle links/search of objects with the same name.
+# TODO: plaintext references.
+# TODO: rewrite autodocumenter so that it's just generating the .rst files?
 import collections
 import re
 from docutils import nodes
@@ -315,27 +316,35 @@ class YangCodeDirective(compat.Directive):
     self.add_name(node)
     return [node]
 
+def add_indices(name, node, index, type, env):
+  objects = env.domaindata['yang']['objects']
+  if name not in objects:
+    objects[name] = []
+  name_list = objects[name]
+
+  if name_list:
+    name += ' [%s]' % len(name_list)
+  node['ids'].append(name)
+  index['entries'].append(('single', 'yang::' + name, name, ''))
+  name_list.append(
+      {'name': name, 'docname': env.docname, 'type': type})
+
 class YangClassDirective(compat.Directive):
   required_arguments = 1
 
   def run(self):
     env = self.state.document.settings.env
-    self.name = self.arguments[0]
-    env.ref_context['yang:class'] = self.name
-    name = 'yang::' + self.name
+    name = self.arguments[0]
+    env.ref_context['yang:class'] = name
 
     title = nodes.title()
-    title += nodes.literal(text=name)
+    title += nodes.literal(text='yang::' + name)
 
     section = nodes.section()
     section += title
-    section['ids'].append(self.name)
 
     index = addnodes.index(entries=[])
-    index['entries'].append(('single', name, self.name, ''))
-    env.domaindata['yang']['objects'][self.name] = {
-        'docname': env.docname, 'type': 'class'}
-        
+    add_indices(name, section, index, 'class', env)
     return [index, section]
 
 class YangObject(directives.ObjectDescription):
@@ -344,10 +353,7 @@ class YangObject(directives.ObjectDescription):
   TYPE_NAME = 'object'
 
   def add_target_and_index(self, name, sig, signode):
-    signode['ids'].append(name)
-    self.indexnode['entries'].append(('single', 'yang::' + name, name, ''))
-    self.env.domaindata['yang']['objects'][name] = {
-        'docname': self.env.docname, 'type': self.TYPE_NAME}
+    add_indices(name, signode, self.indexnode, self.TYPE_NAME, self.env)
 
   def handle_signature(self, sig, signode):
     lines = [line for line in sig.split('\\n') if line.strip()]
@@ -411,18 +417,28 @@ class YangDomain(domains.Domain):
     'objects': {},
   }
 
-  def resolve_xref_name(self, name, from_docname, builder, cont_node):
-    to_docname = self.data['objects'][name]['docname']
+  def resolve_xref_info(self, name, info, from_docname, builder, cont_node):
+    to_docname = info['docname']
     node = nodes.reference('', '', internal=True)
     rel_uri = builder.get_relative_uri(from_docname, to_docname)
-    node['refuri'] = rel_uri + '#' + name
+    node['refuri'] = rel_uri + '#' + info['name']
     node['reftitle'] = name
     node.append(cont_node)
     return node
 
+  def resolve_xref_name(self, name, from_docname, builder, cont_node):
+    for info in self.data['objects'][name]:
+      # Prefer links to the same document where there are multiple names.
+      if info['docname'] == from_docname:
+        return self.resolve_xref_info(
+            name, info, from_docname, builder, cont_node)
+    return self.resolve_xref_info(
+        name, self.data['objects'][name][0], from_docname, builder, cont_node)
+
   def resolve_xref(self, env, from_docname, builder,
                    type, target, node, cont_node):
     mtarget = node.attributes['yang_class'] + '::' + target
+    # Prefer member functions if in a member context.
     if mtarget in self.data['objects']:
       return self.resolve_xref_name(mtarget, from_docname, builder, cont_node)
     if target in self.data['objects']:
@@ -431,8 +447,10 @@ class YangDomain(domains.Domain):
 
   def get_objects(self):
     repeats = {}
-    for name, info in self.data['objects'].iteritems():
-      yield 'yang::' + name, name, info['type'], info['docname'], 'anchor', 0
+    for info_list in self.data['objects'].values():
+      for info in info_list:
+        name = info['name']
+        yield 'yang::' + name, name, info['type'], info['docname'], 'anchor', 0
 
 
 # -- Yang autodocumenter --------------------------------------------------
