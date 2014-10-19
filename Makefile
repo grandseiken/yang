@@ -48,6 +48,7 @@ SOURCE=./src
 TESTS=./tests
 GEN=./gen
 DOCS=./docs
+DOCGEN=$(DOCS)/source/api
 LIB=$(LIBDIR)/libyang.a
 YANGC_BINARY=$(OUTDIR)/tools/yangc
 TESTS_BINARY=$(OUTDIR)/tests/tests
@@ -83,11 +84,13 @@ Y_OUTPUTS=$(subst $(SOURCE)/,$(GEN)/,$(Y_FILES:.y=.y.cc))
 
 H_FILES=\
 	$(wildcard $(SOURCE)/*.h) \
-	$(wildcard $(INCLUDE)/*/*.h) $(wildcard $(TESTS)/*.h)
+	$(wildcard $(INCLUDE)/yang/*.h) $(wildcard $(TESTS)/*.h)
 CPP_FILES=$(wildcard $(SOURCE)/*.cpp)
 SOURCE_FILES=$(CPP_FILES) $(L_OUTPUTS) $(Y_OUTPUTS)
 OBJECT_FILES=$(addprefix $(OUTDIR)/,$(addsuffix .o,$(SOURCE_FILES)))
 INCLUDE_FILES=$(wildcard $(INCLUDE)/*/*.h)
+AUTODOC_FILES=\
+	$(subst $(INCLUDE)/yang/,$(DOCGEN)/,$(INCLUDE_FILES:.h=.rst))
 
 TOOL_CPP_FILES=$(wildcard $(SOURCE)/tools/*.cpp)
 TEST_CPP_FILES=$(wildcard $(TESTS)/*.cpp)
@@ -97,12 +100,14 @@ DEP_FILES=\
 	$(addprefix $(OUTDIR)/,$(addsuffix .deps,\
 	$(SOURCE_FILES) $(TOOL_CPP_FILES) $(TEST_CPP_FILES)))
 
+AUTODOC=$(DOCS)/source/autodoc.py
 DOC_FILES=\
 	$(DOCS)/source/conf.py \
 	$(DOCS)/source/yang/theme.conf \
 	$(DOCS)/source/yang/static/yang.css \
 	$(wildcard $(DOCS)/source/*.rst)
-MISC_FILES=Makefile README.md LICENSE .gitignore
+MISC_FILES=\
+	$(AUTODOC) Makefile README.md LICENSE .gitignore
 ALL_FILES=\
 	$(CPP_FILES) $(TOOL_CPP_FILES) $(TEST_CPP_FILES) \
 	$(H_FILES) $(L_FILES) $(Y_FILES) $(MISC_FILES) $(DOC_FILES)
@@ -140,7 +145,7 @@ clean:
 	rm -rf $(OUTDIR)
 	rm -rf $(GEN)
 	rm -rf $(LLVM_LIB_DIR)/*.o
-	rm -rf $(DOCS)/doctrees $(DOCS)/html
+	rm -rf $(DOCGEN) $(DOCS)/html
 
 # Dependency generation. Each source file generates a corresponding .deps file
 # (a Makefile containing a .build target), which is then included. Inclusion
@@ -244,6 +249,11 @@ $(TESTS_BINARY): \
 	$(TESTS_BINARY)
 	touch ./$@
 
+# Documentation generation.
+$(DOCGEN)/%.rst: \
+	$(INCLUDE)/yang/%.h $(AUTODOC) $(DOCGEN)/.mkdir
+	$(PYTHON) $(AUTODOC) $< $@
+
 # Documentation.
 SPHINX_BUILD=\
 	PYTHONPATH=$${PWD}/$(DEPEND_DIR)/$(PYTHON_INSTALL_DIR) \
@@ -251,7 +261,7 @@ SPHINX_BUILD=\
 SPHINX_BUILD_OPTS=\
 	-a -E $(DOCS)/source
 $(DOCS)/html/index.html: \
-	$(DEPEND_DIR)/sphinx.build $(DOC_FILES) $(INCLUDE_FILES) \
+	$(DEPEND_DIR)/sphinx.build $(DOC_FILES) $(AUTODOC_FILES) \
 	$(DEPEND_DIR)/pygments.build
 	$(SPHINX_BUILD) -b html $(SPHINX_BUILD_OPTS) $(DOCS)/html
 

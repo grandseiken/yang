@@ -265,8 +265,6 @@ texinfo_documents = [
 # -- Yang custom domain ---------------------------------------------------
 
 # TODO: format index/search links for classes/members/etc as literal/monospace.
-# TODO: rewrite autodocumenter so that it's just generating the .rst files.
-# this should fix fulltext search snippets.
 import collections
 import re
 from docutils import nodes
@@ -465,129 +463,6 @@ class YangDomain(domains.Domain):
         yield 'yang::' + name, name, info['type'], info['docname'], name, 0
 
 
-# -- Yang autodocumenter --------------------------------------------------
-
-from sphinx.ext import autodoc
-
-class CppDocumenter(autodoc.Documenter):
-  objtype = 'cpp'
-  titles_allowed = True
-
-  DOC_REGEX = re.compile(r'/\*\*(([^*]|\*[^/])*)\*/')
-  DOC_LINE_PREFIX_REGEX = re.compile(r'(\s*\*)')
-  END_FUNCTION_RE = re.compile(r';|{}')
-  CLASS_RE = re.compile(r'(class|struct)\s+(\w+)')
-
-  def write(self, text):
-    self.add_line(text, '<autocpp>')
-
-  def preprocess(self, text):
-    output = []
-    for line in text.split('\n'):
-      # Strip trailing whitespace.
-      t = line.rstrip()
-      # Strip the typical Javadoc-style line prefixes.
-      match = CppDocumenter.DOC_LINE_PREFIX_REGEX.match(t)
-      if match:
-        t = t[len(match.group(0)):]
-      # Strip first space.
-      if len(t) and t[0] == ' ':
-        t = t[1:]
-      output.append(t)
-
-    # Strip empty lines from beginning and end.
-    first = 0
-    while first < len(output) and not output[first]:
-      first += 1
-    last = len(output) - 1
-    while last >= 0 and not output[last]:
-      last -= 1
-    if first > last:
-      return None
-    return output[first:1 + last]
-
-  def handle(self, lines, rest, preamble, summary, output):
-    rest = rest[1 + rest.find('\n'):]
-
-    replaced = [False]
-    def substitute(string, keyword, function):
-      while string.find(keyword) >= 0:
-        string = string.replace(keyword, function() or '', 1)
-        replaced[0] = True
-      return string
-
-    indent = ['']
-    def substitute_syntax(string, keyword, end_re):
-      def f():
-        # Automatically indent the rest of the documentation text for #member.
-        if keyword == '#member':
-          indent[0] += '  '
-
-        match = end_re.search(rest)
-        syntax = rest[:match.end()]
-        summary.extend(syntax.split('\n'))
-        syntax = syntax[:-(match.end() - match.start())].rstrip()
-        processed = '\\\\n' + syntax.replace('\n', '\\\\n')
-        return '\n\n========\n\n.. ' + keyword[1:] + ':: ' + processed
-      return substitute(string, keyword, f)
-
-    def class_header():
-      preamble.append(
-          '.. class:: ' + CppDocumenter.CLASS_RE.search(rest).group(2))
-      summary.extend(rest[:1 + rest.find('{')].split('\n'))
-
-    for line in lines:
-      replaced[0] = False
-      line = substitute(line, '#class', class_header)
-      line = substitute_syntax(line, '#member', CppDocumenter.END_FUNCTION_RE)
-      line = substitute_syntax(line, '#toplevel', CppDocumenter.END_FUNCTION_RE)
-
-      sumline = lambda: summary.append(rest[:rest.find('\n')])
-      sumext = lambda: summary.extend(rest[:rest.find('/**')].split('\n'))
-      line = substitute(line, '#sumline', sumline)
-      line = substitute(line, '#summary', sumext)
-      line = substitute(line, '##', lambda: summary.append(''))
-      # Only auto-indent if there wasn't a command in it.
-      if replaced[0]:
-        output.extend(line.split('\n'))
-      else:
-        output.extend(indent[0] + t for t in line.split('\n'))
-
-  def generate(self, more_content=None, real_modname=None,
-               check_module=False, all_members=False):
-    with open(self.name) as f:
-      text = f.read()
-
-    preamble = []
-    summary = []
-    output = []
-
-    first = True
-    match = CppDocumenter.DOC_REGEX.search(text)
-    while match:
-      doc = self.preprocess(match.group(1))
-
-      if doc:
-        # Add a blank line between each section of doc comments.
-        if not first:
-          output.append('')
-        first = False
-        self.handle(doc, text[match.end():], preamble, summary, output)
-
-      match = CppDocumenter.DOC_REGEX.search(text, match.end())
-
-    for line in preamble:
-      self.write(line)
-    self.write('')
-    self.write('.. code::')
-    self.write('')
-    for line in summary:
-      self.write('  ' + line)
-    self.write('')
-    for line in output:
-      self.write(line)
-
-
 # -- Override ridiculous formatting ---------------------------------------
 
 from docutils import nodes
@@ -730,7 +605,5 @@ _mapping.LEXERS['YangCppLexer'] = (
     'conf', YangCppLexer.name, tuple(YangCppLexer.aliases),
     tuple(YangCppLexer.filenames), tuple(YangCppLexer.mimetypes))
 
-import traceback
 def setup(app):
   app.add_domain(YangDomain)
-  app.add_autodocumenter(CppDocumenter)

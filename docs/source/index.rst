@@ -4,23 +4,23 @@
 Core API:
 
 .. toctree::
-   context
-   function
-   global
-   instance
-   program
-   refcounting
-   typedefs
-   type
-   value
-   vec
+   api/context
+   api/function
+   api/global
+   api/instance
+   api/program
+   api/refcounting
+   api/typedefs
+   api/type
+   api/value
+   api/vec
 
 Error-reporting:
 
 .. toctree::
-   error_info
-   error_position_info
-   runtime_error
+   api/error_info
+   api/error_position_info
+   api/runtime_error
 
 Special pages:
 

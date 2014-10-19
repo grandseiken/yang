@@ -4,6 +4,12 @@
 //============================================================================//
 #ifndef YANG_INCLUDE_YANG_TYPEDEFS_H
 #define YANG_INCLUDE_YANG_TYPEDEFS_H
+/**
+ * #preamble
+ *
+ * ``typedef``\s
+ * =============
+ */
 
 #include <cmath>
 #include <cstdint>
