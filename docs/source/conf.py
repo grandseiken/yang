@@ -635,9 +635,10 @@ def combine_links(links, highlighted):
       if not tag:
         if index == start and start_index < 0:
           start_index = raw_index
-        if index == end:
-          end_index = raw_index
-          break
+      if index == end:
+        end_index = raw_index
+        break
+      if not tag:
         index += 1
 
       raw_index += 1
