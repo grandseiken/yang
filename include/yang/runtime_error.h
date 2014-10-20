@@ -14,7 +14,7 @@ namespace yang {
  * #class
  *
  * All exceptions thrown by the Yang library are instances of the
- * :yang:`runtime_error` class.
+ * `runtime_error` class.
  *
  * In general, these errors are thrown when the library usage depends upon some
  * property of runtime-compiled Yang code which turns out not to hold -- for
