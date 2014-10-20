@@ -189,7 +189,7 @@ latex_documents = [
 
 # -- Yang custom domain ---------------------------------------------------
 
-# TODO: format index/search links for classes/members/etc as literal/monospace.
+# TODO: make links copyable by encoding url names.
 import collections
 import re
 from docutils import nodes
@@ -202,6 +202,8 @@ from sphinx.util import compat
 OPERATOR = r'operator *(\(\)|[^(]+)'
 IDENTIFIER_RE = re.compile(OPERATOR + r'|(\w+::)*\w+')
 AFTER_NAME_RE = re.compile(r'\s*(\(|$|;|\[)')
+CODE_LINK_TEMPLATE = (
+    '<code class="docutils literal"><span class="pre">%s</pre></code>')
 
 def make_source_literal(env, text, all_indented):
   literal = nodes.literal_block()
@@ -250,7 +252,15 @@ def add_indices(name, node, index, type, env):
   if name_list:
     name += ' [%s]' % len(name_list)
   node['ids'].append(name)
-  index['entries'].append(('single', 'yang::' + name, name, None))
+
+  # Correctly format both halfs of the name as monospace, leaving out the
+  # suffix (if any).
+  parts = ('yang::' + name.replace('::', ';::')).split(' ')
+  text = ';'.join(CODE_LINK_TEMPLATE % s for s in parts[0].split(';'))
+  if len(parts) > 1:
+    text += ' ' + ' '.join(parts[1:])
+
+  index['entries'].append(('single', text, name, None))
   name_list.append(
       {'name': name, 'docname': env.docname, 'type': type})
 
@@ -385,7 +395,8 @@ class YangDomain(domains.Domain):
     for info_list in self.data['objects'].values():
       for info in info_list:
         name = info['name']
-        yield 'yang::' + name, name, info['type'], info['docname'], name, 0
+        yield (CODE_LINK_TEMPLATE % ('yang::' + name), name,
+               info['type'], info['docname'], name, 0)
 
 
 # -- Override ridiculous formatting ---------------------------------------
@@ -518,8 +529,8 @@ class YangCppLexer(compiled.CFamilyLexer):
 
 # -- Set up all the extra functionality  ----------------------------------
 
-import sys
 import os
+import sys
 from pygments.lexers import _mapping
 
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))

@@ -1,5 +1,16 @@
-# -- Yang autodocumenter --------------------------------------------------
+"""
+Generates RST files for use with Sphinx directly from the Yang include files.
 
+Note that this system is, to some extent, a complete hack. It doesn't really
+know anything about C++ source code, doesn't properly lex it or parse it, and
+unusual arrangements of source code will probably break it.
+
+It depends heavily on the constrained layout of the Yang header files. It
+requires a fair amount of manual book-keeping. It certainly isn't intended to
+be a general-purpose documentation system.
+
+However, it does produce more useful output than, say, Doxygen.
+"""
 import re
 import sys
 

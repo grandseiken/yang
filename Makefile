@@ -135,7 +135,7 @@ add:
 	git add $(ALL_FILES)
 .PHONY: todo
 todo:
-	@grep --color -n "T[O]D[O]" $(ALL_FILES)
+	@grep --color -n "\bT[O]D[O]\b" $(ALL_FILES)
 .PHONY: wc
 wc:
 	wc $(ALL_FILES)
