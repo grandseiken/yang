@@ -103,9 +103,9 @@ DEP_FILES=\
 AUTODOC=$(DOCS)/source/autodoc.py
 DOC_FILES=\
 	$(DOCS)/source/conf.py \
-	$(DOCS)/source/yang/theme.conf \
-	$(DOCS)/source/yang/static/yang.css \
-	$(wildcard $(DOCS)/source/*.rst)
+	$(wildcard $(DOCS)/source/*.rst) \
+	$(wildcard $(DOCS)/source/yang/*) \
+	$(wildcard $(DOCS)/source/yang/*/*)
 MISC_FILES=\
 	$(AUTODOC) Makefile README.md LICENSE .gitignore
 ALL_FILES=\

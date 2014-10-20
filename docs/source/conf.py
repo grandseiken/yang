@@ -189,9 +189,9 @@ latex_documents = [
 
 # -- Yang custom domain ---------------------------------------------------
 
-# TODO: make links copyable by encoding url names.
 import collections
 import re
+import urllib
 from docutils import nodes
 from sphinx import addnodes
 from sphinx import directives
@@ -243,6 +243,17 @@ class YangCodeDirective(compat.Directive):
     self.add_name(node)
     return [node]
 
+def format_index_title(text, for_search=False):
+  # Correctly format both halves of the name as monospace, leaving out the
+  # suffix (if any).
+  if not for_search:
+    text = text.replace('::', ';::')
+  parts = ('yang::' + text).split(' ')
+  text = ';'.join(CODE_LINK_TEMPLATE % s for s in parts[0].split(';'))
+  if len(parts) > 1:
+    text += ' ' + ' '.join(parts[1:])
+  return text
+
 def add_indices(name, node, index, type, env):
   objects = env.domaindata['yang']['objects']
   if name not in objects:
@@ -253,14 +264,8 @@ def add_indices(name, node, index, type, env):
     name += ' [%s]' % len(name_list)
   node['ids'].append(name)
 
-  # Correctly format both halfs of the name as monospace, leaving out the
-  # suffix (if any).
-  parts = ('yang::' + name.replace('::', ';::')).split(' ')
-  text = ';'.join(CODE_LINK_TEMPLATE % s for s in parts[0].split(';'))
-  if len(parts) > 1:
-    text += ' ' + ' '.join(parts[1:])
-
-  index['entries'].append(('single', text, name, None))
+  index['entries'].append(
+      ('single', format_index_title(name), urllib.quote(name), None))
   name_list.append(
       {'name': name, 'docname': env.docname, 'type': type})
 
@@ -363,7 +368,7 @@ class YangDomain(domains.Domain):
     to_docname = info['docname']
     node = nodes.reference('', '', internal=True)
     rel_uri = builder.get_relative_uri(from_docname, to_docname)
-    node['refuri'] = rel_uri + '#' + info['name']
+    node['refuri'] = rel_uri + '#' + urllib.quote(info['name'])
     node['reftitle'] = name
     node.append(cont_node)
     return node
@@ -395,8 +400,8 @@ class YangDomain(domains.Domain):
     for info_list in self.data['objects'].values():
       for info in info_list:
         name = info['name']
-        yield (CODE_LINK_TEMPLATE % ('yang::' + name), name,
-               info['type'], info['docname'], name, 0)
+        yield (format_index_title(name, for_search=True), name,
+               info['type'], info['docname'], urllib.quote(name), 0)
 
 
 # -- Override ridiculous formatting ---------------------------------------
