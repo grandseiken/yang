@@ -155,20 +155,18 @@ void IrGenerator::before(const Node& node)
 {
   std::function<Value(const result_list&)> result_macro;
 #define RESULT [=,&node](const result_list& results) -> Value
-#define RESULT_FOR_ANY(condition) if (condition) result_macro = RESULT
-#define RESULT_FOR(node_type) RESULT_FOR_ANY(node.type == Node::node_type)
-#define CONSTANT [=,&node](const result_list&) -> Value
-#define CONSTANT_FOR_ANY(condition) if (condition) result_macro = CONSTANT
-#define CONSTANT_FOR(node_type) CONSTANT_FOR_ANY(node.type == Node::node_type)
+#define LEAF [=,&node](const result_list&) -> Value
+#define FOR_ANY(condition) if (condition) result_macro =
+#define FOR(node_type) FOR_ANY(node.type == Node::node_type)
 
-  CONSTANT_FOR(TYPE_VOID) {return Type::void_t();};
-  CONSTANT_FOR(TYPE_INT) {return node.int_value > 1 ?
+  FOR(TYPE_VOID) LEAF {return Type::void_t();};
+  FOR(TYPE_INT) LEAF {return node.int_value > 1 ?
       Type::ivec_t(node.int_value) : Type::int_t();};
-  CONSTANT_FOR(TYPE_FLOAT) {return node.int_value > 1 ?
+  FOR(TYPE_FLOAT) LEAF {return node.int_value > 1 ?
       Type::fvec_t(node.int_value) : Type::float_t();};
-  RESULT_FOR(NAMED_EXPRESSION) {return results[0];};
-  RESULT_FOR(EXPR_STMT) {return results[0];};
-  RESULT_FOR(RETURN_STMT) {
+  FOR(NAMED_EXPRESSION) RESULT {return results[0];};
+  FOR(EXPR_STMT) RESULT {return results[0];};
+  FOR(RETURN_STMT) RESULT {
     auto dead_block = _scopes.back().create_block("dead");
     if (node.children.empty()) {
       _scopes.back().dereference_scoped_locals(0);
@@ -182,27 +180,27 @@ void IrGenerator::before(const Node& node)
     _b.b.SetInsertPoint(dead_block);
     return v;
   };
-  RESULT_FOR_ANY(node.type == Node::ASSIGN ||
-                 node.type == Node::ASSIGN_LOGICAL_OR ||
-                 node.type == Node::ASSIGN_LOGICAL_AND ||
-                 node.type == Node::ASSIGN_BITWISE_OR ||
-                 node.type == Node::ASSIGN_BITWISE_AND ||
-                 node.type == Node::ASSIGN_BITWISE_XOR ||
-                 node.type == Node::ASSIGN_BITWISE_LSHIFT ||
-                 node.type == Node::ASSIGN_BITWISE_RSHIFT ||
-                 node.type == Node::ASSIGN_POW ||
-                 node.type == Node::ASSIGN_MOD ||
-                 node.type == Node::ASSIGN_ADD ||
-                 node.type == Node::ASSIGN_SUB ||
-                 node.type == Node::ASSIGN_MUL ||
-                 node.type == Node::ASSIGN_DIV) {
+  FOR_ANY(node.type == Node::ASSIGN ||
+          node.type == Node::ASSIGN_LOGICAL_OR ||
+          node.type == Node::ASSIGN_LOGICAL_AND ||
+          node.type == Node::ASSIGN_BITWISE_OR ||
+          node.type == Node::ASSIGN_BITWISE_AND ||
+          node.type == Node::ASSIGN_BITWISE_XOR ||
+          node.type == Node::ASSIGN_BITWISE_LSHIFT ||
+          node.type == Node::ASSIGN_BITWISE_RSHIFT ||
+          node.type == Node::ASSIGN_POW ||
+          node.type == Node::ASSIGN_MOD ||
+          node.type == Node::ASSIGN_ADD ||
+          node.type == Node::ASSIGN_SUB ||
+          node.type == Node::ASSIGN_MUL ||
+          node.type == Node::ASSIGN_DIV) RESULT {
     Value v = node.type == Node::ASSIGN ?
         load(results[1]) : binary(node, load(results[0]), load(results[1]));
     _scopes.back().memory_store(v, results[0]);
     return results[0];
   };
-  CONSTANT_FOR_ANY(node.type == Node::BREAK_STMT ||
-                   node.type == Node::CONTINUE_STMT) {
+  FOR_ANY(node.type == Node::BREAK_STMT ||
+          node.type == Node::CONTINUE_STMT) LEAF {
     _scopes.back().dereference_loop_locals();
     auto dead_block = _scopes.back().create_block("dead");
     _b.b.CreateBr(_scopes.back().get_block(
@@ -211,7 +209,7 @@ void IrGenerator::before(const Node& node)
     _b.b.SetInsertPoint(dead_block);
     return {};
   };
-  RESULT_FOR(MEMBER_SELECTION) {
+  FOR(MEMBER_SELECTION) RESULT {
     llvm::Value* env = nullptr;
     // Don't need to allocate anything for managed user-types: we already
     // have a chunk.
@@ -230,7 +228,7 @@ void IrGenerator::before(const Node& node)
     _scopes.back().refcount_init(v);
     return v;
   };
-  CONSTANT_FOR(IDENTIFIER) {
+  FOR(IDENTIFIER) LEAF {
     // In type-context, we just want to return a user type.
     if (_scopes.back().metadata.has(LexScope::TYPE_EXPR_CONTEXT)) {
       return _program_internals.context->type_lookup(node.string_value);
@@ -260,10 +258,10 @@ void IrGenerator::before(const Node& node)
     // left of a variable declaration.
     return Value();
   };
-  CONSTANT_FOR(EMPTY_EXPR) {return _b.constant_int(1);};
-  CONSTANT_FOR(INT_LITERAL) {return _b.constant_int(node.int_value);};
-  CONSTANT_FOR(FLOAT_LITERAL) {return _b.constant_float(node.float_value);};
-  CONSTANT_FOR(STRING_LITERAL) {
+  FOR(EMPTY_EXPR) LEAF {return _b.constant_int(1);};
+  FOR(INT_LITERAL) LEAF {return _b.constant_int(node.int_value);};
+  FOR(FLOAT_LITERAL) LEAF {return _b.constant_float(node.float_value);};
+  FOR(STRING_LITERAL) LEAF {
     StaticString* s = nullptr;
     auto it = _string_literals.find(node.string_value);
     if (it == _string_literals.end()) {
@@ -284,67 +282,67 @@ void IrGenerator::before(const Node& node)
   };
   // Most binary operators map directly to (vectorisations of) LLVM IR
   // instructions.
-  RESULT_FOR_ANY(node.type == Node::BITWISE_OR ||
-                 node.type == Node::BITWISE_AND ||
-                 node.type == Node::BITWISE_XOR ||
-                 node.type == Node::BITWISE_LSHIFT ||
-                 node.type == Node::BITWISE_RSHIFT ||
-                 node.type == Node::POW || node.type == Node::MOD ||
-                 node.type == Node::ADD || node.type == Node::SUB ||
-                 node.type == Node::MUL || node.type == Node::DIV) {
+  FOR_ANY(node.type == Node::BITWISE_OR ||
+          node.type == Node::BITWISE_AND ||
+          node.type == Node::BITWISE_XOR ||
+          node.type == Node::BITWISE_LSHIFT ||
+          node.type == Node::BITWISE_RSHIFT ||
+          node.type == Node::POW || node.type == Node::MOD ||
+          node.type == Node::ADD || node.type == Node::SUB ||
+          node.type == Node::MUL || node.type == Node::DIV) RESULT {
     return binary(node, load(results[0]), load(results[1]));
   };
-  RESULT_FOR_ANY(node.type == Node::EQ || node.type == Node::NE ||
-                 node.type == Node::GE || node.type == Node::LE ||
-                 node.type == Node::GT || node.type == Node::LT) {
+  FOR_ANY(node.type == Node::EQ || node.type == Node::NE ||
+          node.type == Node::GE || node.type == Node::LE ||
+          node.type == Node::GT || node.type == Node::LT) RESULT {
     return b2i(binary(node, load(results[0]), load(results[1])));
   };
-  RESULT_FOR_ANY(node.type == Node::FOLD_LOGICAL_OR ||
-                 node.type == Node::FOLD_LOGICAL_AND) {
+  FOR_ANY(node.type == Node::FOLD_LOGICAL_OR ||
+          node.type == Node::FOLD_LOGICAL_AND) RESULT {
     return b2i(fold(node, load(results[0]), true));
   };
-  RESULT_FOR_ANY(node.type == Node::FOLD_BITWISE_OR ||
-                 node.type == Node::FOLD_BITWISE_OR ||
-                 node.type == Node::FOLD_BITWISE_AND ||
-                 node.type == Node::FOLD_BITWISE_XOR ||
-                 node.type == Node::FOLD_BITWISE_LSHIFT ||
-                 node.type == Node::FOLD_BITWISE_RSHIFT) {
+  FOR_ANY(node.type == Node::FOLD_BITWISE_OR ||
+          node.type == Node::FOLD_BITWISE_OR ||
+          node.type == Node::FOLD_BITWISE_AND ||
+          node.type == Node::FOLD_BITWISE_XOR ||
+          node.type == Node::FOLD_BITWISE_LSHIFT ||
+          node.type == Node::FOLD_BITWISE_RSHIFT) RESULT {
     return fold(node, load(results[0]));
   };
-  RESULT_FOR(FOLD_POW) {
+  FOR(FOLD_POW) RESULT {
     // POW is the only right-associative fold operator.
     return fold(node, load(results[0]), false, false, true);
   };
-  RESULT_FOR_ANY(node.type == Node::FOLD_MOD ||
-                 node.type == Node::FOLD_ADD || node.type == Node::FOLD_SUB ||
-                 node.type == Node::FOLD_MUL || node.type == Node::FOLD_DIV) {
+  FOR_ANY(node.type == Node::FOLD_MOD ||
+          node.type == Node::FOLD_ADD || node.type == Node::FOLD_SUB ||
+          node.type == Node::FOLD_MUL || node.type == Node::FOLD_DIV) RESULT {
     return fold(node, load(results[0]));
   };
-  RESULT_FOR_ANY(node.type == Node::FOLD_EQ || node.type == Node::FOLD_NE ||
-                 node.type == Node::FOLD_GE || node.type == Node::FOLD_LE ||
-                 node.type == Node::FOLD_GT || node.type == Node::FOLD_LT) {
+  FOR_ANY(node.type == Node::FOLD_EQ || node.type == Node::FOLD_NE ||
+          node.type == Node::FOLD_GE || node.type == Node::FOLD_LE ||
+          node.type == Node::FOLD_GT || node.type == Node::FOLD_LT) RESULT {
     return b2i(fold(node, load(results[0]), false, true));
   };
-  RESULT_FOR(LOGICAL_NEGATION) {
+  FOR(LOGICAL_NEGATION) RESULT {
     Value v = _b.default_for_type(results[0].type);
     v.irval = _b.b.CreateICmpEQ(load(results[0]), v);
     return b2i(v);
   };
-  RESULT_FOR(BITWISE_NEGATION) {
+  FOR(BITWISE_NEGATION) RESULT {
     Value v = _b.default_for_type(results[0].type, 0u - 1);
     v.irval = _b.b.CreateXor(load(results[0]), v);
     return v;
   };
-  RESULT_FOR(ARITHMETIC_NEGATION) {
+  FOR(ARITHMETIC_NEGATION) RESULT {
     Value v = _b.default_for_type(results[0].type);
     v.irval = results[0].type.is_int() || results[0].type.is_ivec() ?
         _b.b.CreateSub(v, load(results[0])) :
         _b.b.CreateFSub(v, load(results[0]));
     return v;
   };
-  RESULT_FOR_ANY(node.type == Node::INCREMENT || node.type == Node::DECREMENT ||
-                 node.type == Node::POSTFIX_INCREMENT ||
-                 node.type == Node::POSTFIX_DECREMENT) {
+  FOR_ANY(node.type == Node::INCREMENT || node.type == Node::DECREMENT ||
+          node.type == Node::POSTFIX_INCREMENT ||
+          node.type == Node::POSTFIX_DECREMENT) RESULT {
     Value v = _b.default_for_type(
         results[0].type, node.type == Node::INCREMENT ||
                          node.type == Node::POSTFIX_INCREMENT ? 1 : -1);
@@ -355,9 +353,9 @@ void IrGenerator::before(const Node& node)
     return node.type == Node::INCREMENT || node.type == Node::DECREMENT ?
         results[0] : old;
   };
-  RESULT_FOR(INT_CAST) {return f2i(load(results[0]));};
-  RESULT_FOR(FLOAT_CAST) {return i2f(load(results[0]));};
-  RESULT_FOR(VECTOR_CONSTRUCT) {
+  FOR(INT_CAST) RESULT {return f2i(load(results[0]));};
+  FOR(FLOAT_CAST) RESULT {return i2f(load(results[0]));};
+  FOR(VECTOR_CONSTRUCT) RESULT {
     Value v = results[0].type.is_int() ? _b.constant_ivec(0, results.size()) :
                                          _b.constant_fvec(0, results.size());
     for (std::size_t i = 0; i < results.size(); ++i) {
@@ -366,7 +364,7 @@ void IrGenerator::before(const Node& node)
     }
     return v;
   };
-  RESULT_FOR(VECTOR_INDEX) {
+  FOR(VECTOR_INDEX) RESULT {
     std::vector<llvm::Value*> indices;
     for (std::size_t i = 1; i < results.size(); ++i) {
       // Indexing out-of-bounds wraps around.
@@ -395,8 +393,8 @@ void IrGenerator::before(const Node& node)
     }
     return v;
   };
-#undef RESULT_FOR
-#undef RESULT_FOR_ANY
+#undef FOR
+#undef FOR_ANY
   if (result_macro) {
     result(node, result_macro);
   }
@@ -451,7 +449,7 @@ void IrGenerator::before(const Node& node)
       if (!(node.int_value & Node::MODIFIER_NEGATION)) {
         _scopes.back().metadata.add(LexScope::GLOBAL_INIT_FUNCTION, function);
       }
-      result(node, CONSTANT {
+      result(node, LEAF {
         _scopes.back().dereference_scoped_locals(0);
         _scopes.pop_back();
         _b.b.CreateRetVoid();
@@ -524,7 +522,7 @@ void IrGenerator::before(const Node& node)
     case Node::BLOCK:
     case Node::LOOP_AFTER_BLOCK:
       _scopes.back().push_scope();
-      result(node, CONSTANT {
+      result(node, LEAF {
         auto after_block = _scopes.back().create_block("after");
         _b.b.CreateBr(after_block);
         _b.b.SetInsertPoint(after_block);
@@ -860,6 +858,7 @@ void IrGenerator::before(const Node& node)
 
     default: {}
   }
+#undef LEAF
 #undef RESULT
 }
 

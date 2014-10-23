@@ -204,25 +204,23 @@ void StaticChecker::before(const Node& node)
   // not the operand type was intended to be int or float.
   std::function<Category(const result_list&)> result_macro;
 #define RESULT [=,&node](const result_list& results) -> Category
-#define RESULT_FOR_ANY(condition) if (condition) result_macro = RESULT
-#define RESULT_FOR(node_type) RESULT_FOR_ANY(node.type == Node::node_type)
-#define CONSTANT [=,&node](const result_list&) -> Category
-#define CONSTANT_FOR_ANY(condition) if (condition) result_macro = CONSTANT
-#define CONSTANT_FOR(node_type) CONSTANT_FOR_ANY(node.type == Node::node_type)
+#define LEAF [=,&node](const result_list&) -> Category
+#define FOR_ANY(condition) if (condition) result_macro =
+#define FOR(node_type) FOR_ANY(node.type == Node::node_type)
 
   // For simple context-insensitive nodes, we define the behaviour with macros.
-  CONSTANT_FOR(TYPE_VOID) {return {};};
-  CONSTANT_FOR(TYPE_INT) {return numeric_type(false, node.int_value);};
-  CONSTANT_FOR(TYPE_FLOAT) {return numeric_type(true, node.int_value);};
-  RESULT_FOR(NAMED_EXPRESSION) {return results[0];};
-  RESULT_FOR(EXPR_STMT) {
+  FOR(TYPE_VOID) LEAF {return {};};
+  FOR(TYPE_INT) LEAF {return numeric_type(false, node.int_value);};
+  FOR(TYPE_FLOAT) LEAF {return numeric_type(true, node.int_value);};
+  FOR(NAMED_EXPRESSION) RESULT {return results[0];};
+  FOR(EXPR_STMT) RESULT {
     // Explicitly treat bare identifier expression as a read.
     if (node.children[0]->type == Node::IDENTIFIER) {
       load(results[0]);
     }
     return Category::error();
   };
-  RESULT_FOR(RETURN_STMT) {
+  FOR(RETURN_STMT) RESULT {
     // If we're not in a function, we must be in a global block.
     if (!_scopes.back().metadata.has(RETURN_TYPE)) {
       error(node, "return statement inside `global`");
@@ -237,7 +235,7 @@ void StaticChecker::before(const Node& node)
     }
     return return_type;
   };
-  RESULT_FOR(MEMBER_SELECTION) {
+  FOR(MEMBER_SELECTION) RESULT {
     auto t = load(results[0]);
     if (!t.user_type()) {
       error(node, "member function access on " + str(results[0]));
@@ -261,14 +259,14 @@ void StaticChecker::before(const Node& node)
     }
     return Type::function_t(m.type.function_return(), args);
   };
-  CONSTANT_FOR_ANY(node.type == Node::BREAK_STMT ||
-                   node.type == Node::CONTINUE_STMT) {
+  FOR_ANY(node.type == Node::BREAK_STMT ||
+          node.type == Node::CONTINUE_STMT) LEAF {
     if (!_scopes.back().metadata.has(LOOP_BODY)) {
       error(node, str(node) + " outside of loop body");
     }
     return Category::error();
   };
-  CONSTANT_FOR(IDENTIFIER) {
+  FOR(IDENTIFIER) LEAF {
     // Look up user types in a type-context.
     if (_scopes.back().metadata.has(TYPE_EXPR_CONTEXT)) {
       const auto& t = _context.type_lookup(node.string_value);
@@ -333,13 +331,13 @@ void StaticChecker::before(const Node& node)
     }
     return symbol.category.make_lvalue(true).add_tag(&symbol);
   };
-  CONSTANT_FOR(EMPTY_EXPR) {return Type::int_t();};
-  CONSTANT_FOR(INT_LITERAL) {return Type::int_t();};
-  CONSTANT_FOR(FLOAT_LITERAL) {return Type::float_t();};
-  CONSTANT_FOR(STRING_LITERAL) {return Type::managed_user_t<const char>();};
-  RESULT_FOR_ANY(node.type == Node::POW || node.type == Node::MOD ||
-                 node.type == Node::ADD || node.type == Node::SUB ||
-                 node.type == Node::MUL || node.type == Node::DIV) {
+  FOR(EMPTY_EXPR) LEAF {return Type::int_t();};
+  FOR(INT_LITERAL) LEAF {return Type::int_t();};
+  FOR(FLOAT_LITERAL) LEAF {return Type::float_t();};
+  FOR(STRING_LITERAL) LEAF {return Type::managed_user_t<const char>();};
+  FOR_ANY(node.type == Node::POW || node.type == Node::MOD ||
+          node.type == Node::ADD || node.type == Node::SUB ||
+          node.type == Node::MUL || node.type == Node::DIV) RESULT {
     // Takes two integers or floats and produces a value of the same type,
     // with vectorisation.
     auto left = load(results[0]);
@@ -353,9 +351,9 @@ void StaticChecker::before(const Node& node)
     }
     return binary_type(left, right, left.is_float());
   };
-  RESULT_FOR_ANY(node.type == Node::EQ || node.type == Node::NE ||
-                 node.type == Node::GE || node.type == Node::LE ||
-                 node.type == Node::GT || node.type == Node::LT) {
+  FOR_ANY(node.type == Node::EQ || node.type == Node::NE ||
+          node.type == Node::GE || node.type == Node::LE ||
+          node.type == Node::GT || node.type == Node::LT) RESULT {
     // Takes two integers or floats and produces an integer, with
     // vectorisation.
     auto left = load(results[0]);
@@ -372,22 +370,22 @@ void StaticChecker::before(const Node& node)
     }
     return binary_type(left, right, false);
   };
-  RESULT_FOR_ANY(node.type == Node::FOLD_LOGICAL_OR ||
-                 node.type == Node::FOLD_LOGICAL_AND ||
-                 node.type == Node::FOLD_BITWISE_OR ||
-                 node.type == Node::FOLD_BITWISE_AND ||
-                 node.type == Node::FOLD_BITWISE_XOR ||
-                 node.type == Node::FOLD_BITWISE_LSHIFT ||
-                 node.type == Node::FOLD_BITWISE_RSHIFT) {
+  FOR_ANY(node.type == Node::FOLD_LOGICAL_OR ||
+          node.type == Node::FOLD_LOGICAL_AND ||
+          node.type == Node::FOLD_BITWISE_OR ||
+          node.type == Node::FOLD_BITWISE_AND ||
+          node.type == Node::FOLD_BITWISE_XOR ||
+          node.type == Node::FOLD_BITWISE_LSHIFT ||
+          node.type == Node::FOLD_BITWISE_RSHIFT) RESULT {
     auto t = load(results[0]);
     if (!t.is_vector() || !t.is_int()) {
       error(node, str(node) + " applied to " + str(t));
     }
     return Type::int_t();
   };
-  RESULT_FOR_ANY(node.type == Node::FOLD_POW || node.type == Node::FOLD_MOD ||
-                 node.type == Node::FOLD_ADD || node.type == Node::FOLD_SUB ||
-                 node.type == Node::FOLD_MUL || node.type == Node::FOLD_DIV) {
+  FOR_ANY(node.type == Node::FOLD_POW || node.type == Node::FOLD_MOD ||
+          node.type == Node::FOLD_ADD || node.type == Node::FOLD_SUB ||
+          node.type == Node::FOLD_MUL || node.type == Node::FOLD_DIV) RESULT {
     auto t = load(results[0]);
     if (!t.is_vector() || !(t.is_int() || t.is_float())) {
       error(node, str(node) + " applied to " + str(t));
@@ -395,24 +393,24 @@ void StaticChecker::before(const Node& node)
     }
     return t.is_int() ? Type::int_t() : Type::float_t();
   };
-  RESULT_FOR_ANY(node.type == Node::FOLD_EQ || node.type == Node::FOLD_NE ||
-                 node.type == Node::FOLD_GE || node.type == Node::FOLD_LE ||
-                 node.type == Node::FOLD_GT || node.type == Node::FOLD_LT) {
+  FOR_ANY(node.type == Node::FOLD_EQ || node.type == Node::FOLD_NE ||
+          node.type == Node::FOLD_GE || node.type == Node::FOLD_LE ||
+          node.type == Node::FOLD_GT || node.type == Node::FOLD_LT) RESULT {
     auto t = load(results[0]);
     if (!t.is_vector() || !(t.is_int() || t.is_float())) {
       error(node, str(node) + " applied to " + str(t));
     }
     return Type::int_t();
   };
-  RESULT_FOR_ANY(node.type == Node::LOGICAL_NEGATION ||
-                 node.type == Node::BITWISE_NEGATION) {
+  FOR_ANY(node.type == Node::LOGICAL_NEGATION ||
+          node.type == Node::BITWISE_NEGATION) RESULT {
     auto t = load(results[0]);
     if (!t.is_int()) {
       error(node, str(node) + " applied to " + str(t));
     }
     return numeric_type(false, t.type().vector_size());
   };
-  RESULT_FOR(ARITHMETIC_NEGATION) {
+  FOR(ARITHMETIC_NEGATION) RESULT {
     auto t = load(results[0]);
     if (!(t.is_int() || t.is_float())) {
       error(node, str(node) + " applied to " + str(t));
@@ -420,9 +418,9 @@ void StaticChecker::before(const Node& node)
     }
     return t;
   };
-  RESULT_FOR_ANY(node.type == Node::INCREMENT || node.type == Node::DECREMENT ||
-                 node.type == Node::POSTFIX_INCREMENT ||
-                 node.type == Node::POSTFIX_DECREMENT) {
+  FOR_ANY(node.type == Node::INCREMENT || node.type == Node::DECREMENT ||
+          node.type == Node::POSTFIX_INCREMENT ||
+          node.type == Node::POSTFIX_DECREMENT) RESULT {
     Category t = results[0];
     for (void* tag : t.tags()) {
       ((symbol_t*)tag)->warn_writes = false;
@@ -441,7 +439,7 @@ void StaticChecker::before(const Node& node)
     return node.type == Node::INCREMENT || node.type == Node::DECREMENT ?
         t.make_const(false).make_lvalue(true) : load(t);
   };
-  RESULT_FOR_ANY(
+  FOR_ANY(
       node.type == Node::ASSIGN ||
       node.type == Node::ASSIGN_LOGICAL_OR ||
       node.type == Node::ASSIGN_LOGICAL_AND ||
@@ -452,7 +450,7 @@ void StaticChecker::before(const Node& node)
       node.type == Node::ASSIGN_BITWISE_RSHIFT ||
       node.type == Node::ASSIGN_POW || node.type == Node::ASSIGN_MOD ||
       node.type == Node::ASSIGN_ADD || node.type == Node::ASSIGN_SUB ||
-      node.type == Node::ASSIGN_MUL || node.type == Node::ASSIGN_DIV) {
+      node.type == Node::ASSIGN_MUL || node.type == Node::ASSIGN_DIV) RESULT {
     auto left = results[0];
     auto right = load(results[1]);
     bool math =
@@ -494,21 +492,21 @@ void StaticChecker::before(const Node& node)
     }
     return left.make_const(false).make_lvalue(true);
   };
-  RESULT_FOR(INT_CAST) {
+  FOR(INT_CAST) RESULT {
     auto t = load(results[0]);
     if (!t.is_float()) {
       error(node, str(node) + " applied to " + str(t));
     }
     return numeric_type(false, t.type().vector_size());
   };
-  RESULT_FOR(FLOAT_CAST) {
+  FOR(FLOAT_CAST) RESULT {
     auto t = load(results[0]);
     if (!t.is_int()) {
       error(node, str(node) + " applied to " + str(t));
     }
     return numeric_type(true, t.type().vector_size());
   };
-  RESULT_FOR(VECTOR_CONSTRUCT) {
+  FOR(VECTOR_CONSTRUCT) RESULT {
     Category t = load(results[0]);
     std::string ts;
     bool unify_error = false;
@@ -538,7 +536,7 @@ void StaticChecker::before(const Node& node)
     }
     return numeric_type(t.is_float(), results.size());
   };
-  RESULT_FOR(VECTOR_INDEX) {
+  FOR(VECTOR_INDEX) RESULT {
     auto left = results[0];
     for (std::size_t i = 1; i < results.size(); ++i) {
       auto index = load(results[i]);
@@ -554,8 +552,8 @@ void StaticChecker::before(const Node& node)
     return results.size() == 2 ? t : load(t);
   };
 
-#undef RESULT_FOR
-#undef RESULT_FOR_ANY
+#undef FOR
+#undef FOR_ANY
   if (result_macro) {
     result(node, result_macro);
   }
@@ -585,7 +583,7 @@ void StaticChecker::before(const Node& node)
       // Make sure to warn on unused top-level elements. This doesn't actually
       // pop anything, since it's the last frame.
       call_after(node, [=]{warn_unreferenced_variables();});
-      result(node, CONSTANT {return {};});
+      result(node, LEAF {return {};});
       break;
 
     case Node::GLOBAL:
@@ -610,7 +608,7 @@ void StaticChecker::before(const Node& node)
         pop_symbol_tables();
         _scopes.pop_back();
       });
-      result(node, CONSTANT {return {};});
+      result(node, LEAF {return {};});
       break;
 
     case Node::GLOBAL_ASSIGN:
@@ -987,8 +985,9 @@ void StaticChecker::before(const Node& node)
 
   // Type/expression context error result overrides any other result.
   if (context_err) {
-    result(node, CONSTANT {return Category::error();});
+    result(node, LEAF {return Category::error();});
   }
+#undef LEAF
 #undef RESULT
 }
 
