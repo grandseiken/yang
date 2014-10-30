@@ -6,7 +6,7 @@
 #define YANG_INCLUDE_YANG_ERROR_INFO_H
 
 #include <string>
-#include "error_position_info.h"
+#include "source_info.h"
 
 /** #sumline ## */
 namespace yang {
@@ -47,11 +47,11 @@ struct ErrorInfo {
   /**
    * #member
    */
-  ErrorPositionInfo node;
+  SourceInfo node;
   /**
    * #member
    */
-  ErrorPositionInfo tree;
+  SourceInfo tree;
 /** #summary */
 };
 

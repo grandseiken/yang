@@ -19,7 +19,7 @@ Error-reporting:
 
 .. toctree::
    api/error_info
-   api/error_position_info
+   api/source_info
    api/runtime_error
 
 Special pages:
