@@ -300,53 +300,50 @@ yang::ErrorInfo ParseData::format_error(
     const std::string& message, bool error) const
 {
   yang::ErrorInfo info;
-  info.node.start_index = left_index;
-  info.node.end_index = right_index - 1;
-  info.node.start_line = char_to_line[left_index];
-  info.node.end_line = char_to_line[right_index - 1];
-  info.node.start_column = char_to_column[left_index];
-  info.node.end_column = char_to_column[right_index - 1];
-  info.node.text = source_text.substr(left_index, right_index - left_index);
+  info.node.index = left_index;
+  info.node.length = right_index - left_index;
+  info.node.start_line = 1 + char_to_line[left_index];
+  info.node.end_line = 1 + char_to_line[right_index - 1];
+  info.node.start_column = 1 + char_to_column[left_index];
+  info.node.end_column = 1 + char_to_column[right_index - 1];
+  info.node.text = source_text.substr(info.node.index, info.node.length);
 
-  info.tree.start_index = left_tree_index;
-  info.tree.end_index = right_tree_index - 1;
-  info.tree.start_line = char_to_line[left_tree_index];
-  info.tree.end_line = char_to_line[right_tree_index - 1];
-  info.tree.start_column = char_to_column[left_tree_index];
-  info.tree.end_column = char_to_column[right_tree_index - 1];
-  info.tree.text = source_text.substr(
-      left_tree_index, right_tree_index - left_tree_index);
+  info.tree.index = left_tree_index;
+  info.tree.length = right_tree_index - left_tree_index;
+  info.tree.start_line = 1 + char_to_line[left_tree_index];
+  info.tree.end_line = 1 + char_to_line[right_tree_index - 1];
+  info.tree.start_column = 1 + char_to_column[left_tree_index];
+  info.tree.end_column = 1 + char_to_column[right_tree_index - 1];
+  info.tree.text = source_text.substr(info.tree.index, info.tree.length);
 
   std::stringstream ss;
   ss << (error ? "error" : "warning");
   ss << " in program `" + name + "`, at ";
   if (info.tree.start_line == info.tree.end_line) {
-    ss << "line " << (1 + info.tree.start_line);
+    ss << "line " << info.tree.start_line;
   }
   else {
-    ss << "lines " << (1 + info.tree.start_line) <<
-        "-" << (1 + info.tree.end_line);
+    ss << "lines " << info.tree.start_line << "-" << info.tree.end_line;
   }
 
   ss << ":\n\t" << message << "\n";
   std::size_t length = 0;
   for (std::size_t i = info.tree.start_line;
        i < info.tree.end_line; ++i) {
-    ss << lines[i] << "\n";
-    length = std::max(length, lines[i].length());
+    ss << lines[i - 1] << "\n";
+    length = std::max(length, lines[i - 1].length());
   }
-  ss << lines[info.tree.end_line] << "\n";
-  length = std::max(length, 1 + info.tree.end_column);
+  ss << lines[info.tree.end_line - 1] << "\n";
+  length = std::max(length, info.tree.end_column);
 
   std::size_t node_length = 0;
   for (std::size_t i = info.node.start_line;
        i < info.node.end_line; ++i) {
-    node_length = std::max(node_length, lines[i].length());
+    node_length = std::max(node_length, lines[i - 1].length());
   }
-  node_length = std::max(node_length, 1 + info.node.end_column);
+  node_length = std::max(node_length, info.node.end_column);
 
-  for (std::size_t i = 0; i < length; ++i) {
-
+  for (std::size_t i = 1; i <= length; ++i) {
     bool err = info.node.end_line - info.node.start_line > 1;
     bool err_tree = info.tree.end_line - info.tree.start_line > 1;
 

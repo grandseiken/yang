@@ -16,6 +16,12 @@ namespace yang {
  *
  * Provides structured error and warning reporting.
  *
+ * When reporting programming errors in Yang code to users, simply displaying
+ * the `ErrorInfo::formatted_message` string should usually suffice. In some
+ * cases (e.g. for an interactive IDE) it would be useful to apply custom
+ * formatting to the error message or obtain the location in the source code
+ * where the error occurred.
+ *
  * Each diagnostic is associated with two chunks of the source text. The first
  * (`ErrorInfo::node`) points to the exact node in the parse tree which caused
  * the error; the second (`ErrorInfo::tree`) points to the entire dependent
@@ -33,23 +39,31 @@ struct ErrorInfo {
   /**
    * #member
    *
-   * Descriptive message about what's wrong.
+   * An unformatted string describing the sort of problem that was detected,
+   * without reference to the source text.
    */
   std::string raw_message;
   /**
    * #member ##
    * 
-   * Nicely-formatted error message, including highlighted excerpts from the
-   * source text.
+   * A nicely-formatted error or warning message. This consists of the
+   * `ErrorInfo::raw_message` in addition to line numbers and highlighted
+   * excerpts from the source text.
    */
   std::string formatted_message;
 
   /**
    * #member
+   *
+   * A `SourceInfo` object describing the location of the exact node in the
+   * source text that triggered the error or warning.
    */
   SourceInfo node;
   /**
    * #member
+   *
+   * A `SourceInfo` object describing the location of the entire subtree in
+   * the source text that caused the error or warning.
    */
   SourceInfo tree;
 /** #summary */

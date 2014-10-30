@@ -566,28 +566,28 @@ export x = int()
   const auto& error = errors[0];
   const auto& warning = warnings[0];
 
-  EXPECT_EQ(4, error.node.start_line);
-  EXPECT_EQ(4, error.node.end_line);
-  EXPECT_EQ(8, error.node.start_column);
-  EXPECT_EQ(8, error.node.end_column);
-  EXPECT_EQ(37, error.node.start_index);
-  EXPECT_EQ(37, error.node.end_index);
+  EXPECT_EQ(5, error.node.start_line);
+  EXPECT_EQ(5, error.node.end_line);
+  EXPECT_EQ(9, error.node.start_column);
+  EXPECT_EQ(9, error.node.end_column);
+  EXPECT_EQ(37, error.node.index);
+  EXPECT_EQ(1, error.node.length);
   EXPECT_EQ("+", error.node.text);
 
-  EXPECT_EQ(4, error.tree.start_line);
-  EXPECT_EQ(5, error.tree.end_line);
-  EXPECT_EQ(4, error.tree.start_column);
-  EXPECT_EQ(4, error.tree.end_column);
-  EXPECT_EQ(33, error.tree.start_index);
-  EXPECT_EQ(43, error.tree.end_index);
+  EXPECT_EQ(5, error.tree.start_line);
+  EXPECT_EQ(6, error.tree.end_line);
+  EXPECT_EQ(5, error.tree.start_column);
+  EXPECT_EQ(5, error.tree.end_column);
+  EXPECT_EQ(33, error.tree.index);
+  EXPECT_EQ(11, error.tree.length);
   EXPECT_EQ("1.0 +\n    1", error.tree.text);
 
-  EXPECT_EQ(7, warning.node.start_line);
-  EXPECT_EQ(7, warning.node.end_line);
-  EXPECT_EQ(2, warning.node.start_column);
-  EXPECT_EQ(5, warning.node.end_column);
-  EXPECT_EQ(73, warning.node.start_index);
-  EXPECT_EQ(76, warning.node.end_index);
+  EXPECT_EQ(8, warning.node.start_line);
+  EXPECT_EQ(8, warning.node.end_line);
+  EXPECT_EQ(3, warning.node.start_column);
+  EXPECT_EQ(6, warning.node.end_column);
+  EXPECT_EQ(73, warning.node.index);
+  EXPECT_EQ(4, warning.node.length);
   EXPECT_EQ("x();", warning.node.text);
   EXPECT_EQ("x();", warning.tree.text);
 }

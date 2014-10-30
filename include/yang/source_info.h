@@ -14,56 +14,63 @@ namespace yang {
 /**
  * #class
  *
- * Provides information about the position of an error or warning in the source
- * text. Start to end ranges are 0-indexed and inclusive.
+ * Provides information about the exact location of a fragment of Yang code in
+ * the source text. Used by `ErrorInfo` to report the locations of errors and
+ * warnings detected when compiling Yang code.
+ *
+ * Note that the line and column fields are 1-indexed and *inclusive*, while the
+ * raw index fields are 0-indexed.
  */
 struct SourceInfo {
   /**
    * #member
    *
-   * Line on which the error starts.
+   * The 1-indexed line of the source text on which the first character of the
+   * code fragment falls.
    */
   std::size_t start_line;
   /**
    * #member ##
    *
-   * Column on which the error starts.
+   * The 1-indexed column of the line indicated by `SourceInfo::start_line` on
+   * which the first character of the code fragment falls.
    */
   std::size_t start_column;
 
   /**
    * #member
    *
-   * Line on which the error ends.
+   * The 1-indexed line of the source text on which the final character of the
+   * code fragment falls.
    */
   std::size_t end_line;
   /**
    * #member ##
    *
-   * Column on which the error ends.
+   * The 1-indexed column of the line indicated by `SourceInfo::end_line` on
+   * which the final character of the code fragment falls.
    */
   std::size_t end_column;
 
   /**
    * #member
    *
-   * Raw index of the character on which the error starts (treating the source
-   * text as a single string including newline characters).
+   * The raw 0-indexed position of the first character of the code fragment
+   * within the entire source text (including newlines).
    */
-  std::size_t start_index;
-  /**
-   * #member ##
-   *
-   * Raw index of the character on which the error ends (treating the source
-   * text as a single string including newline characters).
-   */
-  std::size_t end_index;
-
+  std::size_t index;
   /**
    * #member
    *
-   * For convenience, contains the entire string in which the error occurs from
-   * start to end.
+   * The raw length of the code fragment (including contained newlines).
+   */
+  std::size_t length;
+  /**
+   * #member
+   *
+   * For convenience, the code fragment itself. This is equal to
+   * ``s.substr(index, length)``, where ``s`` is the source text (i.e. the
+   * ``std::string`` passed to `Program::Program`).
    */
   std::string text;
 /** #summary */
