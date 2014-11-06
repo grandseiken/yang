@@ -1,26 +1,37 @@
-``#include <yang/yang.h>``
-==========================
+API reference
+=============
 
-Core API:
+All APIs are available via the preprocessor directive
+``#include <yang/yang.h>``.
+
+Core object model:
 
 .. toctree::
    api/context
-   api/function
-   api/global
-   api/instance
    api/program
-   api/refcounting
-   api/typedefs
-   api/type
-   api/value
-   api/vec
+   api/instance
 
-Error-reporting:
+Auxilliary metadata about a compiled `Program`:
 
 .. toctree::
+   api/type
+   api/global
    api/error_info
    api/source_info
+
+C++ types corresponding to Yang types:
+
+.. toctree::
+   api/function
+   api/refcounting
+   api/vec
+   api/typedefs
+
+Other:
+
+.. toctree::
    api/runtime_error
+   api/value
 
 Special pages:
 

@@ -80,8 +80,8 @@ export f = UserType(UserType x)
   return x;
 }
 )");
-  user_type u;
-  EXPECT_EQ(&u, inst.call<user_type*>("f", &u));
+  UserType u;
+  EXPECT_EQ(&u, inst.call<UserType*>("f", &u));
 }
 
 TEST_F(TrampolinesTest, ForwardManagedUserType)
@@ -96,8 +96,8 @@ export get_muser_type = MuserType()
   return MuserType();
 }
 )");
-  auto u = inst.call<Ref<user_type>>("get_muser_type");
-  EXPECT_EQ(u->id, inst.call<Ref<user_type>>("f", u)->id);
+  auto u = inst.call<Ref<UserType>>("get_muser_type");
+  EXPECT_EQ(u->id, inst.call<Ref<UserType>>("f", u)->id);
 }
 
 TEST_F(TrampolinesTest, ReverseInt)
@@ -189,7 +189,7 @@ export f = int(int)()
 TEST_F(TrampolinesTest, ReverseUserType)
 {
   auto ctxt = context();
-  ctxt.register_function("context", make_fn([](user_type* x)
+  ctxt.register_function("context", make_fn([](UserType* x)
   {
     return x;
   }));
@@ -200,13 +200,13 @@ export f = UserType()
   return context(get_user_type());
 }
 )");
-  EXPECT_EQ(0, inst.call<user_type*>("f")->id);
+  EXPECT_EQ(0, inst.call<UserType*>("f")->id);
 }
 
 TEST_F(TrampolinesTest, ReverseManagedUserType)
 {
   auto ctxt = context();
-  ctxt.register_function("context", make_fn([](Ref<user_type> x)
+  ctxt.register_function("context", make_fn([](Ref<UserType> x)
   {
     return x;
   }));
@@ -217,7 +217,7 @@ export f = MuserType()
   return context(MuserType());
 }
 )");
-  EXPECT_EQ(0, inst.call<Ref<user_type>>("f")->id);
+  EXPECT_EQ(0, inst.call<Ref<UserType>>("f")->id);
 }
 
 TEST_F(TrampolinesTest, MultiArg)
@@ -225,7 +225,7 @@ TEST_F(TrampolinesTest, MultiArg)
   typedef Function<int_t(int_t)> intf_t;
   auto ctxt = context();
   ctxt.register_function("context", make_fn([](
-      int_t a, ivec_t<4> b, float_t c, intf_t d, fvec_t<2> e, user_type* f)
+      int_t a, ivec_t<4> b, float_t c, intf_t d, fvec_t<2> e, UserType* f)
   {
     return d(a) + b[0] + b[1] + b[2] + b[3] +
         int_t(c) + int_t(e[x]) + int_t(e[y]) + int_t(f->id);
@@ -241,7 +241,7 @@ export f = int(int a, int4 b, float c, int(int) d, float2 e, UserType f)
   {
     return a * 2;
   });
-  user_type u{12};
+  UserType u{12};
   int_t result = inst.call<int_t>(
       "f", 2, ivec_t<4>{1, 2, 3, 4}, 3.5, d, fvec_t<2>{7.1, 6.9}, &u);
   EXPECT_EQ(42, result);

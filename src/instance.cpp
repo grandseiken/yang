@@ -16,7 +16,7 @@ Instance::Instance(const Program& program)
   , _program(program._internals.get())
 {
   if (!program.success()) {
-    throw runtime_error(
+    throw RuntimeError(
         program._internals->name +
         ": instantiating program which did not compile successfully");
   }
@@ -60,18 +60,18 @@ void Instance::check_global(const std::string& name, const Type& type,
 {
   auto it = _program->globals.find(name);
   if (it == _program->globals.end()) {
-    throw runtime_error(
+    throw RuntimeError(
         _program->name + ": requested global `" + name + "` does not exist");
   }
   if (type != it->second.type) {
-    throw runtime_error(
+    throw RuntimeError(
         _program->name + ": global `" +
         it->second.type.string(*_program->context)
         + " " + name + "` accessed via incompatible type `" +
         type.string(*_program->context) + "`");
   }
   if (for_modification && it->second.is_const) {
-    throw runtime_error(
+    throw RuntimeError(
         _program->name + ": constant global `" +
         it->second.type.string(*_program->context) + " " + name +
         "` cannot be modified");
@@ -82,12 +82,12 @@ void Instance::check_function(const std::string& name, const Type& type) const
 {
   auto it = _program->functions.find(name);
   if (it == _program->functions.end()) {
-    throw runtime_error(
+    throw RuntimeError(
         _program->name +
         ": requested function `" + name + "` does not exist");
   }
   if (type != it->second) {
-    throw runtime_error(
+    throw RuntimeError(
         _program->name + ": function `" +
         it->second.string(*_program->context) +
         " " + name + "` accessed via incompatible type `" +

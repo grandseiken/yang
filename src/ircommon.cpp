@@ -454,7 +454,7 @@ YangTrampolineGlobals::YangTrampolineGlobals()
 {
   if (!_engine) {
     delete _module;
-    throw yang::runtime_error("couldn't create execution engine: " + _error);
+    throw RuntimeError("couldn't create execution engine: " + _error);
   }
   _engine->DisableSymbolSearching();
 }

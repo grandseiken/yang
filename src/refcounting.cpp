@@ -44,11 +44,11 @@ void cleanup_cyclic_structures()
   // For each potential structure, we store the number of references to it among
   // such structures, and a reverse lookup of the structures that depend upon
   // it.
-  struct reference_data_t {
+  struct ReferenceData {
     std::size_t count = 0;
     std::unordered_set<Prefix*> dependents;
   };
-  std::unordered_map<Prefix*, reference_data_t> data;
+  std::unordered_map<Prefix*, ReferenceData> data;
   auto copy = yang::internal::get_structure_possible_cycle_list();
 
   // First, for each structure potentially involved in a cycle, call its

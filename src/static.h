@@ -33,7 +33,7 @@ public:
 protected:
 
   void before(const Node& node) override;
-  Category after(const Node& node, const result_list& results) override;
+  Category after(const Node& node, const ResultList& results) override;
 
 private:
 
@@ -68,8 +68,8 @@ private:
   
   // Along with the type, we need to store the subscope number for
   // disambiguating identically-named closed variables in different subscopes.
-  struct symbol_t {
-    symbol_t();
+  struct Symbol {
+    Symbol();
     Category category;
     bool closed;
     std::size_t scope_number;
@@ -83,14 +83,14 @@ private:
     bool warn_closed;
   };
 
-  struct lex_scope_t {
-    lex_scope_t(const Node& node, const std::string& name);
+  struct LexicalScope {
+    LexicalScope(const Node& node, const std::string& name);
     const Node& function;
     std::string name;
 
     SymbolTable<metadata_t, Category> metadata;
-    SymbolTable<std::string, symbol_t*> symbol_table;
-    std::list<symbol_t> symbols;
+    SymbolTable<std::string, Symbol*> symbol_table;
+    std::list<Symbol> symbols;
 
     // For each function, we also need to number its scopes uniquely, so that we
     // can distinguish identically-named variables in the closure structure.
@@ -98,7 +98,7 @@ private:
     std::size_t scope_numbering_next;
   };
 
-  std::vector<lex_scope_t> _scopes;
+  std::vector<LexicalScope> _scopes;
 
   const ContextInternals& _context;
   ParseData& _data;

@@ -14,7 +14,7 @@ namespace yang {
  * #class
  *
  * All exceptions thrown by the Yang library are instances of the
- * `runtime_error` class.
+ * `RuntimeError` class.
  *
  * In general, these errors are thrown when the library usage depends upon some
  * property of runtime-compiled Yang code which turns out not to hold -- for
@@ -22,7 +22,7 @@ namespace yang {
  * to access a function from it that doesn't exist, or calling a function as if
  * it had a different signature than it really does.
  */
-class runtime_error : public std::runtime_error {
+class RuntimeError : public std::runtime_error {
 /** #sumline */
 public:
   /**
@@ -31,12 +31,12 @@ public:
    * Construct the error with some descriptive message. Use the ``what()``
    * method inherited from ``std::runtime_error`` to retrieve the message.
    */
-  runtime_error(const std::string& what)
+  RuntimeError(const std::string& what)
     : std::runtime_error(what) {}
 /** #summary */
 };
 
-}
+} // ::yang
 /**/
 
 #endif

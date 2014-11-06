@@ -60,12 +60,12 @@ TEST_F(ApiTest, VecIndices)
 {
   ivec_t<2> v{1, 2};
   EXPECT_EQ(1, v[0]);
-  EXPECT_EQ(2, v[element_accessor<1>{}]);
+  EXPECT_EQ(2, v[ElementAccessor<1>{}]);
   EXPECT_EQ(2, v[y]);
 
   v[1] = 3;
   v[x] = 4;
-  EXPECT_EQ(4, v[element_accessor<0>{}]);
+  EXPECT_EQ(4, v[ElementAccessor<0>{}]);
   EXPECT_EQ(3, v[1]);
 }
 
@@ -231,7 +231,7 @@ TEST_F(ApiTest, TypeOfFvec)
 
 TEST_F(ApiTest, TypeOfFunction)
 {
-  typedef Function<user_type*(int_t)> ft;
+  typedef Function<UserType*(int_t)> ft;
   EXPECT_TRUE(Type::of<ft>().is_function());
   EXPECT_EQ(1, Type::of<ft>().function_num_args());
   EXPECT_TRUE(Type::of<ft>().function_return().is_user_type());
@@ -240,13 +240,13 @@ TEST_F(ApiTest, TypeOfFunction)
 
 TEST_F(ApiTest, TypeOfUserType)
 {
-  struct a {};
-  struct b {};
-  EXPECT_EQ(Type::of<a*>(), Type::of<a*>());
-  EXPECT_EQ(Type::of<Ref<a>>(), Type::of<Ref<a>>());
-  EXPECT_NE(Type::of<a*>(), Type::of<b*>());
-  EXPECT_NE(Type::of<Ref<a>>(), Type::of<Ref<b>>());
-  EXPECT_NE(Type::of<a*>(), Type::of<Ref<a>>());
+  struct A;
+  struct B;
+  EXPECT_EQ(Type::of<A*>(), Type::of<A*>());
+  EXPECT_EQ(Type::of<Ref<A>>(), Type::of<Ref<A>>());
+  EXPECT_NE(Type::of<A*>(), Type::of<B*>());
+  EXPECT_NE(Type::of<Ref<A>>(), Type::of<Ref<B>>());
+  EXPECT_NE(Type::of<A*>(), Type::of<Ref<A>>());
 }
 
 TEST_F(ApiTest, Function)
@@ -276,29 +276,29 @@ TEST_F(ApiTest, MakeFn)
 TEST_F(ApiTest, ContextBadNames)
 {
   auto ctxt = context();
-  struct type_a {};
-  auto acon = make_fn([]{return (type_a*)nullptr;});
-  auto voidaf = make_fn([](type_a*){});
+  struct A;
+  auto acon = make_fn([]{return (A*)nullptr;});
+  auto voidaf = make_fn([](A*){});
 
-  EXPECT_THROW(ctxt.register_function("!", voidaf), runtime_error);
-  EXPECT_THROW(ctxt.register_member_function("~", voidaf), runtime_error);
-  EXPECT_THROW(ctxt.register_type<type_a>("$c"), runtime_error);
-  EXPECT_THROW(ctxt.register_type("a-b", acon, voidaf), runtime_error);
-  EXPECT_THROW(ctxt.register_constructor("a::b", acon, voidaf), runtime_error);
-  EXPECT_THROW(ctxt.register_namespace(" ", context()), runtime_error);
+  EXPECT_THROW(ctxt.register_function("!", voidaf), RuntimeError);
+  EXPECT_THROW(ctxt.register_member_function("~", voidaf), RuntimeError);
+  EXPECT_THROW(ctxt.register_type<A>("$c"), RuntimeError);
+  EXPECT_THROW(ctxt.register_type("a-b", acon, voidaf), RuntimeError);
+  EXPECT_THROW(ctxt.register_constructor("a::b", acon, voidaf), RuntimeError);
+  EXPECT_THROW(ctxt.register_namespace(" ", context()), RuntimeError);
 }
 
 TEST_F(ApiTest, ContextTypedefs)
 {
   auto ctxt = context();
-  struct type_a {};
-  struct type_b {};
+  struct A;
+  struct B;
 
-  ASSERT_NO_THROW(ctxt.register_type<type_a>("TypeA"));
-  EXPECT_THROW(ctxt.register_type<type_a>("TypeA"), runtime_error);
-  EXPECT_THROW(ctxt.register_type<type_b>("TypeA"), runtime_error);
-  EXPECT_NO_THROW(ctxt.register_type<type_b>("TypeB"));
-  EXPECT_NO_THROW(ctxt.register_type<type_a>("TypeA2"));
+  ASSERT_NO_THROW(ctxt.register_type<A>("A"));
+  EXPECT_THROW(ctxt.register_type<A>("A"), RuntimeError);
+  EXPECT_THROW(ctxt.register_type<B>("A"), RuntimeError);
+  EXPECT_NO_THROW(ctxt.register_type<B>("B"));
+  EXPECT_NO_THROW(ctxt.register_type<A>("A2"));
 }
 
 TEST_F(ApiTest, ContextFunctions)
@@ -307,33 +307,33 @@ TEST_F(ApiTest, ContextFunctions)
   auto voidf = make_fn([]{});
 
   ASSERT_NO_THROW(ctxt.register_function("foo", voidf));
-  EXPECT_THROW(ctxt.register_function("foo", voidf), runtime_error);
+  EXPECT_THROW(ctxt.register_function("foo", voidf), RuntimeError);
   EXPECT_NO_THROW(ctxt.register_function("bar", voidf));
 }
 
 TEST_F(ApiTest, ContextMemberFunctions)
 {
   auto ctxt = context();
-  struct type_a {};
-  auto voidaf = make_fn([](type_a*){});
+  struct A;
+  auto voidaf = make_fn([](A*){});
 
   ASSERT_NO_THROW(ctxt.register_member_function("foo", voidaf));
-  EXPECT_THROW(ctxt.register_member_function("foo", voidaf), runtime_error);
+  EXPECT_THROW(ctxt.register_member_function("foo", voidaf), RuntimeError);
   EXPECT_NO_THROW(ctxt.register_member_function("bar", voidaf));
 }
 
 TEST_F(ApiTest, ContextOverlappingUserTypes)
 {
   auto ctxt = context();
-  struct type_a {};
-  struct type_b {};
-  auto refaf = make_fn([](Ref<type_a>){});
-  auto refbf = make_fn([](Ref<type_b>){});
-  auto bcon = make_fn([]{return (type_b*)nullptr;});
-  auto voidbf = make_fn([](type_b*){});
+  struct A;
+  struct B;
+  auto refaf = make_fn([](Ref<A>){});
+  auto refbf = make_fn([](Ref<B>){});
+  auto bcon = make_fn([]{return (B*)nullptr;});
+  auto voidbf = make_fn([](B*){});
 
-  ctxt.register_type<type_a>("TypeA");
-  ctxt.register_type("TypeB", bcon, voidbf);
+  ctxt.register_type<A>("A");
+  ctxt.register_type("B", bcon, voidbf);
   EXPECT_NO_THROW(ctxt.register_member_function("foo", voidbf));
   EXPECT_NO_THROW(ctxt.register_member_function("foo", refaf));
   EXPECT_NO_THROW(ctxt.register_member_function("foo", refbf));
@@ -343,55 +343,55 @@ TEST_F(ApiTest, ContextNamespaceConflicts)
 {
   auto ctxt = context();
   auto dtxt = context(false);
-  struct type_a {};
-  auto acon = make_fn([]{return (type_a*)nullptr;});
-  auto voidaf = make_fn([](type_a*){});
-  ctxt.register_type("TypeA", acon, voidaf);
+  struct A;
+  auto acon = make_fn([]{return (A*)nullptr;});
+  auto voidaf = make_fn([](A*){});
+  ctxt.register_type("A", acon, voidaf);
   ctxt.register_function("bar", voidaf);
   
-  EXPECT_THROW(ctxt.register_function("TypeA", voidaf), runtime_error);
-  EXPECT_THROW(ctxt.register_type("bar", acon, voidaf), runtime_error);
-  EXPECT_THROW(ctxt.register_constructor("bar", acon, voidaf), runtime_error);
-  EXPECT_THROW(ctxt.register_constructor("TypeA", acon, voidaf), runtime_error);
+  EXPECT_THROW(ctxt.register_function("A", voidaf), RuntimeError);
+  EXPECT_THROW(ctxt.register_type("bar", acon, voidaf), RuntimeError);
+  EXPECT_THROW(ctxt.register_constructor("bar", acon, voidaf), RuntimeError);
+  EXPECT_THROW(ctxt.register_constructor("A", acon, voidaf), RuntimeError);
 
-  EXPECT_THROW(dtxt.register_namespace("dtxt", dtxt), runtime_error);
-  EXPECT_THROW(ctxt.register_namespace("TypeA", dtxt), runtime_error);
+  EXPECT_THROW(dtxt.register_namespace("dtxt", dtxt), RuntimeError);
+  EXPECT_THROW(ctxt.register_namespace("A", dtxt), RuntimeError);
 
   ctxt.register_namespace("dtxt", dtxt);
-  EXPECT_THROW(ctxt.register_namespace("dtxt", dtxt), runtime_error);
-  EXPECT_THROW(ctxt.register_type<type_a>("dtxt"), runtime_error);
-  EXPECT_THROW(ctxt.register_type("dtxt", acon, voidaf), runtime_error);
+  EXPECT_THROW(ctxt.register_namespace("dtxt", dtxt), RuntimeError);
+  EXPECT_THROW(ctxt.register_type<A>("dtxt"), RuntimeError);
+  EXPECT_THROW(ctxt.register_type("dtxt", acon, voidaf), RuntimeError);
 }
 
 TEST_F(ApiTest, ContextNamespaceIndependence)
 {
   auto ctxt = context();
   auto dtxt = context(false);
-  struct type_a {};
-  auto acon = make_fn([]{return (type_a*)nullptr;});
-  auto voidaf = make_fn([](type_a*){});
-  ctxt.register_type("TypeA", acon, voidaf);
+  struct A;
+  auto acon = make_fn([]{return (A*)nullptr;});
+  auto voidaf = make_fn([](A*){});
+  ctxt.register_type("A", acon, voidaf);
   ctxt.register_function("foo", voidaf);
   ctxt.register_function("bar", voidaf);
   ctxt.register_namespace("dtxt", dtxt);
 
   EXPECT_NO_THROW(ctxt.register_namespace("foo", dtxt));
   EXPECT_NO_THROW(ctxt.register_function("dtxt", voidaf));
-  EXPECT_NO_THROW(ctxt.register_type<type_a>("bar"));
+  EXPECT_NO_THROW(ctxt.register_type<A>("bar"));
 
   auto etxt = context(false);
-  etxt.register_type<type_a>("TypeA");
+  etxt.register_type<A>("A");
   ctxt.register_function("make_b", make_fn([]{
-    return (type_a*)nullptr;
+    return (A*)nullptr;
   }));
-  ctxt.register_type<type_a>("A");
+  ctxt.register_type<A>("A2");
   EXPECT_NO_THROW(ctxt.register_namespace("whatever", etxt));
   etxt.register_member_function("foo", voidaf);
   EXPECT_NO_THROW(ctxt.register_namespace("again", etxt));
 
   auto ftxt = context(false);
-  ftxt.register_member_function("foo", make_fn([](type_a*){}));
-  EXPECT_THROW(ctxt.register_namespace("another", ftxt), runtime_error);
+  ftxt.register_member_function("foo", make_fn([](A*){}));
+  EXPECT_THROW(ctxt.register_namespace("another", ftxt), RuntimeError);
 }
 
 TEST_F(ApiTest, ProgramSuccess)
@@ -409,9 +409,9 @@ TEST_F(ApiTest, ProgramFailure)
   auto prog = program_suppress_errors("broken");
   ASSERT_FALSE(prog.success());
   EXPECT_EQ("test0", prog.get_name());
-  EXPECT_THROW(instance(prog), runtime_error);
-  EXPECT_THROW(prog.print_ast(), runtime_error);
-  EXPECT_THROW(prog.print_ir(), runtime_error);
+  EXPECT_THROW(instance(prog), RuntimeError);
+  EXPECT_THROW(prog.print_ast(), RuntimeError);
+  EXPECT_THROW(prog.print_ir(), RuntimeError);
 }
 
 TEST_F(ApiTest, ProgramFunctions)
@@ -458,33 +458,33 @@ TEST_F(ApiTest, InstanceFunctionMissing)
 {
   typedef Function<int_t(int_t)> intf_t;
   auto inst = test_instance();
-  EXPECT_THROW(inst.get_function<intf_t>("nonexistent"), runtime_error);
-  EXPECT_THROW(inst.call<int_t>("nonexistent"), runtime_error);
+  EXPECT_THROW(inst.get_function<intf_t>("nonexistent"), RuntimeError);
+  EXPECT_THROW(inst.call<int_t>("nonexistent"), RuntimeError);
 }
 
 TEST_F(ApiTest, InstanceFunctionNotFunction)
 {
   typedef Function<int_t(int_t)> intf_t;
   auto inst = test_instance();
-  EXPECT_THROW(inst.get_function<intf_t>("a"), runtime_error);
-  EXPECT_THROW(inst.call<int_t>("a", 0), runtime_error);
+  EXPECT_THROW(inst.get_function<intf_t>("a"), RuntimeError);
+  EXPECT_THROW(inst.call<int_t>("a", 0), RuntimeError);
 }
 
 TEST_F(ApiTest, InstanceFunctionNotExported)
 {
   typedef Function<int_t(int_t)> intf_t;
   auto inst = test_instance();
-  EXPECT_THROW(inst.get_function<intf_t>("g"), runtime_error);
-  EXPECT_THROW(inst.call<int_t>("g", 0), runtime_error);
+  EXPECT_THROW(inst.get_function<intf_t>("g"), RuntimeError);
+  EXPECT_THROW(inst.call<int_t>("g", 0), RuntimeError);
 }
 
 TEST_F(ApiTest, InstanceFunctionIncompatibleType)
 {
   typedef Function<void()> voidf_t;
   auto inst = test_instance();
-  EXPECT_THROW(inst.get_function<voidf_t>("f"), runtime_error);
-  EXPECT_THROW(inst.call<float_t>("f", 0), runtime_error);
-  EXPECT_THROW(inst.call<int_t>("f", 0.), runtime_error);
+  EXPECT_THROW(inst.get_function<voidf_t>("f"), RuntimeError);
+  EXPECT_THROW(inst.call<float_t>("f", 0), RuntimeError);
+  EXPECT_THROW(inst.call<int_t>("f", 0.), RuntimeError);
 }
 
 TEST_F(ApiTest, InstanceFunction)
@@ -498,24 +498,24 @@ TEST_F(ApiTest, InstanceFunction)
 TEST_F(ApiTest, InstanceGlobalMissing)
 {
   auto inst = test_instance();
-  EXPECT_THROW(inst.get_global<int_t>("nonexistent"), runtime_error);
-  EXPECT_THROW(inst.set_global("nonexistent", 0), runtime_error);
+  EXPECT_THROW(inst.get_global<int_t>("nonexistent"), RuntimeError);
+  EXPECT_THROW(inst.set_global("nonexistent", 0), RuntimeError);
 }
 
 TEST_F(ApiTest, InstanceGlobalNotGlobal)
 {
   typedef Function<int_t(int_t)> intf_t;
   auto inst = test_instance();
-  EXPECT_THROW(inst.get_global<intf_t>("f"), runtime_error);
+  EXPECT_THROW(inst.get_global<intf_t>("f"), RuntimeError);
   EXPECT_THROW(
-      inst.set_global("f", inst.get_function<intf_t>("f")), runtime_error);
+      inst.set_global("f", inst.get_function<intf_t>("f")), RuntimeError);
 }
 
 TEST_F(ApiTest, InstanceGlobalIncompatibleType)
 {
   auto inst = test_instance();
-  EXPECT_THROW(inst.get_global<int_t>("a"), runtime_error);
-  EXPECT_THROW(inst.set_global("a", 0), runtime_error);
+  EXPECT_THROW(inst.get_global<int_t>("a"), RuntimeError);
+  EXPECT_THROW(inst.set_global("a", 0), RuntimeError);
 }
 
 TEST_F(ApiTest, InstanceGlobalExportVar)
@@ -530,19 +530,19 @@ TEST_F(ApiTest, InstanceGlobalExportConst)
 {
   auto inst = test_instance();
   EXPECT_EQ(fvec_t<3>(0., 1., 2.), inst.get_global<fvec_t<3>>("b"));
-  EXPECT_THROW(inst.set_global("b", fvec_t<3>(0., 1., 2.)), runtime_error);
+  EXPECT_THROW(inst.set_global("b", fvec_t<3>(0., 1., 2.)), RuntimeError);
 }
 
 TEST_F(ApiTest, InstanceGlobalInternalVar)
 {
   auto inst = test_instance();
-  EXPECT_THROW(inst.get_global<int_t>("c"), runtime_error);
+  EXPECT_THROW(inst.get_global<int_t>("c"), RuntimeError);
 }
 
 TEST_F(ApiTest, InstanceGlobalInternalConst)
 {
   auto inst = test_instance();
-  EXPECT_THROW(inst.get_global<int_t>("d"), runtime_error);
+  EXPECT_THROW(inst.get_global<int_t>("d"), RuntimeError);
 }
 
 TEST_F(ApiTest, ErrorInfo)

@@ -23,7 +23,7 @@ void AstPrinter::before(const Node& node)
   }
 }
 
-std::string AstPrinter::after(const Node& node, const result_list& results)
+std::string AstPrinter::after(const Node& node, const ResultList& results)
 {
   std::string s = node_op_string(node.type);
   std::string type_id =

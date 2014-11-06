@@ -19,7 +19,7 @@ public:
 protected:
 
   void before(const Node& node) override;
-  std::string after(const Node& node, const result_list& results) override;
+  std::string after(const Node& node, const ResultList& results) override;
 
 private:
 

@@ -7,8 +7,8 @@
 /**
  * #preamble
  *
- * ``typedef``\s
- * =============
+ * Primitive types
+ * ===============
  */
 
 #include <cmath>
@@ -50,7 +50,7 @@ inline int_t euclidean_mod(int_t n, int_t d)
   return (n >= 0 ? n : n + (bool(absn % absd) + absn / absd) * absd) % absd;
 }
 
-/** #summary */
+/** #sumline */
 } // ::yang
 
 #endif

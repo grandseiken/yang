@@ -33,13 +33,13 @@ struct Structure {
     DATA_START = 3,
   };
 
-  struct entry {
-    entry(const Type& type = Type::void_t(), std::size_t index = 0);
+  struct Entry {
+    Entry(const Type& type = Type::void_t(), std::size_t index = 0);
 
     Type type;
     std::size_t index;
   };
-  typedef std::unordered_map<std::string, entry> table_t;
+  typedef std::unordered_map<std::string, Entry> table_t;
 
   Structure();
   llvm::Type* type;

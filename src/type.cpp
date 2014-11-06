@@ -127,7 +127,7 @@ Type Type::float_t()
 Type Type::ivec_t(std::size_t size)
 {
   if (size <= 1) {
-    throw runtime_error(
+    throw RuntimeError(
         "vector type created with size " + std::to_string(size));
   }
   Type t = int_t();
@@ -138,7 +138,7 @@ Type Type::ivec_t(std::size_t size)
 Type Type::fvec_t(std::size_t size)
 {
   if (size <= 1) {
-    throw runtime_error(
+    throw RuntimeError(
         "vector type created with size " + std::to_string(size));
   }
   Type t = float_t();
@@ -160,7 +160,7 @@ Type Type::function_t(const Type& return_t, const std::vector<Type>& args)
 Type Type::raw_user_t(const Type& user_type)
 {
   if (!user_type.is_user_type()) {
-    throw runtime_error("raw user type converted from non-user type");
+    throw RuntimeError("raw user type converted from non-user type");
   }
   Type t = user_type;
   t._base = RAW_USER_TYPE;
@@ -170,7 +170,7 @@ Type Type::raw_user_t(const Type& user_type)
 Type Type::managed_user_t(const Type& user_type)
 {
   if (!user_type.is_user_type()) {
-    throw runtime_error("managed user type converted from non-user type");
+    throw RuntimeError("managed user type converted from non-user type");
   }
   Type t = user_type;
   t._base = MANAGED_USER_TYPE;

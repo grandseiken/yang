@@ -14,29 +14,29 @@ TEST_F(UserTypesTest, IncorrectTypes)
 export takes_user_type = void(UserType) {}
 export takes_user_type_f = void(void(UserType)) {}
 )");
-  struct unknown {};
-  user_type u;
-  other o;
-  unknown unk;
+  struct Unknown;
+  UserType u;
+  Other o;
 
   ASSERT_NO_THROW(inst.call<void>("takes_user_type", &u));
-  EXPECT_THROW(inst.call<void>("takes_user_type", &o), runtime_error);
-  EXPECT_THROW(inst.call<void>("takes_user_type", &unk), runtime_error);
+  EXPECT_THROW(inst.call<void>("takes_user_type", &o), RuntimeError);
+  EXPECT_THROW(inst.call<void>("takes_user_type", (Unknown*)nullptr),
+               RuntimeError);
 
   ASSERT_NO_THROW(
-      inst.call<void>("takes_user_type_f", make_fn([](user_type*){})));
+      inst.call<void>("takes_user_type_f", make_fn([](UserType*){})));
   EXPECT_THROW(
-      inst.call<void>("takes_user_type_f", make_fn([](other*){})),
-      runtime_error);
+      inst.call<void>("takes_user_type_f", make_fn([](Other*){})),
+      RuntimeError);
   EXPECT_THROW(
-      inst.call<void>("takes_user_type_f", make_fn([](unknown*){})),
-      runtime_error);
+      inst.call<void>("takes_user_type_f", make_fn([](Unknown*){})),
+      RuntimeError);
 }
 
 TEST_F(UserTypesTest, RawObjectPassing)
 {
   auto ctxt = context();
-  ctxt.register_member_function("set_id", make_fn([](user_type* u, int_t id)
+  ctxt.register_member_function("set_id", make_fn([](UserType* u, int_t id)
   {
     u->id = id;
   }));
@@ -56,15 +56,15 @@ export takes_user_type = void(UserType u)
   return u.set_id(99);
 })");
 
-  inst.call<user_type*>("returns_user_type");
-  inst.call<user_type*>("returns_user_type");
-  user_type* u = inst.call<user_type*>("returns_user_type");
+  inst.call<UserType*>("returns_user_type");
+  inst.call<UserType*>("returns_user_type");
+  UserType* u = inst.call<UserType*>("returns_user_type");
   EXPECT_EQ(3, u->id);
 
   inst.call<void>("takes_user_type", u);
   EXPECT_EQ(99, u->id);
-  EXPECT_EQ(99, inst.get_global<user_type*>("u")->id);
-  EXPECT_EQ(0, inst.get_global<user_type*>("v")->id);
+  EXPECT_EQ(99, inst.get_global<UserType*>("u")->id);
+  EXPECT_EQ(0, inst.get_global<UserType*>("v")->id);
 }
 
 TEST_F(UserTypesTest, RawMemberFunctions)
@@ -73,9 +73,9 @@ TEST_F(UserTypesTest, RawMemberFunctions)
   int_t extract_value = 0;
   ctxt.register_function("null_user_type", make_fn([]
   {
-    return (user_type*)nullptr;
+    return (UserType*)nullptr;
   }));
-  ctxt.register_member_function("extract", make_fn([&](user_type* u)
+  ctxt.register_member_function("extract", make_fn([&](UserType* u)
   {
     extract_value = u->id;
   }));
@@ -94,8 +94,8 @@ export extract_uu = void()
 })");
 
   auto takes_user_type =
-      inst.get_function<Function<void(user_type*)>>("takes_user_type");
-  user_type u{49};
+      inst.get_function<Function<void(UserType*)>>("takes_user_type");
+  UserType u{49};
   takes_user_type(&u);
   EXPECT_EQ(49, extract_value);
   u.id = 64;
@@ -113,7 +113,7 @@ export steal_function = void(UserType u)
 })");
 
   typedef Function<int_t()> intf_t;
-  user_type u{99};
+  UserType u{99};
   EXPECT_EQ(-1, inst.get_global<intf_t>("f")());
   inst.call<void>("steal_function", &u);
   EXPECT_EQ(99, inst.get_global<intf_t>("f")());
@@ -128,8 +128,8 @@ export make_user_type = MuserType()
 })");
 
   {
-    auto ref = inst.call<Ref<user_type>>("make_user_type");
-    auto sef = inst.call<Ref<user_type>>("make_user_type");
+    auto ref = inst.call<Ref<UserType>>("make_user_type");
+    auto sef = inst.call<Ref<UserType>>("make_user_type");
     EXPECT_EQ(0, ref->id);
     EXPECT_EQ(1, sef->id);
     EXPECT_EQ(2, get_managed_count());
@@ -147,7 +147,7 @@ export global {
 })");
 
     EXPECT_EQ(1, get_managed_count());  
-    auto con = inst.get_global<Function<Ref<user_type>()>>("con");
+    auto con = inst.get_global<Function<Ref<UserType>()>>("con");
     EXPECT_EQ(1, con()->id);
     EXPECT_EQ(1, get_managed_count());  
   }
@@ -199,12 +199,12 @@ export get_count_closure = int()()
 
 TEST_F(UserTypesTest, RawTypedefs)
 {
-  user_type u{0};
+  UserType u{0};
   auto ctxt = context(false);
-  ctxt.register_type<user_type>("u1");
-  ctxt.register_type<user_type>("u2");
+  ctxt.register_type<UserType>("u1");
+  ctxt.register_type<UserType>("u2");
   ctxt.register_function("get_u", make_fn([&]{return &u;}));
-  ctxt.register_member_function("mfn", make_fn([](user_type*)
+  ctxt.register_member_function("mfn", make_fn([](UserType*)
   {
     return (int_t)4;
   }));
@@ -230,17 +230,17 @@ export do_it = int()
 
 TEST_F(UserTypesTest, ManagedTypedefs)
 {
-  user_type u{0};
+  UserType u{0};
   auto ctxt = context(false);
-  ctxt.register_type<user_type>("u");
+  ctxt.register_type<UserType>("u");
   ctxt.register_function("get_u", make_fn([&]{return &u;}));
 
-  auto ma_ctor = [](user_type* u)
+  auto ma_ctor = [](UserType* u)
   {
     ++u->id;
     return u;
   };
-  auto ma_dtor = [](user_type* u)
+  auto ma_dtor = [](UserType* u)
   {
     --u->id;
   };
@@ -258,7 +258,7 @@ export bar = mu()
   return mu(foo());
 }
 )");
-    auto ref = inst.call<Ref<user_type>>("bar");
+    auto ref = inst.call<Ref<UserType>>("bar");
     EXPECT_EQ(1, u.id);
   }
   force_collection();

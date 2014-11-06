@@ -27,10 +27,10 @@ class AstWalkerBase {
 public:
 
   typedef typename AstWalkerNodeType<Const>::type N;
-  typedef std::vector<T> result_list;
+  typedef std::vector<T> ResultList;
 
   // Implements an algorithm such that after() will be called for each node in
-  // the AST, with the passed result_list containing the results of the calls
+  // the AST, with the passed ResultList containing the results of the calls
   // to after() for each of the node's children.
   // Furthermore, for each node, before() will be called before any children
   // are visited.
@@ -39,41 +39,41 @@ public:
 protected:
 
   virtual void before(N& node) = 0;
-  virtual T after(N& node, const result_list& results) = 0;
+  virtual T after(N& node, const ResultList& results) = 0;
 
   // Register callbacks.
-  void call_after(N& node, const std::function<void(const result_list&)>& cb);
+  void call_after(N& node, const std::function<void(const ResultList&)>& cb);
   void call_after(N& node, const std::function<void()>& cb);
-  void result(N& node, const std::function<T(const result_list&)>& cb);
+  void result(N& node, const std::function<T(const ResultList&)>& cb);
   void call_after_result(N& node, const std::function<void(const T&)>& cb);
 
 private:
 
-  struct callback {
-    std::function<void(const result_list&)> call_after_args;
+  struct Callback {
+    std::function<void(const ResultList&)> call_after_args;
     std::function<void()> call_after;
-    std::function<T(const result_list&)> result;
+    std::function<T(const ResultList&)> result;
     std::function<void(const T&)> call_after_result;
   };
-  std::unordered_map<N*, std::vector<callback>> _callbacks;
-  T handle_after(N& node, const result_list& results);
+  std::unordered_map<N*, std::vector<Callback>> _callbacks;
+  T handle_after(N& node, const ResultList& results);
 
 };
 
 template<typename T, bool Const>
 T AstWalkerBase<T, Const>::walk(N& node)
 {
-  struct stack_elem {
+  struct StackElem {
     N* n;
     decltype(node.children.begin()) it;
-    result_list results;
+    ResultList results;
   };
-  std::vector<stack_elem> stack;
+  std::vector<StackElem> stack;
 
-  result_list root_output;
-  stack.push_back({&node, node.children.begin(), result_list()});
+  ResultList root_output;
+  stack.push_back({&node, node.children.begin(), {}});
   while (true) {
-    stack_elem& elem = stack.back();
+    StackElem& elem = stack.back();
     // Correctly handle calling before() on zero-length nodes, but not
     // duplicating the last before() and after() on others.
     if (elem.it == elem.n->children.begin()) {
@@ -91,13 +91,13 @@ T AstWalkerBase<T, Const>::walk(N& node)
     }
 
     N& next = **elem.it++;
-    stack.push_back({&next, next.children.begin(), result_list()});
+    stack.push_back({&next, next.children.begin(), {}});
   }
 }
 
 template<typename T, bool Const>
 void AstWalkerBase<T, Const>::call_after(
-    N& node, const std::function<void(const result_list&)>& cb)
+    N& node, const std::function<void(const ResultList&)>& cb)
 {
   _callbacks[&node].emplace_back();
   _callbacks[&node].back().call_after_args = cb;
@@ -113,7 +113,7 @@ void AstWalkerBase<T, Const>::call_after(
 
 template<typename T, bool Const>
 void AstWalkerBase<T, Const>::result(
-    N& node, const std::function<T(const result_list&)>& cb)
+    N& node, const std::function<T(const ResultList&)>& cb)
 {
   _callbacks[&node].emplace_back();
   _callbacks[&node].back().result = cb;
@@ -128,7 +128,7 @@ void AstWalkerBase<T, Const>::call_after_result(
 }
 
 template<typename T, bool Const>
-T AstWalkerBase<T, Const>::handle_after(N& node, const result_list& results)
+T AstWalkerBase<T, Const>::handle_after(N& node, const ResultList& results)
 {
   T result = {};
   bool have_result = false;

@@ -13,8 +13,8 @@
 namespace yang {
 
 template<std::size_t N>
-struct element_accessor {
-  static const element_accessor instance; 
+struct ElementAccessor {
+  static const ElementAccessor instance; 
 };
 /**
  * #class
@@ -47,10 +47,10 @@ public:
   const T& operator[](std::size_t i) const;
   /** #member */
   template<std::size_t M, typename = internal::enable_if<(M < N)>>
-  T& operator[](const element_accessor<M>&);
+  T& operator[](const ElementAccessor<M>&);
   /** #member ## */
   template<std::size_t M, typename = internal::enable_if<(M < N)>>
-  const T& operator[](const element_accessor<M>&) const;
+  const T& operator[](const ElementAccessor<M>&) const;
 
   /** #member */
   vec<bool, N> operator&&(const vec& arg) const;
@@ -332,14 +332,14 @@ const T& vec<T, N>::operator[](std::size_t i) const
 
 template<typename T, std::size_t N>
 template<std::size_t M, typename>
-T& vec<T, N>::operator[](const element_accessor<M>&)
+T& vec<T, N>::operator[](const ElementAccessor<M>&)
 {
   return elements[M];
 }
 
 template<typename T, std::size_t N>
 template<std::size_t M, typename>
-const T& vec<T, N>::operator[](const element_accessor<M>&) const
+const T& vec<T, N>::operator[](const ElementAccessor<M>&) const
 {
   return elements[M];
 }
@@ -496,14 +496,14 @@ std::ostream& operator<<(std::ostream& stream, const vec<T, N>& arg)
 
 #undef MAP_VEC
 template<std::size_t N>
-const element_accessor<N> element_accessor<N>::instance;
+const ElementAccessor<N> ElementAccessor<N>::instance;
 
 /** #summary */
 namespace {
-  static const auto& x = element_accessor<0>::instance;
-  static const auto& y = element_accessor<1>::instance;
-  static const auto& z = element_accessor<2>::instance;
-  static const auto& w = element_accessor<3>::instance;
+  static const auto& x = ElementAccessor<0>::instance;
+  static const auto& y = ElementAccessor<1>::instance;
+  static const auto& z = ElementAccessor<2>::instance;
+  static const auto& w = ElementAccessor<3>::instance;
 }
 
 template<std::size_t N, typename = internal::enable_if<(N > 1)>>

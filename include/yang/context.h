@@ -62,7 +62,7 @@ namespace internal {
 // Data preserved while it's needed (by Context objects or Programs that depend
 // on them).
 struct ContextInternals {
-  struct constructor {
+  struct Constructor {
     // This is a little odd: constructor/destructor pairs are named separately
     // from the type concerned. It makes sense, since it allows multiple
     // constructors; function overloading would make it unnecessary.
@@ -71,7 +71,7 @@ struct ContextInternals {
   };
 
   const Type& type_lookup(const std::string& name) const;
-  const constructor& constructor_lookup(const std::string& name) const;
+  const Constructor& constructor_lookup(const std::string& name) const;
   const ErasedFunction& function_lookup(const std::string& name) const;
   const ErasedFunction& member_lookup(const std::string& name) const;
   const ErasedFunction& member_lookup(const Type& t,
@@ -81,7 +81,7 @@ struct ContextInternals {
   // this still somewhat string-based mess might be a little bit nicer.
   typedef std::unordered_set<std::string> namespace_set;
   typedef std::unordered_map<std::string, Type> type_map;
-  typedef std::unordered_map<std::string, constructor> constructor_map;
+  typedef std::unordered_map<std::string, Constructor> constructor_map;
   typedef std::unordered_map<std::string, ErasedFunction> function_map;
   typedef std::unordered_map<Type, function_map> member_map;
 
@@ -220,7 +220,7 @@ void Context::register_constructor(const std::string& name,
   check_constructor(name);
   copy_internals();
   auto it = _internals->constructors.insert(
-      std::make_pair(name, internal::ContextInternals::constructor()));
+      std::make_pair(name, internal::ContextInternals::Constructor{}));
   it.first->second.ctor = constructor.get_erased_representation();
   it.first->second.dtor = destructor.get_erased_representation();
 }

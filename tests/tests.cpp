@@ -43,40 +43,40 @@ Context YangTest::context(bool with_types)
   }
 
   // User type registered as both raw and managed. Each one gets a different ID.
-  context.register_type<user_type>("UserType");
+  context.register_type<UserType>("UserType");
   auto get_user_type = [this]
   {
-    user_type* u = new user_type{_user_value_id++};
+    UserType* u = new UserType{_user_value_id++};
     _user_values.emplace_back(u);
     return u;
   };
   auto constructor = make_fn([this]
   {
     ++_managed_count;
-    return new user_type{_user_value_id++};
+    return new UserType{_user_value_id++};
   });
-  auto destructor = make_fn([this](user_type* m)
+  auto destructor = make_fn([this](UserType* m)
   {
     --_managed_count;
     delete m;
   });
-  context.register_member_function("foo", make_fn([](user_type*){}));
+  context.register_member_function("foo", make_fn([](UserType*){}));
   context.register_function("get_user_type", make_fn(get_user_type));
   context.register_type("MuserType", constructor, destructor);
 
-  context.register_member_function("get_id", make_fn([](user_type* u)
+  context.register_member_function("get_id", make_fn([](UserType* u)
   {
     return int_t(u->id);
   }));
-  context.register_member_function("get_id", make_fn([](Ref<user_type> u)
+  context.register_member_function("get_id", make_fn([](Ref<UserType> u)
   {
     return int_t(u->id);
   }));
 
-  context.register_type<other>("OtherType");
-  context.register_function("get_other", make_fn([]{return (other*)nullptr;}));
-  context.register_type("MotherType", make_fn([]{return (other*)nullptr;}),
-                                      make_fn([](other*){}));
+  context.register_type<Other>("OtherType");
+  context.register_function("get_other", make_fn([]{return (Other*)nullptr;}));
+  context.register_type("MotherType", make_fn([]{return (Other*)nullptr;}),
+                                      make_fn([](Other*){}));
   return context;
 }
 

@@ -202,9 +202,9 @@ void StaticChecker::before(const Node& node)
   // since there's no way to decide if an int2 or int3 was intended. However,
   // the erroneous 1 == 1. gives type INT, as the result would be INT whether or
   // not the operand type was intended to be int or float.
-  std::function<Category(const result_list&)> result_macro;
-#define RESULT [=,&node](const result_list& results) -> Category
-#define LEAF [=,&node](const result_list&) -> Category
+  std::function<Category(const ResultList&)> result_macro;
+#define RESULT [=,&node](const ResultList& results) -> Category
+#define LEAF [=,&node](const ResultList&) -> Category
 #define FOR_ANY(condition) if (condition) result_macro =
 #define FOR(node_type) FOR_ANY(node.type == Node::node_type)
 
@@ -423,7 +423,7 @@ void StaticChecker::before(const Node& node)
           node.type == Node::POSTFIX_DECREMENT) RESULT {
     Category t = results[0];
     for (void* tag : t.tags()) {
-      ((symbol_t*)tag)->warn_writes = false;
+      ((Symbol*)tag)->warn_writes = false;
     }
 
     if (!(t.is_int() || t.is_float())) {
@@ -458,7 +458,7 @@ void StaticChecker::before(const Node& node)
         node.type == Node::ASSIGN_ADD || node.type == Node::ASSIGN_SUB ||
         node.type == Node::ASSIGN_MUL || node.type == Node::ASSIGN_DIV;
     for (void* tag : left.tags()) {
-      auto sym = (symbol_t*)tag;
+      auto sym = (Symbol*)tag;
       sym->warn_writes = false;
     }
 
@@ -764,7 +764,7 @@ void StaticChecker::before(const Node& node)
         push_symbol_tables();
       });
 
-      call_after(node, [=,&node](const result_list& results)
+      call_after(node, [=,&node](const ResultList& results)
       {
         if (!_scopes.back().metadata[RETURN_TYPE].is_void() &&
             results[1].is_void()) {
@@ -775,7 +775,7 @@ void StaticChecker::before(const Node& node)
         // The last symbol table contains only the recursive hack: we just want
         // to merge its unreferenced warning information with the symbol about
         // to be added in the enclosing scope.
-        std::vector<std::pair<std::string, symbol_t*>> symbols;
+        std::vector<std::pair<std::string, Symbol*>> symbols;
         _scopes.back().symbol_table.get_symbols(symbols, 0, 2);
         for (const auto& pair : symbols) {
           _immediate_left_assign_warn_reads = pair.second->warn_reads;
@@ -991,7 +991,7 @@ void StaticChecker::before(const Node& node)
 #undef RESULT
 }
 
-Category StaticChecker::after(const Node& node, const result_list&)
+Category StaticChecker::after(const Node& node, const ResultList&)
 {
   error(node, "unimplemented construct");
   return Category::error();
@@ -1075,7 +1075,7 @@ Category StaticChecker::load(const Category& a)
     return a;
   }
   for (void* tag : a.tags()) {
-    auto sym = (symbol_t*)tag;
+    auto sym = (Symbol*)tag;
     sym->warn_reads = false;
   }
   return a.is_error() ? a : a.type();
@@ -1109,7 +1109,7 @@ std::string StaticChecker::str(const Category& category) const
       "`" + category.type().string(_context) + "`";
 }
 
-StaticChecker::symbol_t::symbol_t()
+StaticChecker::Symbol::Symbol()
   : closed(false)
   , scope_number(0)
   , declaration(nullptr)
@@ -1119,7 +1119,7 @@ StaticChecker::symbol_t::symbol_t()
 {
 }
 
-StaticChecker::lex_scope_t::lex_scope_t(
+StaticChecker::LexicalScope::LexicalScope(
     const Node& function, const std::string& name)
   : function(function)
   , name(name)

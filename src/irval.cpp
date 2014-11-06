@@ -35,7 +35,7 @@ StaticString::StaticString(const std::string& value)
 {
 }
 
-Structure::entry::entry(const Type& type, std::size_t index)
+Structure::Entry::Entry(const Type& type, std::size_t index)
   : type(type)
   , index(index)
 {
@@ -360,7 +360,7 @@ void LexScope::init_structure_type(
   for (const auto& pair : symbols) {
     // Type-calculation must be kept up-to-date with new types.
     type_list.push_back(_b.get_llvm_type(pair.second));
-    _structure.table[pair.first] = Structure::entry(pair.second, number++);
+    _structure.table[pair.first] = Structure::Entry(pair.second, number++);
   }
   struct_type->setBody(type_list, false);
 

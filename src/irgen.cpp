@@ -153,9 +153,9 @@ void IrGenerator::obtain_function_pointers()
 
 void IrGenerator::before(const Node& node)
 {
-  std::function<Value(const result_list&)> result_macro;
-#define RESULT [=,&node](const result_list& results) -> Value
-#define LEAF [=,&node](const result_list&) -> Value
+  std::function<Value(const ResultList&)> result_macro;
+#define RESULT [=,&node](const ResultList& results) -> Value
+#define LEAF [=,&node](const ResultList&) -> Value
 #define FOR_ANY(condition) if (condition) result_macro =
 #define FOR(node_type) FOR_ANY(node.type == Node::node_type)
 
@@ -862,7 +862,7 @@ void IrGenerator::before(const Node& node)
 #undef RESULT
 }
 
-Value IrGenerator::after(const Node&, const result_list&)
+Value IrGenerator::after(const Node&, const ResultList&)
 {
   return {};
 }

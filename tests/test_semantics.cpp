@@ -386,13 +386,13 @@ export tco_fac = int(int n)
 
 TEST_F(SemanticsTest, ContextNamespaces)
 {
-  struct type {};
-  struct inner_type {};
+  struct OuterType {};
+  struct InnerType {};
   auto make_inner = make_fn([]
   {
-    return new inner_type;
+    return new InnerType;
   });
-  auto delete_inner = make_fn([](inner_type* t)
+  auto delete_inner = make_fn([](InnerType* t)
   {
     delete t;
   });
@@ -410,7 +410,7 @@ TEST_F(SemanticsTest, ContextNamespaces)
     return int_t(12);
   }));
   inner_ctxt.register_type("MType", make_inner, delete_inner);
-  inner_ctxt.register_member_function("mem", make_fn([](Ref<inner_type>)
+  inner_ctxt.register_member_function("mem", make_fn([](Ref<InnerType>)
   {
     return int_t(1);
   }));
@@ -420,21 +420,21 @@ TEST_F(SemanticsTest, ContextNamespaces)
   {
     return int_t(10);
   }));
-  other_ctxt.register_type<type>("Type");
+  other_ctxt.register_type<OuterType>("Type");
 
   auto ctxt = context();
-  ctxt.register_member_function("mem", make_fn([](type*)
+  ctxt.register_member_function("mem", make_fn([](OuterType*)
   {
     return int_t(2);
   }));
   ctxt.register_namespace("outer", inner_ctxt);
   ctxt.register_namespace("other", other_ctxt);
-  type closed_type;
+  OuterType closed_type;
   ctxt.register_function("make_type", make_fn([&]
   {
     return &closed_type;
   }));
-  ctxt.register_type<type>("Type");
+  ctxt.register_type<OuterType>("Type");
 
   auto inst = instance(ctxt, R"(
 export fn = int()
@@ -467,7 +467,7 @@ export f = UserType()
 
   auto ctxt = context(false);
   ctxt.register_namespace("inst", inst);
-  ctxt.register_type<user_type>("Ut");
+  ctxt.register_type<UserType>("Ut");
 
   auto jnst = instance(ctxt, R"(
 export global {
@@ -482,10 +482,10 @@ export get = Ut()
   return inst::f();
 })");
 
-  EXPECT_EQ(0, jnst.get_global<user_type*>("u")->id);
+  EXPECT_EQ(0, jnst.get_global<UserType*>("u")->id);
   jnst.call<void>("g");
-  EXPECT_EQ(1, jnst.get_global<user_type*>("u")->id);
-  EXPECT_EQ(2, jnst.call<user_type*>("get")->id);
+  EXPECT_EQ(1, jnst.get_global<UserType*>("u")->id);
+  EXPECT_EQ(2, jnst.call<UserType*>("get")->id);
 
   auto prog = program_suppress_errors(ctxt, "x = void() {inst::g();}");
   EXPECT_FALSE(prog.success());

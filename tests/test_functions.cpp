@@ -15,9 +15,9 @@ struct FunctionTest : YangTest {
     });
   }
 
-  Function<int_t(user_type*)> ucpp() const
+  Function<int_t(UserType*)> ucpp() const
   {
-    return make_fn([](user_type* u)
+    return make_fn([](UserType* u)
     {
       return int_t(u->id * 11);
     });

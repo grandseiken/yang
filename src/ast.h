@@ -181,11 +181,10 @@ struct Node {
 
   // We mostly don't need to pass any type information between the static
   // checker and the IR generator, except for closure scope information.
-  struct mutable_struct {
+  mutable struct {
     std::size_t scope_number = 0;
     std::unordered_map<std::string, Type> closed_environment;
-  };
-  mutable mutable_struct static_info;
+  } static_info;
 };
 
 // Get the human-readable text of an operator.

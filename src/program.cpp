@@ -127,8 +127,8 @@ bool Program::success() const
 std::string Program::print_ast() const
 {
   if (!success()) {
-    throw runtime_error(_internals->name +
-                        ": program did not compile successfully");
+    throw RuntimeError(_internals->name +
+                       ": program did not compile successfully");
   }
   internal::AstPrinter printer;
   return printer.walk(*_internals->ast) + '\n';
@@ -137,8 +137,8 @@ std::string Program::print_ast() const
 std::string Program::print_ir() const
 {
   if (!success()) {
-    throw runtime_error(_internals->name +
-                        ": program did not compile successfully");
+    throw RuntimeError(_internals->name +
+                       ": program did not compile successfully");
   }
   std::string output;
   llvm::raw_string_ostream os(output);
@@ -174,7 +174,7 @@ void Program::generate_ir(
       llvm::EngineBuilder(_internals->module).setErrorStr(&error).create());
   if (!_internals->engine) {
     delete _internals->module;
-    throw runtime_error(
+    throw RuntimeError(
         _internals->name + ": couldn't create execution engine: " + error);
   }
   // Disable implicit searching so we don't accidentally resolve linked-in
@@ -194,8 +194,8 @@ void Program::generate_ir(
   if (llvm::verifyModule(*_internals->module, &eos)) {
     // Shouldn't be possible and indicates severe bug, so log the entire IR.
     log_err(print_ir());
-    throw runtime_error(_internals->name +
-                        ": couldn't verify module: " + error);
+    throw RuntimeError(_internals->name +
+                       ": couldn't verify module: " + error);
   }
   if (optimise) {
     irgen.optimise_ir();

@@ -19,10 +19,10 @@ public:
 
 protected:
 
-  struct user_type {
+  struct UserType {
     std::size_t id;
   };
-  struct other {};
+  struct Other {};
   void force_collection();
   std::size_t get_managed_count();
 
@@ -40,7 +40,7 @@ protected:
 
 private:
 
-  std::vector<std::unique_ptr<user_type>> _user_values;
+  std::vector<std::unique_ptr<UserType>> _user_values;
   std::size_t _program_id;
   std::size_t _user_value_id;
   std::size_t _managed_count;

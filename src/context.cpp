@@ -16,10 +16,10 @@ const Type& ContextInternals::type_lookup(const std::string& name) const
   return it == types.end() ? none : it->second;
 }
 
-const ContextInternals::constructor& ContextInternals::constructor_lookup(
+const ContextInternals::Constructor& ContextInternals::constructor_lookup(
     const std::string& name) const
 {
-  static constructor none;
+  static Constructor none;
   auto it = constructors.find(name);
   return it == constructors.end() ? none : it->second;
 }
@@ -69,7 +69,7 @@ void Context::register_namespace(const std::string& name,
 {
   check_namespace(name);
   if (&*_internals == &*context._internals) {
-    throw runtime_error("context registered as a namespace in itself");
+    throw RuntimeError("context registered as a namespace in itself");
   }
   for (const auto& pair : context._internals->members) {
     for (const auto& qair : pair.second) {
@@ -78,7 +78,7 @@ void Context::register_namespace(const std::string& name,
       const auto& map = _internals->members[pair.first];
       auto it = map.find(qair.first);
       if (it != map.end() && it->second != qair.second) {
-        throw runtime_error(
+        throw RuntimeError(
             "member function `" + pair.first.string(context) + "::" +
             qair.first + "` in context registered as namespace conflicts with "
             "existing member of `" + pair.first.string(*this) + "`");
@@ -139,11 +139,11 @@ void Context::check_namespace(const std::string& name) const
 {
   check_identifier(name);
   if (_internals->types.find(name) != _internals->types.end()) {
-    throw runtime_error(
+    throw RuntimeError(
         "namespace `" + name + "` conflicts with existing registered typename");
   }
   if (_internals->namespaces.find(name) != _internals->namespaces.end()) {
-    throw runtime_error(
+    throw RuntimeError(
         "duplicate namespace `" + name + "` registered in context");
   }
 }
@@ -152,11 +152,11 @@ void Context::check_type(const std::string& name) const
 {
   check_identifier(name);
   if (_internals->namespaces.find(name) != _internals->namespaces.end()) {
-    throw runtime_error(
+    throw RuntimeError(
         "typename `" + name + "` conflicts with existing registered namespace");
   }
   if (_internals->types.find(name) != _internals->types.end()) {
-    throw runtime_error(
+    throw RuntimeError(
         "duplicate typename `" + name + "` registered in context");
   }
 }
@@ -165,12 +165,12 @@ void Context::check_function(const std::string& name) const
 {
   check_identifier(name);
   if (_internals->constructors.find(name) != _internals->constructors.end()) {
-    throw runtime_error(
+    throw RuntimeError(
         "function `" + name +
         "` conflicts with existing registered constructor");
   }
   if (_internals->functions.find(name) != _internals->functions.end()) {
-    throw runtime_error(
+    throw RuntimeError(
         "duplicate function `" + name + "` registered in context");
   }
 }
@@ -179,12 +179,12 @@ void Context::check_constructor(const std::string& name) const
 {
   check_identifier(name);
   if (_internals->functions.find(name) != _internals->functions.end()) {
-    throw runtime_error(
+    throw RuntimeError(
         "constructor `" + name +
         "` conflicts with existing registered function");
   }
   if (_internals->constructors.find(name) != _internals->constructors.end()) {
-    throw runtime_error(
+    throw RuntimeError(
         "duplicate constructor `" + name + "` registered in context");
   }
 }
@@ -195,7 +195,7 @@ void Context::check_member_function(const Type& type,
   check_identifier(name);
   if (_internals->members[type].find(name) !=
       _internals->members[type].end()) {
-    throw runtime_error(
+    throw RuntimeError(
         "duplicate member function `" + type.string(*this) + "::" +
         name + "` registered in context");
   }
@@ -206,7 +206,7 @@ void Context::check_identifier(const std::string& ident) const
   for (char c : ident) {
     if (!(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') &&
         !(c >= '0' && c <= '9') && c != '_') {
-      throw runtime_error("invalid identifier `" + ident + "`");
+      throw RuntimeError("invalid identifier `" + ident + "`");
     }
   }
 }

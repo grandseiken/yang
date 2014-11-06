@@ -265,7 +265,7 @@ export cycles = int()()
 TEST_F(RefcountingTest, GlobalClosures)
 {
   auto ctxt = context();
-  ctxt.register_member_function("f", make_fn([](user_type* t, int_t a)
+  ctxt.register_member_function("f", make_fn([](UserType* t, int_t a)
   {
     return int_t(t->id * 2 * a);
   }));

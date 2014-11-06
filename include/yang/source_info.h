@@ -19,7 +19,7 @@ namespace yang {
  * warnings detected when compiling Yang code.
  *
  * Note that the line and column fields are 1-indexed and *inclusive*, while the
- * raw index fields are 0-indexed.
+ * raw index field is 0-indexed.
  */
 struct SourceInfo {
   /**
@@ -62,7 +62,7 @@ struct SourceInfo {
   /**
    * #member
    *
-   * The raw length of the code fragment (including contained newlines).
+   * The raw length of the code fragment (including newlines).
    */
   std::size_t length;
   /**

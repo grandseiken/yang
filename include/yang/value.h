@@ -43,17 +43,17 @@ public:
 
 private:
 
-  struct deleter_base {
+  struct DeleterBase {
     virtual void operator()(void* data) const = 0;
   };
   template<typename T>
-  struct deleter : deleter_base {
+  struct Deleter : DeleterBase {
     void operator()(void* data) const override;
   };
 
   Type _type;
   void* _data;
-  std::unique_ptr<deleter_base> _deleter;
+  std::unique_ptr<DeleterBase> _deleter;
 
 /** #sumline ## */
 };
@@ -62,7 +62,7 @@ template<typename T>
 Value::Value(const T& t)
   : _type(Type::of<T>())
   , _data(new T(t))
-  , _deleter(new deleter<T>)
+  , _deleter(new Deleter<T>)
 {
 }
 
@@ -81,14 +81,14 @@ const T& Value::as() const
 {
   Type type = Type::of<T>();
   if (_type != type) {
-    throw runtime_error("accessed " + _type.string(Context()) +
-                        " value as " + type.string(Context()));
+    throw RuntimeError("accessed " + _type.string(Context()) +
+                       " value as " + type.string(Context()));
   }
   return *(T*)_data;
 }
 
 template<typename T>
-void Value::deleter<T>::operator()(void* data) const
+void Value::Deleter<T>::operator()(void* data) const
 {
   delete (T*)data;
 }

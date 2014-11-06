@@ -104,7 +104,7 @@ public:
 
 private:
 
- friend struct internal::Raw<Function>;
+  friend struct internal::Raw<Function>;
   friend class Context;
   // There is no null function, so library code that returns Functions to client
   // code must throw rather than returning something unusable.
@@ -202,7 +202,8 @@ internal::RawFunction Function<R(Args...)>::get_raw_representation() const
 }
 
 template<typename R, typename... Args>
-const internal::ErasedFunction& Function<R(Args...)>::get_erased_representation() const
+const internal::ErasedFunction&
+    Function<R(Args...)>::get_erased_representation() const
 {
   internal::GenerateReverseTrampolineLookupTable<Function<R(Args...)>>()();
   return _data;
