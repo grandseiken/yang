@@ -1,22 +1,22 @@
 **Yang** is a scripting language designed for easy embedding in C++ programs.
 
 Some features:
-* Static type system including primitive vector types and extendable user types.
-* Powerful execution model including instanced scripts, higher-order functions, and lexical closures.
-* Good error messages.
-* Scripts are JIT-compiled to native code using LLVM for super-fast execution.
-* Natural, type-safe, minimal-boilerplate interop between script and host program code. Functions defined in either C++ or Yang can be passed back and forth between the two languages, stored, and invoked arbitrarily.
+* The language feels mostly like C, except with first-class functions and closures.
+* Static type checking, with vector types and user types (raw or reference-counted).
+* Programs can be compiled once but instantiated many times. One program can be used as a library of functions for others.
+* Fairly nice error messages.
+* Yang uses LLVM as a backend, so compiled programs run quite fast.
+* Natural, type-safe, no-boilerplate interop between script code and host code. Values can be passed back and forth between C++ and Yang. Functions defined in one can be invoked from the other. Reference-counting (where applicable) just works across the two languages.
 
 Some planned features:
-* User types can be (optionally) automatically reference-counted.
-* Reasonable thread-safety guarantees.
-* Scripts can be combined either statically (one script acts as a library of functions for another) or dynamically (one script is passed as an argument to another via an abstract interface).
+* Structural interfaces: define an interface type containing some member functions. Any value whose type is a user type with matching member functions, or any program instance with matching exported functions, is then covertible to the interface type.
+* Reasonable thread-safety guarantees?
 
 Some drawbacks:
 * Using Yang involves linking your program against a decent chunk of LLVM, which will increase the size of your distribution by a good 10 megabytes or so. There may be some sort of bytecode backend in the future.
-* Yang makes heavy use of C++11 language and library features, so you'll need a recent compiler. At the moment there's no C API.
+* Yang makes heavy use of C++11 language and library features, so you'll need a recent compiler. There is no C API.
 
-The language and API are still in early stages and very much in flux, so you probably don't want to use this for anything serious just yet.
+The language and API are not quite stable, so you might not want to use this for anything serious just yet.
 
 Currently, a hello world program looks something like this:
 
@@ -36,13 +36,14 @@ std::string script_string = R"*(
 
 int main()
 {
-  auto native_hello_world = yang::make_fn([]()
+  auto native_hello_world = []
   {
     std::cout << "Hello, world!";
-  });
+  };
 
   yang::Context context;
-  context.register_function("native_hello_world", native_hello_world);
+  context.register_function("native_hello_world",
+                            yang::make_fn(native_hello_world));
 
   yang::Program program(context, "example", script_string);
   yang::Instance instance(program);
