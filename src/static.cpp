@@ -592,7 +592,11 @@ void StaticChecker::before(const Node& node)
         std::vector<std::pair<std::string, Symbol*>> v;
         _scopes.back().symbol_table.get_symbols(v, 0, 0);
         _scopes.pop_back();
-        // TODO: construct interface type.
+
+        std::vector<std::pair<std::string, Type>> members;
+        for (const auto& pair : v) {
+          members.emplace_back(pair.first, pair.second->category.type());
+        }
       });
       break;
     case Node::INTERFACE_MEMBER:

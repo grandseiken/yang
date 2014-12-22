@@ -4,6 +4,7 @@
 //============================================================================//
 #include <yang/type.h>
 
+#include <algorithm>
 #include <yang/context.h>
 #include <yang/runtime_error.h>
 
@@ -80,19 +81,21 @@ bool Type::is_managed_user_type() const
   return _base == MANAGED_USER_TYPE;
 }
 
+bool Type::is_interface() const
+{
+  return _base == INTERFACE;
+}
+
+const std::vector<std::pair<std::string, Type>>& Type::interface_members() const
+{
+  return _members;
+}
+
 bool Type::operator==(const Type& t) const
 {
-  if (_args.size() != t._args.size() || _return.empty() != t._return.empty() ||
-      (!_return.empty() && _return[0] != t._return[0])) {
-    return false;
-  }
-  for (std::size_t i = 0; i < _args.size(); ++i) {
-    if (_args[i] != t._args[i]) {
-      return false;
-    }
-  }
-  return _user_type_uid == t._user_type_uid &&
-      _base == t._base && _count == t._count;
+  return _base == t._base && _count == t._count &&
+      _return == t._return && _args == t._args &&
+      _user_type_uid == t._user_type_uid && _members == t._members;
 }
 
 bool Type::operator!=(const Type& t) const
@@ -170,6 +173,14 @@ Type Type::managed_user_t(const Type& user_type)
   return t;
 }
 
+Type Type::interface_t(const std::vector<std::pair<std::string, Type>>& members)
+{
+  Type t;
+  t._base = INTERFACE;
+  t._members = members;
+  return t;
+}
+
 Type Type::erased_t(const Type& type)
 {
   Type t = type;
@@ -243,6 +254,13 @@ std::string Type::string(const internal::ContextInternals& context) const
     }
     s += ")";
   }
+  else if (_base == INTERFACE) {
+    s += "interface {\n";
+    for (const auto& pair : _members) {
+      s += "  " + pair.second.string(context) + " " + pair.first + ";\n";
+    }
+    s += "}";
+  }
   else {
     s += _base == VOID ? "void" :
          _base == INT ? "int" :
@@ -278,6 +296,10 @@ namespace std {
       hash_combine(seed, operator()(t));
     }
     hash_combine(seed, (std::intptr_t)type._user_type_uid);
+    for (const auto& p : type._members) {
+      hash_combine(seed, std::hash<std::string>()(p.first));
+      hash_combine(seed, operator()(p.second));
+    }
     return seed;
   }
 }

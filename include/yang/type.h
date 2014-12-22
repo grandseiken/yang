@@ -7,6 +7,7 @@
 
 #include <string>
 #include <vector>
+#include <utility>
 
 /** #sumline ## */
 namespace yang {
@@ -80,6 +81,11 @@ public:
   bool is_managed_user_type() const;
 
   /** #member */
+  bool is_interface() const;
+  /** #member ## */
+  const std::vector<std::pair<std::string, Type>>& interface_members() const;
+
+  /** #member */
   bool operator==(const Type& t) const;
   /** #member ## */
   bool operator!=(const Type& t) const;
@@ -104,8 +110,11 @@ public:
   /** #member */
   template<typename>
   static Type managed_user_t();
-  /** #member ## */
+  /** #member */
   static Type managed_user_t(const Type& user_type);
+  /** #member ## */
+  static Type interface_t(
+      const std::vector<std::pair<std::string, Type>>& members);
 
   /**
    * #member
@@ -140,6 +149,7 @@ private:
     FUNCTION,
     RAW_USER_TYPE,
     MANAGED_USER_TYPE,
+    INTERFACE,
   };
 
   type_base _base;
@@ -147,6 +157,7 @@ private:
   std::vector<Type> _return;
   std::vector<Type> _args;
   const void* _user_type_uid;
+  std::vector<std::pair<std::string, Type>> _members;
 
 /** #sumline ## */
 };
