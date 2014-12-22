@@ -15,6 +15,7 @@ AstPrinter::AstPrinter()
 void AstPrinter::before(const Node& node)
 {
   switch (node.type) {
+    case Node::INTERFACE:
     case Node::BLOCK:
       ++_indent;
       break;
@@ -52,12 +53,24 @@ std::string AstPrinter::after(const Node& node, const ResultList& results)
 
     case Node::PROGRAM:
     {
-      std::string s = "";
+      std::string s;
       for (const std::string r : results) {
         s += r + '\n';
       }
       return s;
     }
+    case Node::INTERFACE:
+    {
+      std::string s;
+      for (const auto& t : results) {
+        s += indent() + t + "\n";
+      }
+      --_indent;
+      return indent() + "interface " +
+          node.string_value + "{\n" + s + indent() + "}";
+    }
+    case Node::INTERFACE_MEMBER:
+      return results[0] + " " + node.string_value + ";";
     case Node::GLOBAL:
       return (node.int_value & Node::MODIFIER_EXPORT ? "export " : "") +
           std::string(node.int_value & Node::MODIFIER_NEGATION ? "~" : "") +
@@ -73,9 +86,9 @@ std::string AstPrinter::after(const Node& node, const ResultList& results)
     case Node::BLOCK:
     {
       --_indent;
-      std::string s = "";
-      for (std::size_t i = 0; i < results.size(); ++i) {
-        s += results[i];
+      std::string s;
+      for (const auto& t : results) {
+        s += t;
       }
       return indent() + "{\n" + s + indent() + "}";
     }
@@ -221,7 +234,7 @@ std::string AstPrinter::after(const Node& node, const ResultList& results)
 
     case Node::VECTOR_CONSTRUCT:
     {
-      std::string output = "";
+      std::string output;
       for (const std::string& s : results) {
         if (output.length()) {
           output += ", ";
@@ -232,7 +245,7 @@ std::string AstPrinter::after(const Node& node, const ResultList& results)
     }
     case Node::VECTOR_INDEX:
     {
-      std::string output = "";
+      std::string output;
       for (std::size_t i = 1; i < results.size(); ++i) {
         if (output.length()) {
           output += ", ";

@@ -154,6 +154,7 @@ raw_string_literal \"\"\"([^"]|\"[^"]|\"\"[^"])*\"\"\"
 
   /* Keywords. */
 
+interface {TOKEN; return T_INTERFACE;}
 global {TOKEN; return T_GLOBAL;}
 export {TOKEN; return T_EXPORT;}
 closed {TOKEN; return T_CLOSED;}

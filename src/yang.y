@@ -35,6 +35,7 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
 %token <node> T_EOF 0
 %token <node> '(' ')' '{' '}' '[' ']' '.' ',' ';'
 
+%token <node> T_INTERFACE
 %token <node> T_GLOBAL
 %token <node> T_EXPORT
 %token <node> T_CLOSED
@@ -131,6 +132,9 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
 %type <node> program
 %type <node> elem_list
 %type <node> elem
+%type <node> interface
+%type <node> member_list
+%type <node> member
 %type <node> opt_export
 %type <node> opt_negation
 %type <node> opt_closed
@@ -167,7 +171,9 @@ elem_list
   ;
 
 elem
-  : opt_export opt_negation T_GLOBAL stmt
+  : interface
+{$$ = $1;}
+  | opt_export opt_negation T_GLOBAL stmt
 {if ($4->type != Node::BLOCK) {
    // Ensure a consistent scope depth for all global declarations.
    $4 = new Node(scan, $3, Node::BLOCK, $4);
@@ -182,6 +188,30 @@ elem
  $$->extend_bounds($1);}
   | ';'
 {$$ = nullptr;}
+  ;
+
+interface
+  : T_INTERFACE T_IDENTIFIER '{' member_list '}'
+{$$ = $4;
+ $$->type = Node::INTERFACE;
+ $$->set_inner_bounds($1);
+ $$->string_value = $2->string_value;
+ $$->extend_bounds($5);}
+  ;
+
+member_list
+  :
+{$$ = new Node(scan, Node::ERROR);}
+  | member_list member ';'
+{$$ = $1; $$->add($2);}
+  ;
+
+member
+  : expr_functional T_IDENTIFIER
+{$$ = $1;
+ $$->type = Node::INTERFACE_MEMBER;
+ $$->string_value = $2->string_value;
+ $$->set_inner_bounds($2);}
   ;
 
 opt_export

@@ -173,7 +173,7 @@ void StaticChecker::before(const Node& node)
   if (context_err) {
     if (!_scopes.back().metadata.has(ERR_EXPR_CONTEXT)) {
       error(node, std::string(in_type_context ? "expected" : "unexpected") +
-                  "type in this context");
+                  " type in this context");
     }
     // Avoid duplicated errors by adding an override context.
     _scopes.back().metadata.push();
@@ -584,6 +584,26 @@ void StaticChecker::before(const Node& node)
       // pop anything, since it's the last frame.
       call_after(node, [=]{warn_unreferenced_variables();});
       result(node, LEAF {return {};});
+      break;
+
+    case Node::INTERFACE:
+      _scopes.emplace_back(node, node.string_value);
+      result(node, LEAF {return {};});
+      call_after(node, [=]{
+        std::vector<std::pair<std::string, Symbol*>> v;
+        _scopes.back().symbol_table.get_symbols(v, 0, 0);
+        _scopes.pop_back();
+        // TODO: construct interface type.
+      });
+      break;
+    case Node::INTERFACE_MEMBER:
+      _scopes.back().metadata.push();
+      _scopes.back().metadata.add(TYPE_EXPR_CONTEXT, {});
+      call_after(node, [=]{_scopes.back().metadata.pop();});
+      result(node, RESULT {
+        add_symbol(node, node.string_value, results[0], false, false);
+        return {};
+      });
       break;
 
     case Node::GLOBAL:

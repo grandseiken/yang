@@ -39,6 +39,8 @@ struct Node {
 
     // Top-level elements.
     PROGRAM,
+    INTERFACE,
+    INTERFACE_MEMBER,
     GLOBAL,
     GLOBAL_ASSIGN,
     FUNCTION,

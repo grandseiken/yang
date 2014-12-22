@@ -141,7 +141,7 @@ void IrGenerator::emit_global_functions()
   }
 }
 
-void IrGenerator::obtain_function_pointers()
+void IrGenerator::resolve_function_pointers()
 {
   // Getting function pointers to store in vtables is delayed until after
   // optimisation has taken place, or they will be wrong.

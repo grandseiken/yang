@@ -200,7 +200,7 @@ void Program::generate_ir(
   if (optimise) {
     irgen.optimise_ir();
   }
-  irgen.obtain_function_pointers();
+  irgen.resolve_function_pointers();
 }
 
 } // ::yang

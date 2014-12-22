@@ -63,6 +63,7 @@ namespace internal {
 // on them).
 struct ContextInternals {
   struct Constructor {
+    Constructor() {}
     // This is a little odd: constructor/destructor pairs are named separately
     // from the type concerned. It makes sense, since it allows multiple
     // constructors; function overloading would make it unnecessary.

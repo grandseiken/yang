@@ -36,7 +36,7 @@ public:
   void emit_global_functions();
   // Obtain function pointers for generated functions and store them in vtables.
   // This must be called after optimisation (if any) has taken place.
-  void obtain_function_pointers();
+  void resolve_function_pointers();
 
 protected:
 
