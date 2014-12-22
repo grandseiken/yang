@@ -233,7 +233,7 @@ TEST_F(ApiTest, TypeOfFunction)
 {
   typedef Function<UserType*(int_t)> ft;
   EXPECT_TRUE(Type::of<ft>().is_function());
-  EXPECT_EQ(1, Type::of<ft>().function_num_args());
+  EXPECT_EQ(1, Type::of<ft>().function_args().size());
   EXPECT_TRUE(Type::of<ft>().function_return().is_user_type());
   EXPECT_FALSE(Type::of<ft>().function_return().is_managed_user_type());
 }
@@ -424,8 +424,8 @@ TEST_F(ApiTest, ProgramFunctions)
   auto type = it->second;
 
   ASSERT_TRUE(type.is_function());
-  ASSERT_EQ(1, type.function_num_args());
-  EXPECT_TRUE(type.function_arg(0).is_int());
+  ASSERT_EQ(1, type.function_args().size());
+  EXPECT_TRUE(type.function_args()[0].is_int());
   EXPECT_TRUE(type.function_return().is_int());
 }
 

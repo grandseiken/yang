@@ -144,18 +144,15 @@ bool Category::user_type() const
   return is_error() || _type.is_user_type();
 }
 
-bool Category::element_size(std::size_t num_elements) const
+bool Category::arg_size(std::size_t num_args) const
 {
   return is_error() ||
-      (!_type.is_function() && num_elements == 0) ||
-      (_type.is_function() && 1 + _type.function_num_args() == num_elements);
+      (_type.is_function() && _type.function_args().size() == num_args);
 }
 
-bool Category::element_is(std::size_t index, const Category& category) const
+bool Category::arg_is(std::size_t index, const Category& category) const
 {
-  return is_error() ||
-      (!index && category.is(_type.function_return())) ||
-      (index && category.is(_type.function_arg(index - 1)));
+  return is_error() || category.is(_type.function_args()[index]);
 }
 
 bool Category::is_binary_match(const Category& c) const

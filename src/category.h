@@ -54,8 +54,8 @@ public:
   bool is_float() const;
   bool function() const;
   bool user_type() const;
-  bool element_size(std::size_t num_elements) const;
-  bool element_is(std::size_t index, const Category& category) const;
+  bool arg_size(std::size_t num_args) const;
+  bool arg_is(std::size_t index, const Category& category) const;
 
   // True if the vector element-counts of these categories allow for
   // interaction; that is, either the element-counts are the same (and they can

@@ -54,21 +54,15 @@ bool Type::is_function() const
   return _base == FUNCTION;
 }
 
-std::size_t Type::function_num_args() const
-{
-  return _elements.empty() ? 0 : _elements.size() - 1;
-}
-
 const Type& Type::function_return() const
 {
   static Type v = void_t();
-  return _elements.empty() ? v : _elements[0];
+  return _return.empty() ? v : _return[0];
 }
 
-const Type& Type::function_arg(std::size_t index) const
+const std::vector<Type>& Type::function_args() const
 {
-  static Type v = void_t();
-  return 1 + index >= _elements.size() ? v : _elements[1 + index];
+  return _args;
 }
 
 bool Type::is_user_type() const
@@ -88,11 +82,12 @@ bool Type::is_managed_user_type() const
 
 bool Type::operator==(const Type& t) const
 {
-  if (_elements.size() != t._elements.size()) {
+  if (_args.size() != t._args.size() || _return.empty() != t._return.empty() ||
+      (!_return.empty() && _return[0] != t._return[0])) {
     return false;
   }
-  for (std::size_t i = 0; i < _elements.size(); ++i) {
-    if (_elements[i] != t._elements[i]) {
+  for (std::size_t i = 0; i < _args.size(); ++i) {
+    if (_args[i] != t._args[i]) {
       return false;
     }
   }
@@ -150,10 +145,8 @@ Type Type::function_t(const Type& return_t, const std::vector<Type>& args)
 {
   Type t;
   t._base = FUNCTION;
-  t._elements.push_back(return_t);
-  for (const Type& u : args) {
-    t._elements.push_back(u);
-  }
+  t._return.push_back(return_t);
+  t._args = args;
   return t;
 }
 
@@ -181,7 +174,10 @@ Type Type::erased_t(const Type& type)
 {
   Type t = type;
   t._user_type_uid = nullptr;
-  for (auto& u : t._elements) {
+  for (auto& u : t._return) {
+    u = erased_t(u);
+  }
+  for (auto& u : t._args) {
     u = erased_t(u);
   }
   return t;
@@ -238,12 +234,12 @@ std::string Type::string(const internal::ContextInternals& context) const
     s += (_base == RAW_USER_TYPE ? "*" : "&");
   }
   else if (_base == FUNCTION) {
-    s += _elements[0].string(context) + "(";
-    for (std::size_t i = 1; i < _elements.size(); ++i) {
-      if (i > 1) {
+    s += _return[0].string(context) + "(";
+    for (std::size_t i = 0; i < _args.size(); ++i) {
+      if (i > 0) {
         s += ", ";
       }
-      s += _elements[i].string(context);
+      s += _args[i].string(context);
     }
     s += ")";
   }
@@ -275,7 +271,10 @@ namespace std {
     std::size_t seed = 0;
     hash_combine(seed, type._base);
     hash_combine(seed, type._count);
-    for (const auto& t : type._elements) {
+    if (!type._return.empty()) {
+      hash_combine(seed, operator()(type._return[0]));
+    }
+    for (const auto& t : type._args) {
       hash_combine(seed, operator()(t));
     }
     hash_combine(seed, (std::intptr_t)type._user_type_uid);

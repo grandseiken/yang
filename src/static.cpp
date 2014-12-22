@@ -254,8 +254,8 @@ void StaticChecker::before(const Node& node)
     // Omit the first argument (self). Unfortunately, the indirection here
     // makes errors when calling the returned function somewhat vague.
     std::vector<Type> args;
-    for (std::size_t i = 1; i < m.type.function_num_args(); ++i) {
-      args.push_back(m.type.function_arg(i));
+    for (std::size_t i = 1; i < m.type.function_args().size(); ++i) {
+      args.push_back(m.type.function_args()[i]);
     }
     return Type::function_t(m.type.function_return(), args);
   };
@@ -289,9 +289,8 @@ void StaticChecker::before(const Node& node)
         if (!t.ctor.type.is_void()) {
           // Fix the constructor return type.
           std::vector<Type> args;
-          for (std::size_t i = 0;
-               i < t.ctor.type.function_num_args(); ++i) {
-            args.push_back(t.ctor.type.function_arg(i));
+          for (const auto& u : t.ctor.type.function_args()) {
+            args.push_back(u);
           }
           Category r = Type::function_t(
               Type::managed_user_t(t.ctor.type.function_return()), args);
@@ -770,7 +769,7 @@ void StaticChecker::before(const Node& node)
               error(*ptr, "duplicate argument name `" + name + "`");
             }
             // Arguments are implicitly const!
-            Category u = elem ? t.type().function_arg(elem - 1) :
+            Category u = elem ? t.type().function_args()[elem - 1] :
                                 t.type().function_return();
             add_symbol(*ptr, name, u.make_const(true), false);
             // TODO: arguments are implicitly closed so far, since it's a bit
@@ -949,14 +948,14 @@ void StaticChecker::before(const Node& node)
           error(node, str(node) + " applied to " + str(t));
           return Category::error();
         }
-        if (!t.element_size(results.size())) {
+        if (!t.arg_size(results.size() - 1)) {
           error(node, str(t) + " called with " +
                       std::to_string(results.size() - 1) + " argument(s)");
         }
         else {
           for (std::size_t i = 1; i < results.size(); ++i) {
             auto u = load(results[i]);
-            if (!t.element_is(i, u)) {
+            if (!t.arg_is(i - 1, u)) {
               error(*node.children[i],
                     str(t) + " called with " + str(u) +
                     " in position " + std::to_string(i - 1));

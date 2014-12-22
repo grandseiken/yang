@@ -131,8 +131,7 @@ llvm::Function* IrCommon::get_trampoline_function(
   if (return_t.is_function()) {
     get_trampoline_function(return_t, forward);
   }
-  for (std::size_t i = 0; i < function_type.function_num_args(); ++i) {
-    Type t = function_type.function_arg(i);
+  for (const auto& t : function_type.function_args()) {
     if (t.is_function()) {
       get_reverse_trampoline_function(t, forward);
     }
@@ -164,8 +163,8 @@ llvm::Function* IrCommon::get_trampoline_function(
     jt++->setName(return_args == 1 ? "r" : i ? "r_eptr" : "r_fptr");
   }
 
-  for (std::size_t i = 0; i < function_type.function_num_args(); ++i) {
-    const Type& t = function_type.function_arg(i);
+  for (std::size_t i = 0; i < function_type.function_args().size(); ++i) {
+    const Type& t = function_type.function_args()[i];
 
     if (t.is_vector()) {
       std::size_t size = t.vector_size();
@@ -236,8 +235,7 @@ llvm::Function* IrCommon::get_reverse_trampoline_function(
   if (return_t.is_function()) {
     get_reverse_trampoline_function(return_t, forward);
   }
-  for (std::size_t i = 0; i < function_type.function_num_args(); ++i) {
-    Type t = function_type.function_arg(i);
+  for (const auto& t : function_type.function_args()) {
     if (t.is_function()) {
       get_trampoline_function(t, forward);
     }

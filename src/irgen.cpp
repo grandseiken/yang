@@ -1029,7 +1029,7 @@ void IrGenerator::create_function(const Node& node, const Type& function_type)
        it != --function->arg_end(); ++it, ++arg_num) {
     const std::string& name =
         node.children[0]->children[1 + arg_num]->string_value;
-    const Type& arg = function_type.function_arg(arg_num);
+    const Type& arg = function_type.function_args()[arg_num];
     llvm::Value* storage = assign_storage(arg, name, 0);
     it->setName(name);
 
@@ -1051,8 +1051,8 @@ Value IrGenerator::get_member_function(
 
   const auto& cf = _program_internals.context->member_lookup(type, name);
   std::vector<Type> args;
-  for (std::size_t i = 1; i < cf.type.function_num_args(); ++i) {
-    args.push_back(cf.type.function_arg(i));
+  for (std::size_t i = 1; i < cf.type.function_args().size(); ++i) {
+    args.push_back(cf.type.function_args()[i]);
   }
   Type closed_type = Type::function_t(cf.type.function_return(), args);
 
@@ -1068,16 +1068,16 @@ Value IrGenerator::get_member_function(
 
   std::vector<Value> fargs;
   if (type.is_managed_user_type()) {
-    fargs.emplace_back(cf.type.function_arg(0), closure);
+    fargs.emplace_back(cf.type.function_args()[0], closure);
   }
   else {
     closure = _b.b.CreateBitCast(closure, _chunk.structure().type);
     auto object = _chunk.memory_load(closure, "object");
-    fargs.emplace_back(cf.type.function_arg(0), object);
+    fargs.emplace_back(cf.type.function_args()[0], object);
   }
   std::size_t i = 0;
   for (auto it = f->arg_begin(); it != --f->arg_end(); ++it) {
-    fargs.emplace_back(cf.type.function_arg(++i), it);
+    fargs.emplace_back(cf.type.function_args()[++i], it);
   }
   _b.b.CreateRet(create_call(_b.function_value(cf), fargs));
   _b.b.SetInsertPoint(prev);
@@ -1128,9 +1128,11 @@ Value IrGenerator::get_constructor(const std::string& type)
   _b.b.SetInsertPoint(block);
 
   std::vector<Value> fargs;
-  std::size_t i = 0;
-  for (auto it = f->arg_begin(); it != --f->arg_end(); ++it) {
-    fargs.emplace_back(ct.ctor.type.function_arg(++i), it);
+  std::size_t i = 1;
+  for (auto it = f->arg_begin(); it != --f->arg_end(); ++i, ++it) {
+    auto t = i < ct.ctor.type.function_args().size() ?
+        ct.ctor.type.function_args()[i] : Type::void_t();
+    fargs.emplace_back(t, it);
   }
   Value r = create_call(_b.function_value(ct.ctor), fargs);
   llvm::Value* global = --f->arg_end();
@@ -1143,8 +1145,8 @@ Value IrGenerator::get_constructor(const std::string& type)
 
   // Convert signature to return managed type.
   std::vector<Type> args;
-  for (std::size_t i = 0; i < ct.ctor.type.function_num_args(); ++i) {
-    args.push_back(ct.ctor.type.function_arg(i));
+  for (const auto& t : ct.ctor.type.function_args()) {
+    args.push_back(t);
   }
   const auto& ref_type = ct.ctor.type.function_return();
   Value v(Type::function_t(Type::managed_user_t(ref_type), args), f);

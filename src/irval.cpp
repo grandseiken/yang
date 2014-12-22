@@ -112,8 +112,8 @@ llvm::Type* Builder::fvec_type(std::size_t n) const
 llvm::FunctionType* Builder::raw_function_type(const Type& type) const
 {
   std::vector<llvm::Type*> args;
-  for (std::size_t i = 0; i < type.function_num_args(); ++i) {
-    args.push_back(get_llvm_type(type.function_arg(i)));
+  for (const auto& t : type.function_args()) {
+    args.push_back(get_llvm_type(t));
   }
   args.push_back(void_ptr_type());
 

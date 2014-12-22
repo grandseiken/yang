@@ -58,7 +58,7 @@ int main(int argc, char** argv)
 
   auto it = program.get_functions().find("main");
   if (it != program.get_functions().end() &&
-      it->second.is_function() && it->second.function_num_args() == 0) {
+      it->second.is_function() && it->second.function_args().empty()) {
     yang::Instance instance(program);
     if (it->second.function_return().is_void()) {
       log_info("Calling main()...");

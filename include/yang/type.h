@@ -68,11 +68,9 @@ public:
   /** #member */
   bool is_function() const;
   /** #member */
-  std::size_t function_num_args() const;
-  /** #member */
-  const Type& function_return() const;
+  const std::vector<Type>& function_args() const;
   /** #member ## */
-  const Type& function_arg(std::size_t index) const;
+  const Type& function_return() const;
 
   /** #member */
   bool is_user_type() const;
@@ -146,7 +144,8 @@ private:
 
   type_base _base;
   std::size_t _count;
-  std::vector<Type> _elements;
+  std::vector<Type> _return;
+  std::vector<Type> _args;
   const void* _user_type_uid;
 
 /** #sumline ## */
