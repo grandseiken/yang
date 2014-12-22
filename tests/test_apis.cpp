@@ -592,5 +592,4 @@ export x = int()
   EXPECT_EQ("x();", warning.tree.text);
 }
 
-// End namespace yang.
-}
+} // ::yang

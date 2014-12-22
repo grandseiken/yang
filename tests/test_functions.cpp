@@ -364,5 +364,4 @@ export double = int(int n)
   EXPECT_EQ(120, inst.call<int_t>("double", 5));
 }
 
-// End namespace yang.
-}
+} // ::yang

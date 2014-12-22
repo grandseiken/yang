@@ -47,5 +47,4 @@ private:
 
 };
 
-// End namespace yang.
-}
+} // ::yang

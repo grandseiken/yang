@@ -247,5 +247,4 @@ export f = int(int a, int4 b, float c, int(int) d, float2 e, UserType f)
   EXPECT_EQ(42, result);
 }
 
-// End namespace yang.
-}
+} // ::yang

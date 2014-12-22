@@ -495,5 +495,4 @@ export get = Ut()
   ctxt.register_namespace("jnst", jnst);
 }
 
-// End namespace yang.
-}
+} // ::yang

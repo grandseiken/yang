@@ -127,8 +127,7 @@ Instance YangTest::instance(const Program& program)
   return Instance(program);
 }
 
-// End namespace yang.
-}
+} // ::yang
 
 // To run a subset of tests, use --gtest_filter. For example, for all tests,
 //   --gtest_filter=*.*

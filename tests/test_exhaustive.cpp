@@ -568,5 +568,4 @@ export exhaustive_refcount = int()
   inst.call<int_t>("exhaustive_refcount");
 }
 
-// End namespace yang.
-}
+} // ::yang

@@ -402,5 +402,4 @@ ERROR_NO_WARNING(LvalueK, "export global {--((const a = 0) = 0);}", "=");
 ERROR_NO_WARNING(LvalueL, "global {--(1[1]);}", "[");
 ERROR_NO_WARNING(LvalueM, "export global {--((const a = 1)[1]);}", "[");
 
-// End namespace yang.
-}
+} // ::yang

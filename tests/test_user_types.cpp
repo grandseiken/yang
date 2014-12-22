@@ -265,5 +265,4 @@ export bar = mu()
   EXPECT_EQ(0, u.id);
 }
 
-// End namespace yang.
-}
+} // ::yang

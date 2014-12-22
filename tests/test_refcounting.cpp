@@ -400,5 +400,4 @@ export test = string(int a)
   EXPECT_EQ(std::string(str), std::string("str"));
 }
 
-// End namespace yang.
-}
+} // ::yang
