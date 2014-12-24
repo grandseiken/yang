@@ -52,6 +52,7 @@ private:
   void error(const Node& node, const std::string& message, bool error = true);
   std::string str(const Node& node) const;
   std::string str(const Category& category) const;
+  std::string str(const Type& type) const;
 
   std::string _immediate_left_assign;
   bool _immediate_left_assign_warn_reads;
@@ -99,6 +100,7 @@ private:
   };
 
   std::vector<LexicalScope> _scopes;
+  std::unordered_map<std::string, Type> _user_defined_types;
 
   const ContextInternals& _context;
   ParseData& _data;

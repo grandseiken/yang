@@ -495,4 +495,24 @@ export get = Ut()
   ctxt.register_namespace("jnst", jnst);
 }
 
+TEST_F(SemanticsTest, SeparateNamespaces)
+{
+  auto ctxt = context();
+  ctxt.register_function("x", make_fn([]{}));
+  ctxt.register_type<UserType>("x");
+
+  auto prog = program(ctxt, R"(
+export x = x(x x)
+{
+  return x;
+}
+interface x {}
+export y = x(x x)
+{
+  return x;
+}
+)");
+  EXPECT_TRUE(prog.success());
+}
+
 } // ::yang

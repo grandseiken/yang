@@ -47,7 +47,8 @@
 //
 // Further off (helpful stuff that can be emulated without needing to be built-
 // -in right away):
-// TODO: allow namespaces directly in Yang code?
+// TODO: ensure feature parity between Yang and C++ as far as possible,
+// including e.g. namespaces in Yang code. What about typedefs?
 // TODO: a standard library (as a Context?), possibly including some built-in
 // data structures (like a generic map<K, V> type).
 // TODO: add a layer of abstraction so the LLVM backend can be swapped out

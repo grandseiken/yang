@@ -194,7 +194,7 @@ interface
   : T_INTERFACE T_IDENTIFIER '{' member_list '}'
 {$$ = $4;
  $$->type = Node::INTERFACE;
- $$->set_inner_bounds($1);
+ $$->set_inner_bounds($2);
  $$->string_value = $2->string_value;
  $$->extend_bounds($5);}
   ;

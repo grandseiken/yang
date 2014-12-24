@@ -248,7 +248,7 @@ void StaticChecker::before(const Node& node)
     const auto& m = _context.member_lookup(t.type(), node.string_value);
     if (m.type.is_void()) {
       error(node, "undeclared member function `" +
-                  t.type().string(_context) + "::" + node.string_value + "`");
+                  str(t.type()) + "::" + node.string_value + "`");
       return Category::error();
     }
     // Omit the first argument (self). Unfortunately, the indirection here
@@ -267,8 +267,12 @@ void StaticChecker::before(const Node& node)
     return Category::error();
   };
   FOR(IDENTIFIER) LEAF {
-    // Look up user types in a type-context.
+    // Look up user-defined types in a type-context.
     if (_scopes.back().metadata.has(TYPE_EXPR_CONTEXT)) {
+      auto it = _user_defined_types.find(node.string_value);
+      if (it != _user_defined_types.end()) {
+        return it->second;
+      }
       const auto& t = _context.type_lookup(node.string_value);
       if (!t.is_void()) {
         return t;
@@ -279,39 +283,41 @@ void StaticChecker::before(const Node& node)
 
     // Regular symbols.
     auto it = _scopes.rbegin();
+    bool found_in_scopes = false;
     for (; it != _scopes.rend(); ++it) {
       if (it->symbol_table.has(node.string_value)) {
+        found_in_scopes = true;
         break;
       }
-      if (it == --_scopes.rend()) {
-        // Check Context if symbol isn't present in the Program table.
-        const auto& t = _context.constructor_lookup(node.string_value);
-        if (!t.ctor.type.is_void()) {
-          // Fix the constructor return type.
-          std::vector<Type> args;
-          for (const auto& u : t.ctor.type.function_args()) {
-            args.push_back(u);
-          }
-          Category r = Type::function_t(
-              Type::managed_user_t(t.ctor.type.function_return()), args);
-          return r.make_const(true).make_lvalue(true);
-        }
+    }
 
-        const auto& f = _context.function_lookup(node.string_value);
-        if (!f.type.is_void()) {
-          return Category(f.type).make_const(true).make_lvalue(true);
+    if (!found_in_scopes) {
+      // Check Context if symbol isn't present in the Program table.
+      const auto& t = _context.constructor_lookup(node.string_value);
+      if (!t.ctor.type.is_void()) {
+        // Fix the constructor return type.
+        std::vector<Type> args;
+        for (const auto& u : t.ctor.type.function_args()) {
+          args.push_back(u);
         }
-
-        if (!_context.type_lookup(node.string_value).is_void()) {
-          error(node, "unexpected typename `" + node.string_value + "`");
-        }
-        else {
-          error(node, "undeclared identifier `" + node.string_value + "`");
-        }
-        add_symbol(node, node.string_value, Category::error(), false);
-        it = _scopes.rbegin();
-        break;
+        Category r = Type::function_t(
+            Type::managed_user_t(t.ctor.type.function_return()), args);
+        return r.make_const(true).make_lvalue(true);
       }
+
+      const auto& f = _context.function_lookup(node.string_value);
+      if (!f.type.is_void()) {
+        return Category(f.type).make_const(true).make_lvalue(true);
+      }
+
+      if (!_context.type_lookup(node.string_value).is_void()) {
+        error(node, "unexpected typename `" + node.string_value + "`");
+      }
+      else {
+        error(node, "undeclared identifier `" + node.string_value + "`");
+      }
+      add_symbol(node, node.string_value, Category::error(), false);
+      it = _scopes.rbegin();
     }
 
     auto& symbol = *it->symbol_table[node.string_value];
@@ -588,7 +594,7 @@ void StaticChecker::before(const Node& node)
     case Node::INTERFACE:
       _scopes.emplace_back(node, node.string_value);
       result(node, LEAF {return {};});
-      call_after(node, [=]{
+      call_after(node, [=,&node]{
         std::vector<std::pair<std::string, Symbol*>> v;
         _scopes.back().symbol_table.get_symbols(v, 0, 0);
         _scopes.pop_back();
@@ -596,6 +602,12 @@ void StaticChecker::before(const Node& node)
         std::vector<std::pair<std::string, Type>> members;
         for (const auto& pair : v) {
           members.emplace_back(pair.first, pair.second->category.type());
+        }
+        Type interface = Type::interface_t(members);
+        if (_user_defined_types.count(node.string_value)) {
+          error(node, "interface `" + node.string_value + "` already declared");
+        } else {
+          _user_defined_types.emplace(node.string_value, interface);
         }
       });
       break;
@@ -1129,7 +1141,20 @@ std::string StaticChecker::str(const Node& node) const
 std::string StaticChecker::str(const Category& category) const
 {
   return category.is_error() ? "<error>" :
-      "`" + category.type().string(_context) + "`";
+      "`" + str(category.type()) + "`";
+}
+
+std::string StaticChecker::str(const Type& type) const
+{
+  // Since we only do structural equivalence here and lookup back to the
+  // interface name, identical interfaces will get mixed up. It's not the end of
+  // the world though.
+  for (const auto& p : _user_defined_types) {
+    if (p.second == type) {
+      return p.first;
+    }
+  }
+  return type.string(_context);
 }
 
 StaticChecker::Symbol::Symbol()

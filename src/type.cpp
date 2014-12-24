@@ -255,7 +255,10 @@ std::string Type::string(const internal::ContextInternals& context) const
     s += ")";
   }
   else if (_base == INTERFACE) {
-    s += "interface {\n";
+    s += "interface {";
+    if (!_members.empty()) {
+      s += "\n";
+    }
     for (const auto& pair : _members) {
       s += "  " + pair.second.string(context) + " " + pair.first + ";\n";
     }

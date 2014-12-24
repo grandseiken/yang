@@ -147,6 +147,10 @@ ERROR(CallC, "x = void(int a) {x();}", "(");
 ERROR(CallD, "x = void(int a) {x(1, 2);}", "(");
 ERROR(CallE, "x = void(int a) {x(1.);}", ".");
 
+// Interface errors.
+ERROR(InterfaceA, "interface x {} interface x {}", "x");
+ERROR(InterfaceB, "interface x {} y = void(x z) {z + 0;}", "+");
+
 // Statement errors.
 ERROR(StatementA, "x = void() {if (0.);}", ".");
 ERROR(StatementB, "x = void() {if (return 0;);}", "return");
@@ -173,6 +177,7 @@ ERROR(UserTypeL, "x = void() {var a = get_other(); a = get_user_type();}", "=");
 ERROR(UserTypeM, "x = void() {var a = MuserType(); a = MotherType();}", "=");
 ERROR(UserTypeN, "x = void() {var a = MuserType(); a = get_user_type();}", "=");
 ERROR(UserTypeO, "x = void() {var a = get_other(); a = MotherType();}", "=");
+ERROR(UserTypeP, "x = void(UserType y) {y + 0;}", "+");
 
 // Ternary errors.
 ERROR(TernaryA, "x = void() {1. ? 0 : 0;}", "?");
