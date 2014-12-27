@@ -149,7 +149,13 @@ ERROR(CallE, "x = void(int a) {x(1.);}", ".");
 
 // Interface errors.
 ERROR(InterfaceA, "interface x {} interface x {}", "x");
-ERROR(InterfaceB, "interface x {} y = void(x z) {z + 0;}", "+");
+ERROR(InterfaceB, "interface x {int()() f; int() f;}", "f");
+ERROR(InterfaceC, "interface x {int i;}", "i");
+ERROR(InterfaceD, "interface x {0 i; int() i;}", "0");
+ERROR(InterfaceE, "interface x {} x = void(x a) {a + 0;}", "+");
+ERROR(InterfaceF, "interface x {void() f;} x = void(x a) {a.g;}", ".");
+ERROR(InterfaceG,
+      "interface x {void() f;} x = int(x a) {return a.f();}", "(");
 
 // Statement errors.
 ERROR(StatementA, "x = void() {if (0.);}", ".");

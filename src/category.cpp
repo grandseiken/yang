@@ -79,6 +79,21 @@ Category Category::vector_element(std::size_t size) const
   return error();
 }
 
+Category Category::interface_member(const std::string& member) const
+{
+  if (is_error()) {
+    return *this;
+  }
+  Category c = make_lvalue(false).make_const(false);
+  for (const auto& pair : _type.interface_members()) {
+    if (pair.first == member) {
+      c._type = pair.second;
+      return c;
+    }
+  }
+  return Type::void_t();
+}
+
 Category Category::unify(const Category& c) const
 {
   auto r = error().add_tags(*this);
@@ -142,6 +157,11 @@ bool Category::function() const
 bool Category::user_type() const
 {
   return is_error() || _type.is_user_type();
+}
+
+bool Category::interface() const
+{
+  return is_error() || _type.is_interface();
 }
 
 bool Category::arg_size(std::size_t num_args) const

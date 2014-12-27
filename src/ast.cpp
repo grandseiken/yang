@@ -162,6 +162,14 @@ std::size_t Node::get_parent_index() const
   return 0;
 }
 
+void Node::clear_bounds(const Node* node)
+{
+  left_index = node->left_tree_index;
+  right_index = node->right_tree_index;
+  left_tree_index = left_index;
+  right_tree_index = right_index;
+}
+
 void Node::set_inner_bounds(const Node* node)
 {
   left_index = node->left_tree_index;

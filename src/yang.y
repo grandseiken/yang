@@ -194,24 +194,23 @@ interface
   : T_INTERFACE T_IDENTIFIER '{' member_list '}'
 {$$ = $4;
  $$->type = Node::INTERFACE;
- $$->set_inner_bounds($2);
+ $$->clear_bounds($2);
  $$->string_value = $2->string_value;
- $$->extend_bounds($5);}
+ $$->extend_bounds($1);}
   ;
 
 member_list
   :
 {$$ = new Node(scan, Node::ERROR);}
   | member_list member ';'
-{$$ = $1; $$->add($2);}
+{$$ = $1;
+ $$->add($2);}
   ;
 
 member
-  : expr_functional T_IDENTIFIER
-{$$ = $1;
- $$->type = Node::INTERFACE_MEMBER;
- $$->string_value = $2->string_value;
- $$->set_inner_bounds($2);}
+  : expr T_IDENTIFIER
+{$$ = new Node(scan, $2, Node::INTERFACE_MEMBER, $1);
+ $$->string_value = $2->string_value;}
   ;
 
 opt_export
@@ -239,7 +238,8 @@ stmt_list
   :
 {$$ = new Node(scan, Node::ERROR);}
   | stmt_list stmt
-{$$ = $1; $$->add($2);}
+{$$ = $1;
+ $$->add($2);}
   ;
 
 stmt
@@ -272,7 +272,8 @@ stmt
 {$$ = new Node(scan, $1, Node::CONTINUE_STMT);
  $$->extend_inner_bounds($2);}
   | '{' stmt_list '}'
-{$$ = $2; $$->type = Node::BLOCK;
+{$$ = $2;
+ $$->type = Node::BLOCK;
  $$->extend_bounds($1);
  $$->extend_bounds($3);}
   ;

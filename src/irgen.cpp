@@ -458,6 +458,12 @@ void IrGenerator::before(const Node& node)
       break;
     }
 
+    case Node::INTERFACE:
+      _scopes.back().metadata.push();
+      _scopes.back().metadata.add(LexScope::TYPE_EXPR_CONTEXT, nullptr);
+      call_after(node, [&] {_scopes.back().metadata.pop();});
+      break;
+
     case Node::GLOBAL_ASSIGN:
       if (node.children[1]->type == Node::FUNCTION) {
         _immediate_left_assign = node.children[0]->string_value;

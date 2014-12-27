@@ -237,17 +237,26 @@ void StaticChecker::before(const Node& node)
   };
   FOR(MEMBER_SELECTION) RESULT {
     auto t = load(results[0]);
-    if (!t.user_type()) {
+    if (!t.user_type() && !t.interface()) {
       error(node, "member function access on " + str(results[0]));
       return Category::error();
     }
     if (t.is_error()) {
       return Category::error();
     }
+    if (t.interface()) {
+      Category r = t.interface_member(node.string_value);
+      if (r.not_void()) {
+        return r;
+      }
+      error(node, "unknown member function `" +
+                  str(t.type()) + "::" + node.string_value + "`");
+      return Category::error();
+    }
 
     const auto& m = _context.member_lookup(t.type(), node.string_value);
     if (m.type.is_void()) {
-      error(node, "undeclared member function `" +
+      error(node, "unknown member function `" +
                   str(t.type()) + "::" + node.string_value + "`");
       return Category::error();
     }
@@ -277,7 +286,7 @@ void StaticChecker::before(const Node& node)
       if (!t.is_void()) {
         return t;
       }
-      error(node, "undeclared type `" + node.string_value + "`");
+      error(node, "unknown type `" + node.string_value + "`");
       return Category::error();
     }
 
@@ -314,7 +323,7 @@ void StaticChecker::before(const Node& node)
         error(node, "unexpected typename `" + node.string_value + "`");
       }
       else {
-        error(node, "undeclared identifier `" + node.string_value + "`");
+        error(node, "unknown identifier `" + node.string_value + "`");
       }
       add_symbol(node, node.string_value, Category::error(), false);
       it = _scopes.rbegin();
@@ -539,7 +548,7 @@ void StaticChecker::before(const Node& node)
       error(node, "differing types " + ts + " in vector");
       return Category::error();
     }
-    return numeric_type(t.is_float(), results.size());
+    return t.is_error() ? t : numeric_type(t.is_float(), results.size());
   };
   FOR(VECTOR_INDEX) RESULT {
     auto left = results[0];
@@ -592,20 +601,21 @@ void StaticChecker::before(const Node& node)
       break;
 
     case Node::INTERFACE:
-      _scopes.emplace_back(node, node.string_value);
+      _scopes.emplace_back(node, "interface `" + node.string_value + "`");
       result(node, LEAF {return {};});
       call_after(node, [=,&node]{
         std::vector<std::pair<std::string, Symbol*>> v;
-        _scopes.back().symbol_table.get_symbols(v, 0, 0);
-        _scopes.pop_back();
+        _scopes.back().symbol_table.get_symbols(v, 0, 1);
 
         std::vector<std::pair<std::string, Type>> members;
         for (const auto& pair : v) {
           members.emplace_back(pair.first, pair.second->category.type());
         }
+        _scopes.pop_back();
+
         Type interface = Type::interface_t(members);
         if (_user_defined_types.count(node.string_value)) {
-          error(node, "interface `" + node.string_value + "` already declared");
+          error(node, "interface `" + node.string_value + "` already defined");
         } else {
           _user_defined_types.emplace(node.string_value, interface);
         }
@@ -616,7 +626,16 @@ void StaticChecker::before(const Node& node)
       _scopes.back().metadata.add(TYPE_EXPR_CONTEXT, {});
       call_after(node, [=]{_scopes.back().metadata.pop();});
       result(node, RESULT {
-        add_symbol(node, node.string_value, results[0], false, false);
+        if (!results[0].function()) {
+          error(node, "member `" + node.string_value +
+                      "` has non-function type " + str(results[0]));
+        }
+        else if (_scopes.back().symbol_table.has(node.string_value)) {
+          error(node, "member `" + node.string_value + "` already declared");
+        }
+        else if (!results[0].is_error()) {
+          add_symbol(node, node.string_value, results[0], false, false);
+        }
         return {};
       });
       break;
@@ -754,8 +773,9 @@ void StaticChecker::before(const Node& node)
 
         // Functions need two symbol table frames: one for recursive hack, one
         // for the arguments, and one for the body.
-        _scopes.emplace_back(node, _immediate_left_assign.length() ?
-                                   _immediate_left_assign : "<anon>");
+        std::string scope_name = _immediate_left_assign.empty() ?
+            "<anonymous function>" : "function `" + _immediate_left_assign + "`";
+        _scopes.emplace_back(node, scope_name);
         push_symbol_tables();
         node.static_info.scope_number = _scopes.back().scope_numbering.back();
         if (_immediate_left_assign.length()) {
@@ -1125,7 +1145,7 @@ void StaticChecker::error(
     function += (function.length() ? "." : "") + scope.name;
   }
   if (function.length()) {
-    m = "in function `" + function + "`: " + m;
+    m = "in " + function + ": " + m;
   }
   auto error_info = _data.format_error(
       node.left_index, node.right_index,

@@ -34,6 +34,7 @@ public:
   Category add_tag(void* tag) const;
   Category add_tags(const Category& category) const;
   Category vector_element(std::size_t size) const;
+  Category interface_member(const std::string& member) const;
 
   // Unify returns t if is(t), and otherwise an error category; it also merges
   // tags, lvalue-ness and const-ness.
@@ -54,6 +55,7 @@ public:
   bool is_float() const;
   bool function() const;
   bool user_type() const;
+  bool interface() const;
   bool arg_size(std::size_t num_args) const;
   bool arg_is(std::size_t index, const Category& category) const;
 

@@ -156,6 +156,7 @@ struct Node {
   void add(Node* node);
   std::size_t get_parent_index() const;
 
+  void clear_bounds(const Node* node);
   void set_inner_bounds(const Node* node);
   void extend_inner_bounds(const Node* node);
   void extend_bounds(const Node* node);
