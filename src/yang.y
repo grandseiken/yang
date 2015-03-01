@@ -24,8 +24,9 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
 %}
 
 %pure-parser
-%lex-param {yyscan_t scan}
-%parse-param {yyscan_t scan}
+/* BYACC chops off last character of parse parameter name. */
+%lex-param {yyscan_t scan_}
+%parse-param {yyscan_t scan_}
 %union {
   yang::internal::Node* node;
 }
