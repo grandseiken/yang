@@ -132,6 +132,7 @@ struct Node {
     FLOAT_CAST,
     VECTOR_CONSTRUCT,
     VECTOR_INDEX,
+    INTERFACE_CONVERSION,
   };
 
   // Child nodes passed to constructors or add transfer ownership, and are

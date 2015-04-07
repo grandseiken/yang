@@ -141,6 +141,18 @@ Category binary_type(const Category& a, const Category& b, bool is_float)
   return numeric_type(is_float, max);
 }
 
+Type drop_first_argument(const Type& type)
+{
+  if (!type.is_function()) {
+    return Type::void_t();
+  }
+  std::vector<Type> args;
+  for (std::size_t i = 1; i < type.function_args().size(); ++i) {
+    args.push_back(type.function_args()[i]);
+  }
+  return Type::function_t(type.function_return(), args);
+}
+
 // End anonymous namespace.
 }
 
@@ -188,7 +200,7 @@ void StaticChecker::before(const Node& node)
     // others.
     std::string message =
         node.type == Node::TERNARY ?
-        "both branches of conditional operator have no effect" :
+        "neither branch of conditional operator has any effect" :
         node.type == Node::POSTFIX_INCREMENT ?
         "value of postfix increment is not used (suggest prefix for clarity)" :
         node.type == Node::POSTFIX_DECREMENT ?
@@ -264,11 +276,7 @@ void StaticChecker::before(const Node& node)
     }
     // Omit the first argument (self). Unfortunately, the indirection here
     // makes errors when calling the returned function somewhat vague.
-    std::vector<Type> args;
-    for (std::size_t i = 1; i < m.type.function_args().size(); ++i) {
-      args.push_back(m.type.function_args()[i]);
-    }
-    return Type::function_t(m.type.function_return(), args);
+    return drop_first_argument(m.type);
   };
   FOR_ANY(node.type == Node::BREAK_STMT ||
           node.type == Node::CONTINUE_STMT) LEAF {
@@ -566,6 +574,36 @@ void StaticChecker::before(const Node& node)
     }
     auto t = left.vector_element(results.size() - 1);
     return results.size() == 2 ? t : load(t);
+  };
+  FOR(INTERFACE_CONVERSION) RESULT {
+    auto it = _types_output.find(node.string_value);
+    auto expr = load(results[0]);
+    if (it == _types_output.end() || !it->second.is_interface()) {
+      error(node, "unknown interface `" + node.string_value + "`");
+      return Category::error();
+    }
+    const Type& interface = it->second;
+    if (!expr.user_type()) {
+      error(*node.children[0], "type " + str(expr) +
+                               " cannot match any interface");
+      return interface;
+    }
+    for (const auto& pair : interface.interface_members()) {
+      auto type = drop_first_argument(
+          _context.member_lookup(expr.type(), pair.first).type);
+      if (type.is_void()) {
+        error(node, "unknown member function `" + str(expr.type()) + "::" +
+                    pair.first +  "` while matching interface `" +
+                    str(interface) + "`");
+      }
+      else if (type != pair.second) {
+        error(node, "member function `" + str(type) + " " + str(expr.type()) +
+                    "::" + pair.first + "` while matching `" +
+                    str(pair.second) + " " + str(interface) + "::" +
+                    pair.first + "`");
+      }
+    }
+    return interface;
   };
 
 #undef FOR

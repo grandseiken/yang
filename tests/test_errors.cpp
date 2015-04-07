@@ -156,6 +156,15 @@ ERROR(InterfaceE, "interface x {} x = void(x a) {a + 0;}", "+");
 ERROR(InterfaceF, "interface x {void() f;} x = void(x a) {a.g;}", ".");
 ERROR(InterfaceG,
       "interface x {void() f;} x = int(x a) {return a.f();}", "(");
+ERROR(InterfaceH, "interface x {} f = void(x) {} g = void() {f(0);}", "0");
+ERROR(InterfaceI, "interface x {} f = void(x) {} g = void() {f(x(0));}", "x");
+ERROR(InterfaceJ, "global const v = foo{get_user_type()};", "foo");
+ERROR(InterfaceK, "global const v = UserType{get_user_type()};", "UserType");
+ERROR(InterfaceL, "interface x {} global const v = x{0};", "0");
+ERROR(InterfaceM,
+      "interface x {void() bar;} f = void() {x{get_user_type()};}", "x");
+ERROR(InterfaceN,
+      "interface x {int() foo;} f = void() {x{get_user_type()};}", "x");
 
 // Statement errors.
 ERROR(StatementA, "x = void() {if (0.);}", ".");

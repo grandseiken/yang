@@ -50,7 +50,6 @@ int yang_error(yyscan_t scan, const char* message, bool error = true)
 %token <node> T_BREAK
 %token <node> T_CONTINUE
 %token <node> T_RETURN
-%token <node> T_TYPE_LITERAL
 
 %token <node> T_TERNARY_L
 %token <node> T_TERNARY_R
@@ -354,7 +353,7 @@ expr
 {$$ = $1;}
   | T_FLOAT_LITERAL
 {$$ = $1;}
-  /* Precedence need to disambiguate the (incorrect, regardless) ambiguous
+  /* Precedence needed to disambiguate the (incorrect, regardless) ambiguous
      program: x = "a" "b" = ... */
   | string_literal %prec P_ELEM
 {$$ = $1;}
@@ -520,6 +519,9 @@ expr
  $$->type = Node::VECTOR_INDEX;
  $$->set_inner_bounds($2);
  $$->extend_bounds($4);}
+  | identifier '{' expr '}'
+{$$ = new Node(scan, $1, Node::INTERFACE_CONVERSION, $3);
+ $$->string_value = $1->string_value;}
   ;
 
 string_literal

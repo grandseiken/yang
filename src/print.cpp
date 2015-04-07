@@ -254,6 +254,8 @@ std::string AstPrinter::after(const Node& node, const ResultList& results)
       }
       return "(" + results[0] + "[" + output + "])";
     }
+    case Node::INTERFACE_CONVERSION:
+      return "(" + node.string_value + "{" + results[0] + "})";
 
     default:
       return "";
