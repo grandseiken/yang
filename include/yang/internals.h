@@ -43,6 +43,7 @@ struct ProgramInternals {
   std::string name;
 
   StaticData static_data;
+  std::unordered_map<std::string, Type> types;
   std::unordered_map<std::string, Type> functions;
   std::unordered_map<std::string, Global> globals;
 

@@ -66,15 +66,15 @@ void Instance::check_global(const std::string& name, const Type& type,
   if (type != it->second.type) {
     throw RuntimeError(
         _program->name + ": global `" +
-        it->second.type.string(*_program->context)
+        it->second.type.string(*_program->context, _program->types)
         + " " + name + "` accessed via incompatible type `" +
-        type.string(*_program->context) + "`");
+        type.string(*_program->context, _program->types) + "`");
   }
   if (for_modification && it->second.is_const) {
     throw RuntimeError(
         _program->name + ": constant global `" +
-        it->second.type.string(*_program->context) + " " + name +
-        "` cannot be modified");
+        it->second.type.string(*_program->context, _program->types) + " " +
+        name + "` cannot be modified");
   }
 }
 
@@ -89,9 +89,9 @@ void Instance::check_function(const std::string& name, const Type& type) const
   if (type != it->second) {
     throw RuntimeError(
         _program->name + ": function `" +
-        it->second.string(*_program->context) +
+        it->second.string(*_program->context, _program->types) +
         " " + name + "` accessed via incompatible type `" +
-        type.string(*_program->context) + "`");
+        type.string(*_program->context, _program->types) + "`");
   }
 }
 

@@ -7,6 +7,7 @@
 
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include <utility>
 
 /** #sumline ## */
@@ -46,7 +47,7 @@ public:
   /**
    * #member ##
    *
-   * Return a string representation of the type in the given `Context`.
+   * Returns a string representation of the type in the given `Context`.
    */
   std::string string(const Context& context) const;
 
@@ -140,7 +141,9 @@ private:
   friend class internal::StaticChecker;
 
   Type();
-  std::string string(const internal::ContextInternals& context) const;
+  std::string string(
+      const internal::ContextInternals& context,
+      const std::unordered_map<std::string, Type>& overrides) const;
 
   enum type_base {
     VOID,

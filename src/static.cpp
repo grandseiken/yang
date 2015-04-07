@@ -146,11 +146,13 @@ Category binary_type(const Category& a, const Category& b, bool is_float)
 
 StaticChecker::StaticChecker(
     const ContextInternals& context, ParseData& data,
+    std::unordered_map<std::string, Type>& types_output,
     std::unordered_map<std::string, Type>& functions_output,
     std::unordered_map<std::string, Global>& globals_output,
     std::unordered_map<std::string, Global>& globals_internal)
   : _context(context)
   , _data(data)
+  , _types_output(types_output)
   , _functions_output(functions_output)
   , _globals_output(globals_output)
   , _globals_internal(globals_internal)
@@ -278,8 +280,8 @@ void StaticChecker::before(const Node& node)
   FOR(IDENTIFIER) LEAF {
     // Look up user-defined types in a type-context.
     if (_scopes.back().metadata.has(TYPE_EXPR_CONTEXT)) {
-      auto it = _user_defined_types.find(node.string_value);
-      if (it != _user_defined_types.end()) {
+      auto it = _types_output.find(node.string_value);
+      if (it != _types_output.end()) {
         return it->second;
       }
       const auto& t = _context.type_lookup(node.string_value);
@@ -614,10 +616,10 @@ void StaticChecker::before(const Node& node)
         _scopes.pop_back();
 
         Type interface = Type::interface_t(members);
-        if (_user_defined_types.count(node.string_value)) {
+        if (_types_output.count(node.string_value)) {
           error(node, "interface `" + node.string_value + "` already defined");
         } else {
-          _user_defined_types.emplace(node.string_value, interface);
+          _types_output.emplace(node.string_value, interface);
         }
       });
       break;
@@ -1166,15 +1168,7 @@ std::string StaticChecker::str(const Category& category) const
 
 std::string StaticChecker::str(const Type& type) const
 {
-  // Since we only do structural equivalence here and lookup back to the
-  // interface name, identical interfaces will get mixed up. It's not the end of
-  // the world though.
-  for (const auto& p : _user_defined_types) {
-    if (p.second == type) {
-      return p.first;
-    }
-  }
-  return type.string(_context);
+  return type.string(_context, _types_output);
 }
 
 StaticChecker::Symbol::Symbol()

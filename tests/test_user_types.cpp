@@ -9,7 +9,6 @@ struct UserTypesTest : YangTest {};
 
 TEST_F(UserTypesTest, IncorrectTypes)
 {
-  auto ctxt = context();
   auto inst = instance(R"(
 export takes_user_type = void(UserType) {}
 export takes_user_type_f = void(void(UserType)) {}

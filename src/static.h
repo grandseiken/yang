@@ -25,6 +25,7 @@ class StaticChecker : public ConstAstWalker<Category> {
 public:
 
   StaticChecker(const ContextInternals& context, ParseData& data,
+                std::unordered_map<std::string, Type>& types_output,
                 std::unordered_map<std::string, Type>& functions_output,
                 std::unordered_map<std::string, Global>& globals_output,
                 std::unordered_map<std::string, Global>& globals_internal);
@@ -100,10 +101,9 @@ private:
   };
 
   std::vector<LexicalScope> _scopes;
-  std::unordered_map<std::string, Type> _user_defined_types;
-
   const ContextInternals& _context;
   ParseData& _data;
+  std::unordered_map<std::string, Type>& _types_output;
   std::unordered_map<std::string, Type>& _functions_output;
   std::unordered_map<std::string, Global>& _globals_output;
   std::unordered_map<std::string, Global>& _globals_internal;

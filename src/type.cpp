@@ -12,7 +12,7 @@ namespace yang {
 
 std::string Type::string(const Context& context) const
 {
-  return string(*context._internals);
+  return string(*context._internals, {});
 }
 
 bool Type::is_void() const
@@ -201,15 +201,17 @@ Type::Type()
 {
 }
 
-std::string Type::string(const internal::ContextInternals& context) const
+std::string Type::string(
+    const internal::ContextInternals& context,
+    const std::unordered_map<std::string, Type>& overrides) const
 {
-  std::string s;
-  if (_base == RAW_USER_TYPE || _base == MANAGED_USER_TYPE) {
-    // Find the name(s) of this type with the fewest namespace prefixes.
+  // Find the name(s) with the fewest namespace prefixes.
+  auto get_names = [&](const std::unordered_map<std::string, Type>& map)
+  {
     bool first = true;
     std::size_t scope_min = 0;
     std::vector<std::string> names;
-    for (const auto& pair : context.types) {
+    for (const auto& pair : map) {
       if (*this != pair.second) {
         continue;
       }
@@ -226,31 +228,45 @@ std::string Type::string(const internal::ContextInternals& context) const
       }
       first = false;
     }
-
+    return names;
+  };
+  auto names_str = [&](const std::vector<std::string>& names)
+  {
     if (names.empty()) {
-      s = "anon." + std::to_string((std::intptr_t)_user_type_uid);
+      return "anon." + std::to_string((std::intptr_t)_user_type_uid);
     }
-    else if (names.size() == 1) {
-      s = names.back();
+    if (names.size() == 1) {
+      return names.back();
     }
-    else {
-      for (std::size_t i = 0; i < names.size(); ++i) {
-        if (i) {
-          s += ",";
-        }
-        s += names[i];
+    std::string s;
+    for (std::size_t i = 0; i < names.size(); ++i) {
+      if (i) {
+        s += ",";
       }
-      s = "{" + s + "}";
+      s += names[i];
     }
-    s += (_base == RAW_USER_TYPE ? "*" : "&");
+    return "{" + s + "}";
+  };
+  // Since we only do structural equivalence here and lookup back to the
+  // interface name, identical interfaces will get mixed up. It's not the end of
+  // the world though.
+  auto names = get_names(overrides);
+  if (!names.empty()) {
+    return names_str(names);
+  }
+
+  std::string s;
+  if (_base == RAW_USER_TYPE || _base == MANAGED_USER_TYPE) {
+    s = names_str(get_names(context.types)) +
+        (_base == RAW_USER_TYPE ? "*" : "&");
   }
   else if (_base == FUNCTION) {
-    s += _return[0].string(context) + "(";
+    s += _return[0].string(context, overrides) + "(";
     for (std::size_t i = 0; i < _args.size(); ++i) {
       if (i > 0) {
         s += ", ";
       }
-      s += _args[i].string(context);
+      s += _args[i].string(context, overrides);
     }
     s += ")";
   }
@@ -260,7 +276,8 @@ std::string Type::string(const internal::ContextInternals& context) const
       s += "\n";
     }
     for (const auto& pair : _members) {
-      s += "  " + pair.second.string(context) + " " + pair.first + ";\n";
+      s += "  " + pair.second.string(context, overrides) +
+           " " + pair.first + ";\n";
     }
     s += "}";
   }

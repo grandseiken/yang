@@ -86,7 +86,8 @@ Program::Program(const Context& context, const std::string& name,
 
   std::unordered_map<std::string, Global> nonexported_globals;
   internal::StaticChecker checker(
-      *context._internals, data, _internals->functions,
+      *context._internals, data,
+      _internals->types, _internals->functions,
       _internals->globals, nonexported_globals);
 
   checker.walk(*output);
