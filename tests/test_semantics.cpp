@@ -114,6 +114,24 @@ export lvalues = int()
   EXPECT_EQ(127, inst.call<int_t>("lvalues"));
 }
 
+// TODO: fix short-circuiting logical operators! Maybe by rewriting?
+TEST_F(SemanticsTest, DISABLED_ShortCircuiting)
+{
+  auto inst = instance(R"(
+export short_circuit = int()
+{
+  var a = 0;
+  a && ++a;
+  ++a || ++a;
+
+  var b = 0;
+  b ||= ++b;
+  b ||= ++b;
+  return a + b;
+})");
+  EXPECT_EQ(2, inst.call<int_t>("short_circuit"));
+}
+
 TEST_F(SemanticsTest, Shadowing)
 {
   auto inst = instance(R"(
