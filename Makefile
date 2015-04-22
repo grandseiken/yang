@@ -160,9 +160,9 @@ $(DEP_FILES): $(OUTDIR)/%.deps: \
 	$$(OUTDIR)/,,./$$(@:.deps=))))_LINK:.o=))
 	SOURCE_FILE=$(subst $(OUTDIR)/,,./$(@:.deps=)); \
 	    echo Generating dependencies for $$SOURCE_FILE; \
-	    $(CXX) $(CFLAGS) -MM $$SOURCE_FILE | \
-	        sed -e 's/.*\.o:/$(subst /,\/,$<)::/g' > $@; \
-	    echo "	@touch" $< >> $@
+	    $(CXX) $(CFLAGS) -o $@ -MM $$SOURCE_FILE && \
+	    sed -i -e 's/.*\.o:/$(subst /,\/,$<)::/g' $@
+	echo "	@touch" $< >> $@
 .PRECIOUS: $(OUTDIR)/%.build
 $(OUTDIR)/%.build: \
 	./% $(OUTDIR)/%.mkdir
