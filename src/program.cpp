@@ -16,7 +16,6 @@
 #include "ast.h"
 #include "irgen.h"
 #include "log.h"
-#include "print.h"
 #include "static.h"
 #include "../gen/yang.y.h"
 #include "../gen/yang.l.h"
@@ -33,14 +32,14 @@ ProgramInternals::~ProgramInternals()
 } // ::internal
 
 Program::Program(const Context& context, const std::string& name,
-                 const std::string& contents, bool optimise,
+                 const std::string& source_text, bool optimise,
                  std::string* diagnostic_output)
 {
   _internals->context = context._internals;
   _internals->name = name;
   _internals->module = nullptr;
 
-  internal::ParseData data(name, contents);
+  internal::ParseData data(name, source_text);
   yyscan_t scan = nullptr;
 
   auto log_errors = [&]
@@ -70,7 +69,7 @@ Program::Program(const Context& context, const std::string& name,
 
   yang_lex_init(&scan);
   yang_set_extra(&data, scan);
-  auto buffer = yang__scan_string(contents.c_str(), scan);
+  auto buffer = yang__scan_string(source_text.c_str(), scan);
   yang_parse(scan);
   yang__delete_buffer(buffer, scan);
   yang_lex_destroy(scan);
@@ -123,16 +122,6 @@ const std::string& Program::get_name() const
 bool Program::success() const
 {
   return bool(_internals->ast) && bool(_internals->module);
-}
-
-std::string Program::print_ast() const
-{
-  if (!success()) {
-    throw RuntimeError(_internals->name +
-                       ": program did not compile successfully");
-  }
-  internal::AstPrinter printer;
-  return printer.walk(*_internals->ast) + '\n';
 }
 
 std::string Program::print_ir() const

@@ -24,6 +24,8 @@ public:
   /**
    * #member ##
    *
+   * Compiles the given source text in the given `Context`.
+   *
    * By default, errors and warnings will be printed to standard error. If a
    * non-null pointer is given as the ``diagnostic_output`` parameter, errors
    * and warnings will be appended to the target string instead.
@@ -33,7 +35,7 @@ public:
    * of errors in the source text. See `ErrorInfo` for more information.
    */
   Program(const Context& context, const std::string& name,
-          const std::string& contents, bool optimise = true,
+          const std::string& source_text, bool optimise = true,
           std::string* diagnostic_output = nullptr);
   /** #member */
   const std::vector<ErrorInfo>& get_errors() const;
@@ -47,18 +49,19 @@ public:
   const std::string& get_name() const;
 
   /**
-   * #member ##
+   * #member
    *
-   * Returns ``true`` if the contents parsed and checked successfully (i.e. if
-   * `get_errors().size() == 0 <Program::get_errors>`). Otherwise, none of the
-   * following functions will do anything useful.
+   * Returns ``true`` if the source text parsed and checked successfully (i.e.
+   * if `get_errors().size() == 0 <Program::get_errors>`). Otherwise, returns
+   * ``false``.
+   *
+   * If this function returns ``false``, then `Program::get_functions` and
+   * `Program::get_globals` will yield empty maps, and attempting to construct
+   * an `Instance` using this object will throw a `RuntimeError`.
    */
   bool success() const;
   /** #member */
-  std::string print_ast() const;
-  /** #member ## */
   std::string print_ir() const;
-
   /** #member */
   const std::unordered_map<std::string, Type>& get_functions() const;
   /** #member */

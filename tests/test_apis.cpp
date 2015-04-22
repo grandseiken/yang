@@ -400,7 +400,6 @@ TEST_F(ApiTest, ProgramSuccess)
   ASSERT_TRUE(prog.success());
   EXPECT_EQ("test0", prog.get_name());
   EXPECT_NO_THROW(instance(prog));
-  EXPECT_NO_THROW(prog.print_ast());
   EXPECT_NO_THROW(prog.print_ir());
 }
 
@@ -410,7 +409,6 @@ TEST_F(ApiTest, ProgramFailure)
   ASSERT_FALSE(prog.success());
   EXPECT_EQ("test0", prog.get_name());
   EXPECT_THROW(instance(prog), RuntimeError);
-  EXPECT_THROW(prog.print_ast(), RuntimeError);
   EXPECT_THROW(prog.print_ir(), RuntimeError);
 }
 

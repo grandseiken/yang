@@ -53,7 +53,6 @@ int main(int argc, char** argv)
   for (const auto& pair : program.get_functions()) {
     log_info("function [", pair.second.string(context), "] ", pair.first);
   }
-  log_info("Source:\n", program.print_ast());
   log_info("IR:\n", program.print_ir());
 
   auto it = program.get_functions().find("main");
