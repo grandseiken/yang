@@ -20,25 +20,21 @@
 #   make m4 texinfo texlive python libtinfo
 .SUFFIXES:
 
-# Dependency directories.
-DEPEND_DIR=./dependencies
-BYACC_DIR=$(DEPEND_DIR)/byacc
-FLEX_DIR=$(DEPEND_DIR)/flex
-GTEST_DIR=$(DEPEND_DIR)/googletest
-LLVM_DIR=$(DEPEND_DIR)/llvm
-PYGMENTS_DIR=$(DEPEND_DIR)/pygments
-SPHINX_DIR=$(DEPEND_DIR)/sphinx
-PYTHON_INSTALL_DIR=install/lib/python
+# Default target.
+.PHONY: default
+default: all
+# Dependencies.
+include Makefile.dependencies
 
 # Debug options.
 ifeq ($(DBG), 1)
 OUTDIR=./Debug
 LLVM_LIB_DIR=$(LLVM_DIR)/Debug+Asserts/lib
-LLVM_BUILD=$(DEPEND_DIR)/llvm_debug.build
+LLVM_BUILD=$(DEPENDENCIES)/llvm_debug.build
 else
 OUTDIR=./Release
 LLVM_LIB_DIR=$(LLVM_DIR)/Release/lib
-LLVM_BUILD=$(DEPEND_DIR)/llvm_release.build
+LLVM_BUILD=$(DEPENDENCIES)/llvm_release.build
 endif
 
 # Output directories.
@@ -147,6 +143,9 @@ clean:
 	rm -rf $(OUTDIR) $(GENDIR)
 	rm -rf $(LLVM_LIB_DIR)/*.o
 	rm -rf $(DOCGEN) $(DOCS)/html
+.PHONY: clean_all
+clean_all: \
+	clean clean_dependencies
 
 # Dependency generation. Each source file generates a corresponding .deps file
 # (a Makefile containing a .build target), which is then included. Inclusion
@@ -228,20 +227,20 @@ $(GENDIR)/%.l.h: \
 	$(GENDIR)/%.l.cc
 	touch $@ $<
 $(GENDIR)/%.l.cc: \
-	$(SOURCE)/%.l $(GENDIR)/%.mkdir $(DEPEND_DIR)/flex.build
+	$(SOURCE)/%.l $(GENDIR)/%.mkdir $(DEPENDENCIES)/flex.build
 	@echo Compiling ./$<
 	$(FLEX) -P yang_ -o $@ --header-file=$(@:.cc=.h) $<
 $(GENDIR)/%.y.h: \
 	$(GENDIR)/%.y.cc
 	touch $@ $<
 $(GENDIR)/%.y.cc: \
-	$(SOURCE)/%.y $(GENDIR)/%.mkdir $(DEPEND_DIR)/byacc.build
+	$(SOURCE)/%.y $(GENDIR)/%.mkdir $(DEPENDENCIES)/byacc.build
 	@echo Compiling ./$<
 	$(YACC) -p yang_ -d -v -o $@ $<
 
 # Test binary.
 $(TESTS_BINARY): $(OUTDIR_BIN)/%: \
-	$(TEST_OBJECT_FILES) $(OUTDIR_BIN)/%.mkdir $(DEPEND_DIR)/gtest.build $(LIB)
+	$(TEST_OBJECT_FILES) $(OUTDIR_BIN)/%.mkdir $(DEPENDENCIES)/gtest.build $(LIB)
 	@echo Linking ./$@
 	$(CXX) -o ./$@ $(TEST_OBJECT_FILES) $(LFLAGS) \
 	    -L$(GTEST_DIR)/lib -Wl,-Bstatic -lgtest -Wl,-Bdynamic -lpthread
@@ -257,13 +256,13 @@ $(DOCGEN)/%.rst: \
 
 # Documentation.
 SPHINX_BUILD=\
-	PYTHONPATH=$${PWD}/$(DEPEND_DIR)/$(PYTHON_INSTALL_DIR) \
-	$(DEPEND_DIR)/install/bin/sphinx-build
+	PYTHONPATH=$${PWD}/$(DEPENDENCIES)/$(PYTHON_INSTALL_DIR) \
+	$(DEPENDENCIES)/install/bin/sphinx-build
 SPHINX_BUILD_OPTS=\
 	-a -E $(DOCS)/source
 $(DOCS)/html/index.html: \
-	$(DEPEND_DIR)/sphinx.build $(DOC_FILES) $(AUTODOC_FILES) \
-	$(DEPEND_DIR)/pygments.build
+	$(DEPENDENCIES)/sphinx.build $(DOC_FILES) $(AUTODOC_FILES) \
+	$(DEPENDENCIES)/pygments.build
 	$(SPHINX_BUILD) -b html $(SPHINX_BUILD_OPTS) $(DOCS)/html
 
 # Ensure a directory exists.
@@ -271,79 +270,3 @@ $(DOCS)/html/index.html: \
 ./%.mkdir:
 	mkdir -p $(dir $@)
 	touch $@
-
-# Makefile for dependencies below here.
-
-# Build BYACC.
-$(DEPEND_DIR)/byacc.build:
-	@echo Building BYACC
-	cd $(BYACC_DIR) && ./configure
-	cd $(BYACC_DIR) && $(MAKE)
-	touch $@
-
-# Build Flex.
-$(DEPEND_DIR)/flex.build:
-	@echo Building Flex
-	cd $(FLEX_DIR) && ./configure
-	cd $(FLEX_DIR) && $(MAKE)
-	touch $@
-
-# Build Google Test.
-$(DEPEND_DIR)/gtest.build:
-	@echo Building Google Test
-	cd $(GTEST_DIR) && $(CXX) -isystem include -I. -pthread -c src/gtest-all.cc
-	cd $(GTEST_DIR) && mkdir lib && ar -crsv lib/libgtest.a gtest-all.o
-	touch $@
-
-# Build LLVM.
-LLVM_COMMON_OPTS=\
-  --enable-jit --disable-docs --enable-targets=host
-LLVM_RELEASE_OPTS=\
-  $(LLVM_COMMON_OPTS) --disable-assertions --enable-optimized
-$(DEPEND_DIR)/llvm_release.build:
-	@echo Building LLVM
-	cd $(LLVM_DIR) && ./configure $(LLVM_RELEASE_OPTS)
-	cd $(LLVM_DIR) && $(MAKE)
-	touch $@
-# Build LLVM in debug mode.
-LLVM_DEBUG_OPTS=\
-  $(LLVM_COMMON_OPTS) --enable-assertions --disable-optimized
-$(DEPEND_DIR)/llvm_debug.build:
-	@echo Building LLVM
-	cd $(LLVM_DIR) && ./configure $(LLVM_DEBUG_OPTS)
-	cd $(LLVM_DIR) && $(MAKE)
-	touch $@
-
-# Build Pygments.
-$(DEPEND_DIR)/pygments.build: \
-	$(DEPEND_DIR)/$(PYTHON_INSTALL_DIR)/.mkdir
-	@echo Building Pygments
-	cd $(PYGMENTS_DIR) && $(PYTHON) setup.py build
-	cd $(PYGMENTS_DIR) && \
-	    PYTHONPATH=$${PWD}/../$(PYTHON_INSTALL_DIR) \
-	    $(PYTHON) setup.py install --home $${PWD}/../install
-	touch $@
-
-# Build Sphinx. Must depend on pygments, otherwise sphinx will install the
-# wrong version.
-$(DEPEND_DIR)/sphinx.build: \
-	$(DEPEND_DIR)/$(PYTHON_INSTALL_DIR)/.mkdir $(DEPEND_DIR)/pygments.build
-	@echo Building Sphinx
-	cd $(SPHINX_DIR) && $(PYTHON) setup.py build
-	cd $(SPHINX_DIR) && \
-	    PYTHONPATH=$${PWD}/../$(PYTHON_INSTALL_DIR) \
-	    $(PYTHON) setup.py install --home $${PWD}/../install
-	touch $@
-
-# Clean dependencies.
-.PHONY: clean_all
-clean_all: \
-	clean
-	rm -f $(DEPEND_DIR)/*.build $(DEPEND_DIR)/.build
-	-cd $(BYACC_DIR) && [ -f ./Makefile ] && $(MAKE) clean
-	-cd $(FLEX_DIR) && [ -f ./Makefile ] && $(MAKE) clean
-	cd $(GTEST_DIR) && rm -rf lib *.o
-	-cd $(LLVM_DIR) && $(MAKE) clean
-	cd $(PYGMENTS_DIR) && rm -rf build
-	cd $(SPHINX_DIR) && rm -rf build
-	cd $(DEPEND_DIR) && rm -rf install
