@@ -1,8 +1,7 @@
 .tests_passed
-bin/
-dbg/
+Release/
+Debug/
 gen/
-lib/
 dependencies/
 docs/html
 docs/source/api
