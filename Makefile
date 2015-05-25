@@ -29,13 +29,17 @@ include dependencies/Makefile
 # Debug options.
 ifeq ($(DBG), 1)
 OUTDIR=./Debug
+WFLAGS=-Werror -Wall -Wextra -Wpedantic
+CFLAGS_CONFIG=-Og -g -ggdb -DDEBUG
 LLVM_LIB_DIR=$(LLVM_DIR)/Debug+Asserts/lib
 LLVM_BUILD=$(DEPENDENCIES)/llvm_debug.build
 else
 OUTDIR=./Release
+CFLAGS_CONFIG=-O3
 LLVM_LIB_DIR=$(LLVM_DIR)/Release/lib
 LLVM_BUILD=$(DEPENDENCIES)/llvm_release.build
 endif
+OBJECT_FILE_PREREQS=$(LLVM_BUILD)
 
 # Output directories.
 GENDIR=./gen
@@ -59,20 +63,14 @@ export FLEX=$(FLEX_DIR)/flex
 export YACC=$(BYACC_DIR)/yacc
 export PYTHON=python
 
-C11FLAGS=-std=c++11
+CFLAGS_11=-std=c++11
 CFLAGS=\
-	$(CFLAGSEXTRA) $(C11FLAGS) -I$(INCLUDE) \
+	$(CFLAGS_EXTRA) $(CFLAGS_11) $(CFLAGS_CONFIG) -I$(INCLUDE) \
 	-isystem $(LLVM_DIR)/include -isystem $(GTEST_DIR)/include
 LFLAGS=\
-	$(LFLAGSEXTRA) -L$(OUTDIR_LIB) \
+	$(LFLAGS_EXTRA) -L$(OUTDIR_LIB) \
 	-Wl,-Bstatic -lyang \
 	-Wl,-Bdynamic -lz -ltinfo -lpthread -ldl
-ifeq ($(DBG), 1)
-CFLAGS+=-Og -g -ggdb -DDEBUG
-WFLAGS=-Werror -Wall -Wextra -Wpedantic
-else
-CFLAGS+=-O3
-endif
 
 # File listings.
 L_FILES=$(wildcard $(SOURCE)/*.l)
@@ -80,24 +78,25 @@ Y_FILES=$(wildcard $(SOURCE)/*.y)
 
 L_OUTPUTS=$(subst $(SOURCE)/,$(GENDIR)/,$(L_FILES:.l=.l.cc))
 Y_OUTPUTS=$(subst $(SOURCE)/,$(GENDIR)/,$(Y_FILES:.y=.y.cc))
+CC_GENERATED_FILES=$(L_OUTPUTS) $(Y_OUTPUTS)
 
 H_FILES=\
 	$(wildcard $(SOURCE)/*.h) \
 	$(wildcard $(INCLUDE)/yang/*.h) $(wildcard $(TESTS)/*.h)
-CPP_FILES=$(wildcard $(SOURCE)/*.cpp)
-SOURCE_FILES=$(CPP_FILES) $(L_OUTPUTS) $(Y_OUTPUTS)
+CC_FILES=$(wildcard $(SOURCE)/*.cpp)
+SOURCE_FILES=$(CC_FILES) $(CC_GENERATED_FILES)
 OBJECT_FILES=$(addprefix $(OUTDIR_TMP)/,$(addsuffix .o,$(SOURCE_FILES)))
 INCLUDE_FILES=$(wildcard $(INCLUDE)/*/*.h)
 AUTODOC_FILES=\
 	$(subst $(INCLUDE)/yang/,$(DOCGEN)/,$(INCLUDE_FILES:.h=.rst))
 
-TOOL_CPP_FILES=$(wildcard $(SOURCE)/tools/*.cpp)
-TEST_CPP_FILES=$(wildcard $(TESTS)/*.cpp)
-TEST_OBJECT_FILES=$(addprefix $(OUTDIR_TMP)/,$(TEST_CPP_FILES:.cpp=.cpp.o))
+TOOL_CC_FILES=$(wildcard $(SOURCE)/tools/*.cpp)
+TEST_CC_FILES=$(wildcard $(TESTS)/*.cpp)
+TEST_OBJECT_FILES=$(addprefix $(OUTDIR_TMP)/,$(TEST_CC_FILES:.cpp=.cpp.o))
 
 DEP_FILES=\
 	$(addprefix $(OUTDIR_TMP)/,$(addsuffix .deps,\
-	$(SOURCE_FILES) $(TOOL_CPP_FILES) $(TEST_CPP_FILES)))
+	$(SOURCE_FILES) $(TOOL_CC_FILES) $(TEST_CC_FILES)))
 
 AUTODOC=$(DOCS)/source/autodoc.py
 DOC_FILES=\
@@ -108,7 +107,7 @@ DOC_FILES=\
 MISC_FILES=\
 	$(AUTODOC) Makefile README.md LICENSE .gitignore
 ALL_FILES=\
-	$(CPP_FILES) $(TOOL_CPP_FILES) $(TEST_CPP_FILES) \
+	$(CC_FILES) $(TOOL_CC_FILES) $(TEST_CC_FILES) \
 	$(H_FILES) $(L_FILES) $(Y_FILES) $(MISC_FILES) $(DOC_FILES)
 
 # Master targets.
@@ -154,7 +153,7 @@ clean_all: \
 # default causes everything to be generated.
 .SECONDEXPANSION:
 $(DEP_FILES): $(OUTDIR_TMP)/%.deps: \
-	$(OUTDIR_TMP)/%.build $(OUTDIR_TMP)/%.mkdir $(Y_OUTPUTS) $(L_OUTPUTS) \
+	$(OUTDIR_TMP)/%.build $(OUTDIR_TMP)/%.mkdir $(CC_GENERATED_FILES) \
 	$$(subst \
 	$$(OUTDIR_TMP)/,,$$($$(subst .,_,$$(subst /,_,$$(subst \
 	$$(OUTDIR_TMP)/,,./$$(@:.deps=))))_LINK:.o=))
@@ -215,14 +214,14 @@ $(BINARIES): $(OUTDIR_BIN)/%: \
 # Object files. References dependencies that must be built before their header
 # files are available.
 $(OUTDIR_TMP)/%.o: \
-	$(OUTDIR_TMP)/%.build $(OUTDIR_TMP)/%.mkdir $(LLVM_BUILD)
+	$(OUTDIR_TMP)/%.build $(OUTDIR_TMP)/%.mkdir $(OBJECT_FILE_PREREQS)
 	SOURCE_FILE=$(subst $(OUTDIR_TMP)/,,./$(<:.build=)); \
 	    echo Compiling $$SOURCE_FILE; \
 	    $(CXX) -c $(CFLAGS) $(if $(findstring /./gen/,$@),,$(WFLAGS)) \
 	    -o $@ $$SOURCE_FILE
 
 # Flex/YACC files.
-.PRECIOUS: $(L_OUTPUTS) $(Y_OUTPUTS)
+.PRECIOUS: $(CC_GENERATED_FILES)
 $(GENDIR)/%.l.h: \
 	$(GENDIR)/%.l.cc
 	touch $@ $<
