@@ -55,7 +55,7 @@ $(DEPENDENCIES)/llvm_debug.build:
 
 # Build Pygments.
 $(DEPENDENCIES)/pygments.build: \
-	$(DEPENDENCIES)/$(PYTHON_INSTALL_DIR)/.mkdir
+  $(DEPENDENCIES)/$(PYTHON_INSTALL_DIR)/.mkdir
 	@echo Building Pygments
 	cd $(PYGMENTS_DIR) && $(PYTHON) setup.py build
 	cd $(PYGMENTS_DIR) && \
@@ -66,7 +66,7 @@ $(DEPENDENCIES)/pygments.build: \
 # Build Sphinx. Must depend on pygments, otherwise sphinx will install the
 # wrong version.
 $(DEPENDENCIES)/sphinx.build: \
-	$(DEPENDENCIES)/$(PYTHON_INSTALL_DIR)/.mkdir $(DEPENDENCIES)/pygments.build
+  $(DEPENDENCIES)/$(PYTHON_INSTALL_DIR)/.mkdir $(DEPENDENCIES)/pygments.build
 	@echo Building Sphinx
 	cd $(SPHINX_DIR) && $(PYTHON) setup.py build
 	cd $(SPHINX_DIR) && \

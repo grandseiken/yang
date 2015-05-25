@@ -65,12 +65,12 @@ export PYTHON=python
 
 CFLAGS_11=-std=c++11
 CFLAGS=\
-	$(CFLAGS_EXTRA) $(CFLAGS_11) $(CFLAGS_CONFIG) -I$(INCLUDE) \
-	-isystem $(LLVM_DIR)/include -isystem $(GTEST_DIR)/include
+  $(CFLAGS_EXTRA) $(CFLAGS_11) $(CFLAGS_CONFIG) -I$(INCLUDE) \
+  -isystem $(LLVM_DIR)/include -isystem $(GTEST_DIR)/include
 LFLAGS=\
-	$(LFLAGS_EXTRA) -L$(OUTDIR_LIB) \
-	-Wl,-Bstatic -lyang \
-	-Wl,-Bdynamic -lz -ltinfo -lpthread -ldl
+  $(LFLAGS_EXTRA) -L$(OUTDIR_LIB) \
+  -Wl,-Bstatic -lyang \
+  -Wl,-Bdynamic -lz -ltinfo -lpthread -ldl
 
 # File listings.
 L_FILES=$(wildcard $(SOURCE)/*.l)
@@ -81,51 +81,47 @@ Y_OUTPUTS=$(subst $(SOURCE)/,$(GENDIR)/,$(Y_FILES:.y=.y.cc))
 CC_GENERATED_FILES=$(L_OUTPUTS) $(Y_OUTPUTS)
 
 H_FILES=\
-	$(wildcard $(SOURCE)/*.h) \
-	$(wildcard $(INCLUDE)/yang/*.h) $(wildcard $(TESTS)/*.h)
+  $(wildcard $(SOURCE)/*.h) \
+  $(wildcard $(INCLUDE)/yang/*.h) $(wildcard $(TESTS)/*.h)
 CC_FILES=$(wildcard $(SOURCE)/*.cpp)
 SOURCE_FILES=$(CC_FILES) $(CC_GENERATED_FILES)
 OBJECT_FILES=$(addprefix $(OUTDIR_TMP)/,$(addsuffix .o,$(SOURCE_FILES)))
 INCLUDE_FILES=$(wildcard $(INCLUDE)/*/*.h)
 AUTODOC_FILES=\
-	$(subst $(INCLUDE)/yang/,$(DOCGEN)/,$(INCLUDE_FILES:.h=.rst))
+  $(subst $(INCLUDE)/yang/,$(DOCGEN)/,$(INCLUDE_FILES:.h=.rst))
 
 TOOL_CC_FILES=$(wildcard $(SOURCE)/tools/*.cpp)
 TEST_CC_FILES=$(wildcard $(TESTS)/*.cpp)
 TEST_OBJECT_FILES=$(addprefix $(OUTDIR_TMP)/,$(TEST_CC_FILES:.cpp=.cpp.o))
 
 DEP_FILES=\
-	$(addprefix $(OUTDIR_TMP)/,$(addsuffix .deps,\
-	$(SOURCE_FILES) $(TOOL_CC_FILES) $(TEST_CC_FILES)))
+  $(addprefix $(OUTDIR_TMP)/,$(addsuffix .deps,\
+  $(SOURCE_FILES) $(TOOL_CC_FILES) $(TEST_CC_FILES)))
 
 AUTODOC=$(DOCS)/source/autodoc.py
 DOC_FILES=\
-	$(DOCS)/source/conf.py \
-	$(wildcard $(DOCS)/source/*.rst) \
-	$(wildcard $(DOCS)/source/yang/*.*) \
-	$(wildcard $(DOCS)/source/yang/*/*)
+  $(DOCS)/source/conf.py \
+  $(wildcard $(DOCS)/source/*.rst) \
+  $(wildcard $(DOCS)/source/yang/*.*) \
+  $(wildcard $(DOCS)/source/yang/*/*)
 MISC_FILES=\
-	$(AUTODOC) Makefile README.md LICENSE .gitignore
+  $(AUTODOC) Makefile README.md LICENSE .gitignore dependencies/Makefile
 ALL_FILES=\
-	$(CC_FILES) $(TOOL_CC_FILES) $(TEST_CC_FILES) \
-	$(H_FILES) $(L_FILES) $(Y_FILES) $(MISC_FILES) $(DOC_FILES)
+  $(CC_FILES) $(TOOL_CC_FILES) $(TEST_CC_FILES) \
+  $(H_FILES) $(L_FILES) $(Y_FILES) $(MISC_FILES) $(DOC_FILES)
 
 # Master targets.
 .PHONY: all
-all: \
-	lib tools docs .tests_passed
+all: lib tools docs .tests_passed
 .PHONY: lib
-lib: \
-	$(LIB)
+lib: $(LIB)
 .PHONY: tools
-tools: \
-	$(BINARIES)
+tools: $(BINARIES)
 .PHONY: docs
-docs: \
-	$(DOCS)/html/index.html
+docs: $(DOCS)/html/index.html
 .PHONY: test
 test: \
-	$(TESTS_BINARY)
+  $(TESTS_BINARY)
 	$(TESTS_BINARY)
 	touch .tests_passed
 .PHONY: add
@@ -143,8 +139,7 @@ clean:
 	rm -rf $(LLVM_LIB_DIR)/*.o
 	rm -rf $(DOCGEN) $(DOCS)/html
 .PHONY: clean_all
-clean_all: \
-	clean clean_dependencies
+clean_all: clean clean_dependencies
 
 # Dependency generation. Each source file generates a corresponding .deps file
 # (a Makefile containing a .build target), which is then included. Inclusion
@@ -153,18 +148,19 @@ clean_all: \
 # default causes everything to be generated.
 .SECONDEXPANSION:
 $(DEP_FILES): $(OUTDIR_TMP)/%.deps: \
-	$(OUTDIR_TMP)/%.build $(OUTDIR_TMP)/%.mkdir $(CC_GENERATED_FILES) \
-	$$(subst \
-	$$(OUTDIR_TMP)/,,$$($$(subst .,_,$$(subst /,_,$$(subst \
-	$$(OUTDIR_TMP)/,,./$$(@:.deps=))))_LINK:.o=))
+  $(OUTDIR_TMP)/%.build $(OUTDIR_TMP)/%.mkdir $(CC_GENERATED_FILES) \
+  $$(subst \
+  $$(OUTDIR_TMP)/,,$$($$(subst .,_,$$(subst /,_,$$(subst \
+  $$(OUTDIR_TMP)/,,./$$(@:.deps=))))_LINK:.o=))
 	SOURCE_FILE=$(subst $(OUTDIR_TMP)/,,./$(@:.deps=)); \
 	    echo Generating dependencies for $$SOURCE_FILE; \
 	    $(CXX) $(CFLAGS) -o $@ -MM $$SOURCE_FILE && \
 	    sed -i -e 's/.*\.o:/$(subst /,\/,$<)::/g' $@
 	echo "	@touch" $< >> $@
+
 .PRECIOUS: $(OUTDIR_TMP)/%.build
 $(OUTDIR_TMP)/%.build: \
-	./% $(OUTDIR_TMP)/%.mkdir
+  ./% $(OUTDIR_TMP)/%.mkdir
 	touch $@
 
 ifneq ('$(MAKECMDGOALS)', 'docs')
@@ -184,15 +180,15 @@ endif
 # LLVM libraries which we require, and append to the yang library, so that
 # users only need to link one library.
 LLVM_LIBS=\
-	LLVMipo LLVMX86CodeGen LLVMSelectionDAG LLVMX86Desc LLVMX86Info \
-	LLVMX86AsmPrinter LLVMX86Utils LLVMJIT LLVMCodeGen LLVMScalarOpts \
-	LLVMInstCombine LLVMTransformUtils LLVMipa LLVMAnalysis LLVMTarget \
-	LLVMObject LLVMMCParser LLVMBitReader LLVMExecutionEngine LLVMMC \
-	LLVMCore LLVMSupport
+  LLVMipo LLVMX86CodeGen LLVMSelectionDAG LLVMX86Desc LLVMX86Info \
+  LLVMX86AsmPrinter LLVMX86Utils LLVMJIT LLVMCodeGen LLVMScalarOpts \
+  LLVMInstCombine LLVMTransformUtils LLVMipa LLVMAnalysis LLVMTarget \
+  LLVMObject LLVMMCParser LLVMBitReader LLVMExecutionEngine LLVMMC \
+  LLVMCore LLVMSupport
 
 # Library archiving. For speed, don't rearchive LLVM libraries.
 $(LIB): \
-	$(LLVM_BUILD) $(OUTDIR_LIB)/.mkdir $(OBJECT_FILES)
+  $(LLVM_BUILD) $(OUTDIR_LIB)/.mkdir $(OBJECT_FILES)
 	@echo Archiving ./$@
 	[ -f ./$@ ]; \
 	EXIST=$$?; \
@@ -207,14 +203,14 @@ $(LIB): \
 
 # Tool binary linking.
 $(BINARIES): $(OUTDIR_BIN)/%: \
-	$(OUTDIR_TMP)/$(SOURCE)/%.cpp.o $(OUTDIR_BIN)/%.mkdir $(LIB)
+  $(OUTDIR_TMP)/$(SOURCE)/%.cpp.o $(OUTDIR_BIN)/%.mkdir $(LIB)
 	@echo Linking ./$@
 	$(CXX) -o ./$@ $< $(LFLAGS)
 
 # Object files. References dependencies that must be built before their header
 # files are available.
 $(OUTDIR_TMP)/%.o: \
-	$(OUTDIR_TMP)/%.build $(OUTDIR_TMP)/%.mkdir $(OBJECT_FILE_PREREQS)
+  $(OUTDIR_TMP)/%.build $(OUTDIR_TMP)/%.mkdir $(OBJECT_FILE_PREREQS)
 	SOURCE_FILE=$(subst $(OUTDIR_TMP)/,,./$(<:.build=)); \
 	    echo Compiling $$SOURCE_FILE; \
 	    $(CXX) -c $(CFLAGS) $(if $(findstring /./gen/,$@),,$(WFLAGS)) \
@@ -223,23 +219,23 @@ $(OUTDIR_TMP)/%.o: \
 # Flex/YACC files.
 .PRECIOUS: $(CC_GENERATED_FILES)
 $(GENDIR)/%.l.h: \
-	$(GENDIR)/%.l.cc
+  $(GENDIR)/%.l.cc
 	touch $@ $<
 $(GENDIR)/%.l.cc: \
-	$(SOURCE)/%.l $(GENDIR)/%.mkdir $(DEPENDENCIES)/flex.build
+  $(SOURCE)/%.l $(GENDIR)/%.mkdir $(DEPENDENCIES)/flex.build
 	@echo Compiling ./$<
 	$(FLEX) -P yang_ -o $@ --header-file=$(@:.cc=.h) $<
 $(GENDIR)/%.y.h: \
-	$(GENDIR)/%.y.cc
+  $(GENDIR)/%.y.cc
 	touch $@ $<
 $(GENDIR)/%.y.cc: \
-	$(SOURCE)/%.y $(GENDIR)/%.mkdir $(DEPENDENCIES)/byacc.build
+  $(SOURCE)/%.y $(GENDIR)/%.mkdir $(DEPENDENCIES)/byacc.build
 	@echo Compiling ./$<
 	$(YACC) -p yang_ -d -v -o $@ $<
 
 # Test binary.
 $(TESTS_BINARY): $(OUTDIR_BIN)/%: \
-	$(TEST_OBJECT_FILES) $(OUTDIR_BIN)/%.mkdir $(DEPENDENCIES)/gtest.build $(LIB)
+  $(TEST_OBJECT_FILES) $(OUTDIR_BIN)/%.mkdir $(DEPENDENCIES)/gtest.build $(LIB)
 	@echo Linking ./$@
 	$(CXX) -o ./$@ $(TEST_OBJECT_FILES) $(LFLAGS) \
 	    -L$(GTEST_DIR)/lib -Wl,-Bstatic -lgtest -Wl,-Bdynamic -lpthread
@@ -250,18 +246,18 @@ $(TESTS_BINARY): $(OUTDIR_BIN)/%: \
 
 # Documentation generation.
 $(DOCGEN)/%.rst: \
-	$(INCLUDE)/yang/%.h $(AUTODOC) $(DOCGEN)/.mkdir
+  $(INCLUDE)/yang/%.h $(AUTODOC) $(DOCGEN)/.mkdir
 	$(PYTHON) $(AUTODOC) $< $@
 
 # Documentation.
 SPHINX_BUILD=\
-	PYTHONPATH=$${PWD}/$(DEPENDENCIES)/$(PYTHON_INSTALL_DIR) \
-	$(DEPENDENCIES)/install/bin/sphinx-build
+  PYTHONPATH=$${PWD}/$(DEPENDENCIES)/$(PYTHON_INSTALL_DIR) \
+  $(DEPENDENCIES)/install/bin/sphinx-build
 SPHINX_BUILD_OPTS=\
-	-a -E $(DOCS)/source
+  -a -E $(DOCS)/source
 $(DOCS)/html/index.html: \
-	$(DEPENDENCIES)/sphinx.build $(DOC_FILES) $(AUTODOC_FILES) \
-	$(DEPENDENCIES)/pygments.build
+  $(DEPENDENCIES)/sphinx.build $(DOC_FILES) $(AUTODOC_FILES) \
+  $(DEPENDENCIES)/pygments.build
 	$(SPHINX_BUILD) -b html $(SPHINX_BUILD_OPTS) $(DOCS)/html
 
 # Ensure a directory exists.
