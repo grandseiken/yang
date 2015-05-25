@@ -17,7 +17,7 @@
 #   wc - print line counts of all code files
 #
 # External package dependencies:
-#   make m4 texinfo texlive python
+#   make m4 texinfo texlive python libtinfo
 .SUFFIXES:
 
 # Dependency directories.
@@ -30,28 +30,31 @@ PYGMENTS_DIR=$(DEPEND_DIR)/pygments
 SPHINX_DIR=$(DEPEND_DIR)/sphinx
 PYTHON_INSTALL_DIR=install/lib/python
 
-# Final outputs.
+# Debug options.
 ifeq ($(DBG), 1)
-OUTDIR=./dbg/bin
-LIBDIR=./dbg/lib
+OUTDIR=./Debug
 LLVM_LIB_DIR=$(LLVM_DIR)/Debug+Asserts/lib
-LLVM_BUILD=$(DEPEND_DIR)/llvm_dbg.build
+LLVM_BUILD=$(DEPEND_DIR)/llvm_debug.build
 else
-OUTDIR=./bin
-LIBDIR=./lib
+OUTDIR=./Release
 LLVM_LIB_DIR=$(LLVM_DIR)/Release/lib
-LLVM_BUILD=$(DEPEND_DIR)/llvm.build
+LLVM_BUILD=$(DEPEND_DIR)/llvm_release.build
 endif
+
+# Output directories.
+GENDIR=./gen
+OUTDIR_BIN=$(OUTDIR)/bin
+OUTDIR_LIB=$(OUTDIR)/lib
+OUTDIR_TMP=$(OUTDIR)/build
 
 INCLUDE=./include
 SOURCE=./src
 TESTS=./tests
-GEN=./gen
 DOCS=./docs
 DOCGEN=$(DOCS)/source/api
-LIB=$(LIBDIR)/libyang.a
-YANGC_BINARY=$(OUTDIR)/tools/yangc
-TESTS_BINARY=$(OUTDIR)/tests/tests
+LIB=$(OUTDIR_LIB)/libyang.a
+YANGC_BINARY=$(OUTDIR_BIN)/tools/yangc
+TESTS_BINARY=$(OUTDIR_BIN)/tests/tests
 BINARIES=$(YANGC_BINARY)
 
 # Compilers and interpreters.
@@ -65,7 +68,7 @@ CFLAGS=\
 	$(CFLAGSEXTRA) $(C11FLAGS) -I$(INCLUDE) \
 	-isystem $(LLVM_DIR)/include -isystem $(GTEST_DIR)/include
 LFLAGS=\
-	$(LFLAGSEXTRA) -L$(LIBDIR) \
+	$(LFLAGSEXTRA) -L$(OUTDIR_LIB) \
 	-Wl,-Bstatic -lyang \
 	-Wl,-Bdynamic -lz -ltinfo -lpthread -ldl
 ifeq ($(DBG), 1)
@@ -79,25 +82,25 @@ endif
 L_FILES=$(wildcard $(SOURCE)/*.l)
 Y_FILES=$(wildcard $(SOURCE)/*.y)
 
-L_OUTPUTS=$(subst $(SOURCE)/,$(GEN)/,$(L_FILES:.l=.l.cc))
-Y_OUTPUTS=$(subst $(SOURCE)/,$(GEN)/,$(Y_FILES:.y=.y.cc))
+L_OUTPUTS=$(subst $(SOURCE)/,$(GENDIR)/,$(L_FILES:.l=.l.cc))
+Y_OUTPUTS=$(subst $(SOURCE)/,$(GENDIR)/,$(Y_FILES:.y=.y.cc))
 
 H_FILES=\
 	$(wildcard $(SOURCE)/*.h) \
 	$(wildcard $(INCLUDE)/yang/*.h) $(wildcard $(TESTS)/*.h)
 CPP_FILES=$(wildcard $(SOURCE)/*.cpp)
 SOURCE_FILES=$(CPP_FILES) $(L_OUTPUTS) $(Y_OUTPUTS)
-OBJECT_FILES=$(addprefix $(OUTDIR)/,$(addsuffix .o,$(SOURCE_FILES)))
+OBJECT_FILES=$(addprefix $(OUTDIR_TMP)/,$(addsuffix .o,$(SOURCE_FILES)))
 INCLUDE_FILES=$(wildcard $(INCLUDE)/*/*.h)
 AUTODOC_FILES=\
 	$(subst $(INCLUDE)/yang/,$(DOCGEN)/,$(INCLUDE_FILES:.h=.rst))
 
 TOOL_CPP_FILES=$(wildcard $(SOURCE)/tools/*.cpp)
 TEST_CPP_FILES=$(wildcard $(TESTS)/*.cpp)
-TEST_OBJECT_FILES=$(addprefix $(OUTDIR)/,$(TEST_CPP_FILES:.cpp=.cpp.o))
+TEST_OBJECT_FILES=$(addprefix $(OUTDIR_TMP)/,$(TEST_CPP_FILES:.cpp=.cpp.o))
 
 DEP_FILES=\
-	$(addprefix $(OUTDIR)/,$(addsuffix .deps,\
+	$(addprefix $(OUTDIR_TMP)/,$(addsuffix .deps,\
 	$(SOURCE_FILES) $(TOOL_CPP_FILES) $(TEST_CPP_FILES)))
 
 AUTODOC=$(DOCS)/source/autodoc.py
@@ -141,9 +144,7 @@ wc:
 	wc $(ALL_FILES)
 .PHONY: clean
 clean:
-	rm -rf $(LIBDIR)
-	rm -rf $(OUTDIR)
-	rm -rf $(GEN)
+	rm -rf $(OUTDIR) $(GENDIR)
 	rm -rf $(LLVM_LIB_DIR)/*.o
 	rm -rf $(DOCGEN) $(DOCS)/html
 
@@ -153,19 +154,19 @@ clean:
 # target it generates. When the specific .build target doesn't exist, the
 # default causes everything to be generated.
 .SECONDEXPANSION:
-$(DEP_FILES): $(OUTDIR)/%.deps: \
-	$(OUTDIR)/%.build $(OUTDIR)/%.mkdir $(Y_OUTPUTS) $(L_OUTPUTS) \
+$(DEP_FILES): $(OUTDIR_TMP)/%.deps: \
+	$(OUTDIR_TMP)/%.build $(OUTDIR_TMP)/%.mkdir $(Y_OUTPUTS) $(L_OUTPUTS) \
 	$$(subst \
-	$$(OUTDIR)/,,$$($$(subst .,_,$$(subst /,_,$$(subst \
-	$$(OUTDIR)/,,./$$(@:.deps=))))_LINK:.o=))
-	SOURCE_FILE=$(subst $(OUTDIR)/,,./$(@:.deps=)); \
+	$$(OUTDIR_TMP)/,,$$($$(subst .,_,$$(subst /,_,$$(subst \
+	$$(OUTDIR_TMP)/,,./$$(@:.deps=))))_LINK:.o=))
+	SOURCE_FILE=$(subst $(OUTDIR_TMP)/,,./$(@:.deps=)); \
 	    echo Generating dependencies for $$SOURCE_FILE; \
 	    $(CXX) $(CFLAGS) -o $@ -MM $$SOURCE_FILE && \
 	    sed -i -e 's/.*\.o:/$(subst /,\/,$<)::/g' $@
 	echo "	@touch" $< >> $@
-.PRECIOUS: $(OUTDIR)/%.build
-$(OUTDIR)/%.build: \
-	./% $(OUTDIR)/%.mkdir
+.PRECIOUS: $(OUTDIR_TMP)/%.build
+$(OUTDIR_TMP)/%.build: \
+	./% $(OUTDIR_TMP)/%.mkdir
 	touch $@
 
 ifneq ('$(MAKECMDGOALS)', 'docs')
@@ -193,7 +194,7 @@ LLVM_LIBS=\
 
 # Library archiving. For speed, don't rearchive LLVM libraries.
 $(LIB): \
-	$(LLVM_BUILD) $(LIBDIR)/.mkdir $(OBJECT_FILES)
+	$(LLVM_BUILD) $(OUTDIR_LIB)/.mkdir $(OBJECT_FILES)
 	@echo Archiving ./$@
 	[ -f ./$@ ]; \
 	EXIST=$$?; \
@@ -207,40 +208,40 @@ $(LIB): \
 	fi
 
 # Tool binary linking.
-$(BINARIES): $(OUTDIR)/%: \
-	$(OUTDIR)/$(SOURCE)/%.cpp.o $(OUTDIR)/%.mkdir $(LIB)
+$(BINARIES): $(OUTDIR_BIN)/%: \
+	$(OUTDIR_TMP)/$(SOURCE)/%.cpp.o $(OUTDIR_BIN)/%.mkdir $(LIB)
 	@echo Linking ./$@
 	$(CXX) -o ./$@ $< $(LFLAGS)
 
 # Object files. References dependencies that must be built before their header
 # files are available.
-$(OUTDIR)/%.o: \
-	$(OUTDIR)/%.build $(OUTDIR)/%.mkdir $(LLVM_BUILD)
-	SOURCE_FILE=$(subst $(OUTDIR)/,,./$(<:.build=)); \
+$(OUTDIR_TMP)/%.o: \
+	$(OUTDIR_TMP)/%.build $(OUTDIR_TMP)/%.mkdir $(LLVM_BUILD)
+	SOURCE_FILE=$(subst $(OUTDIR_TMP)/,,./$(<:.build=)); \
 	    echo Compiling $$SOURCE_FILE; \
 	    $(CXX) -c $(CFLAGS) $(if $(findstring /./gen/,$@),,$(WFLAGS)) \
 	    -o $@ $$SOURCE_FILE
 
 # Flex/YACC files.
 .PRECIOUS: $(L_OUTPUTS) $(Y_OUTPUTS)
-$(GEN)/%.l.h: \
-	$(GEN)/%.l.cc
+$(GENDIR)/%.l.h: \
+	$(GENDIR)/%.l.cc
 	touch $@ $<
-$(GEN)/%.l.cc: \
-	$(SOURCE)/%.l $(GEN)/%.mkdir $(DEPEND_DIR)/flex.build
+$(GENDIR)/%.l.cc: \
+	$(SOURCE)/%.l $(GENDIR)/%.mkdir $(DEPEND_DIR)/flex.build
 	@echo Compiling ./$<
 	$(FLEX) -P yang_ -o $@ --header-file=$(@:.cc=.h) $<
-$(GEN)/%.y.h: \
-	$(GEN)/%.y.cc
+$(GENDIR)/%.y.h: \
+	$(GENDIR)/%.y.cc
 	touch $@ $<
-$(GEN)/%.y.cc: \
-	$(SOURCE)/%.y $(GEN)/%.mkdir $(DEPEND_DIR)/byacc.build
+$(GENDIR)/%.y.cc: \
+	$(SOURCE)/%.y $(GENDIR)/%.mkdir $(DEPEND_DIR)/byacc.build
 	@echo Compiling ./$<
 	$(YACC) -p yang_ -d -v -o $@ $<
 
-# Test binary.	
-$(TESTS_BINARY): \
-	$(TEST_OBJECT_FILES) $(LIB) $(DEPEND_DIR)/gtest.build
+# Test binary.
+$(TESTS_BINARY): $(OUTDIR_BIN)/%: \
+	$(TEST_OBJECT_FILES) $(OUTDIR_BIN)/%.mkdir $(DEPEND_DIR)/gtest.build $(LIB)
 	@echo Linking ./$@
 	$(CXX) -o ./$@ $(TEST_OBJECT_FILES) $(LFLAGS) \
 	    -L$(GTEST_DIR)/lib -Wl,-Bstatic -lgtest -Wl,-Bdynamic -lpthread
@@ -297,19 +298,19 @@ $(DEPEND_DIR)/gtest.build:
 # Build LLVM.
 LLVM_COMMON_OPTS=\
   --enable-jit --disable-docs --enable-targets=host
-LLVM_OPTS=\
+LLVM_RELEASE_OPTS=\
   $(LLVM_COMMON_OPTS) --disable-assertions --enable-optimized
-$(DEPEND_DIR)/llvm.build:
+$(DEPEND_DIR)/llvm_release.build:
 	@echo Building LLVM
-	cd $(LLVM_DIR) && ./configure $(LLVM_OPTS)
+	cd $(LLVM_DIR) && ./configure $(LLVM_RELEASE_OPTS)
 	cd $(LLVM_DIR) && $(MAKE)
 	touch $@
 # Build LLVM in debug mode.
-LLVM_DBG_OPTS=\
+LLVM_DEBUG_OPTS=\
   $(LLVM_COMMON_OPTS) --enable-assertions --disable-optimized
-$(DEPEND_DIR)/llvm_dbg.build:
+$(DEPEND_DIR)/llvm_debug.build:
 	@echo Building LLVM
-	cd $(LLVM_DIR) && ./configure $(LLVM_DBG_OPTS)
+	cd $(LLVM_DIR) && ./configure $(LLVM_DEBUG_OPTS)
 	cd $(LLVM_DIR) && $(MAKE)
 	touch $@
 
