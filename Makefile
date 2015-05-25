@@ -24,7 +24,7 @@
 .PHONY: default
 default: all
 # Dependencies.
-include Makefile.dependencies
+include dependencies/Makefile
 
 # Debug options.
 ifeq ($(DBG), 1)
