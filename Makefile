@@ -18,12 +18,8 @@
 #
 # External package dependencies:
 #   make m4 texinfo texlive python libtinfo
-.SUFFIXES:
-
-# Default target.
-.PHONY: default
-default: all
-# Dependencies.
+.PHONY: first
+first: all
 include dependencies/Makefile
 
 # Debug options.
@@ -39,7 +35,7 @@ CFLAGS_CONFIG=-O3
 LLVM_LIB_DIR=$(LLVM_DIR)/Release/lib
 LLVM_BUILD=$(DEPENDENCIES)/llvm_release.build
 endif
-OBJECT_FILE_PREREQS=$(LLVM_BUILD)
+CC_OBJECT_FILE_PREREQS=$(LLVM_BUILD)
 
 # Output directories.
 GENDIR=./gen
@@ -58,7 +54,6 @@ TESTS_BINARY=$(OUTDIR_BIN)/tests/tests
 BINARIES=$(YANGC_BINARY)
 
 # Compilers and interpreters.
-export SHELL=/bin/sh
 export FLEX=$(FLEX_DIR)/flex
 export YACC=$(BYACC_DIR)/yacc
 export PYTHON=python
@@ -83,20 +78,15 @@ CC_GENERATED_FILES=$(L_OUTPUTS) $(Y_OUTPUTS)
 H_FILES=\
   $(wildcard $(SOURCE)/*.h) \
   $(wildcard $(INCLUDE)/yang/*.h) $(wildcard $(TESTS)/*.h)
-CC_FILES=$(wildcard $(SOURCE)/*.cpp)
-SOURCE_FILES=$(CC_FILES) $(CC_GENERATED_FILES)
-OBJECT_FILES=$(addprefix $(OUTDIR_TMP)/,$(addsuffix .o,$(SOURCE_FILES)))
-INCLUDE_FILES=$(wildcard $(INCLUDE)/*/*.h)
-AUTODOC_FILES=\
-  $(subst $(INCLUDE)/yang/,$(DOCGEN)/,$(INCLUDE_FILES:.h=.rst))
-
 TOOL_CC_FILES=$(wildcard $(SOURCE)/tools/*.cpp)
 TEST_CC_FILES=$(wildcard $(TESTS)/*.cpp)
 TEST_OBJECT_FILES=$(addprefix $(OUTDIR_TMP)/,$(TEST_CC_FILES:.cpp=.cpp.o))
+CC_SOURCE_FILES=$(wildcard $(SOURCE)/*.cpp) $(TOOL_CC_FILES) $(TEST_CC_FILES)
 
-DEP_FILES=\
-  $(addprefix $(OUTDIR_TMP)/,$(addsuffix .deps,\
-  $(SOURCE_FILES) $(TOOL_CC_FILES) $(TEST_CC_FILES)))
+SOURCE_OBJECT_FILES=$(addprefix $(OUTDIR_TMP)/,$(addsuffix .o,$(wildcard $(SOURCE)/*.cpp) $(CC_GENERATED_FILES)))
+INCLUDE_FILES=$(wildcard $(INCLUDE)/*/*.h)
+AUTODOC_FILES=\
+  $(subst $(INCLUDE)/yang/,$(DOCGEN)/,$(INCLUDE_FILES:.h=.rst))
 
 AUTODOC=$(DOCS)/source/autodoc.py
 DOC_FILES=\
@@ -109,6 +99,22 @@ MISC_FILES=\
 ALL_FILES=\
   $(CC_FILES) $(TOOL_CC_FILES) $(TEST_CC_FILES) \
   $(H_FILES) $(L_FILES) $(Y_FILES) $(MISC_FILES) $(DOC_FILES)
+
+DISABLE_CC_DEPENDENCY_ANALYSIS=true
+ifneq ('$(MAKECMDGOALS)', 'docs')
+ifneq ('$(MAKECMDGOALS)', 'add')
+ifneq ('$(MAKECMDGOALS)', 'todo')
+ifneq ('$(MAKECMDGOALS)', 'wc')
+ifneq ('$(MAKECMDGOALS)', 'clean')
+ifneq ('$(MAKECMDGOALS)', 'clean_all')
+DISABLE_CC_DEPENDENCY_ANALYSIS=false
+endif
+endif
+endif
+endif
+endif
+endif
+include dependencies/makelib/Makefile
 
 # Master targets.
 .PHONY: all
@@ -124,15 +130,6 @@ test: \
   $(TESTS_BINARY)
 	$(TESTS_BINARY)
 	touch .tests_passed
-.PHONY: add
-add:
-	git add $(ALL_FILES)
-.PHONY: todo
-todo:
-	@grep --color -n "\bT[O]D[O]\b" $(ALL_FILES)
-.PHONY: wc
-wc:
-	wc $(ALL_FILES)
 .PHONY: clean
 clean:
 	rm -rf $(OUTDIR) $(GENDIR)
@@ -140,42 +137,6 @@ clean:
 	rm -rf $(DOCGEN) $(DOCS)/html
 .PHONY: clean_all
 clean_all: clean clean_dependencies
-
-# Dependency generation. Each source file generates a corresponding .deps file
-# (a Makefile containing a .build target), which is then included. Inclusion
-# forces regeneration via the rules provided. Deps rule depends on same .build
-# target it generates. When the specific .build target doesn't exist, the
-# default causes everything to be generated.
-.SECONDEXPANSION:
-$(DEP_FILES): $(OUTDIR_TMP)/%.deps: \
-  $(OUTDIR_TMP)/%.build $(OUTDIR_TMP)/%.mkdir $(CC_GENERATED_FILES) \
-  $$(subst \
-  $$(OUTDIR_TMP)/,,$$($$(subst .,_,$$(subst /,_,$$(subst \
-  $$(OUTDIR_TMP)/,,./$$(@:.deps=))))_LINK:.o=))
-	SOURCE_FILE=$(subst $(OUTDIR_TMP)/,,./$(@:.deps=)); \
-	    echo Generating dependencies for $$SOURCE_FILE; \
-	    $(CXX) $(CFLAGS) -o $@ -MM $$SOURCE_FILE && \
-	    sed -i -e 's/.*\.o:/$(subst /,\/,$<)::/g' $@
-	echo "	@touch" $< >> $@
-
-.PRECIOUS: $(OUTDIR_TMP)/%.build
-$(OUTDIR_TMP)/%.build: \
-  ./% $(OUTDIR_TMP)/%.mkdir
-	touch $@
-
-ifneq ('$(MAKECMDGOALS)', 'docs')
-ifneq ('$(MAKECMDGOALS)', 'add')
-ifneq ('$(MAKECMDGOALS)', 'todo')
-ifneq ('$(MAKECMDGOALS)', 'wc')
-ifneq ('$(MAKECMDGOALS)', 'clean')
-ifneq ('$(MAKECMDGOALS)', 'clean_all')
--include $(DEP_FILES)
-endif
-endif
-endif
-endif
-endif
-endif
 
 # LLVM libraries which we require, and append to the yang library, so that
 # users only need to link one library.
@@ -188,11 +149,11 @@ LLVM_LIBS=\
 
 # Library archiving. For speed, don't rearchive LLVM libraries.
 $(LIB): \
-  $(LLVM_BUILD) $(OUTDIR_LIB)/.mkdir $(OBJECT_FILES)
+  $(LLVM_BUILD) $(OUTDIR_LIB)/.mkdir $(SOURCE_OBJECT_FILES)
 	@echo Archiving ./$@
 	[ -f ./$@ ]; \
 	EXIST=$$?; \
-	ar -crsv ./$@ $(filter-out %.build,$(filter-out %.mkdir,$^)); \
+	ar -crsv ./$@ $(SOURCE_OBJECT_FILES); \
 	if [ $$EXIST -ne 0 ]; then \
 	  cd $(LLVM_LIB_DIR); \
 	  for lib in $(LLVM_LIBS); do \
@@ -207,17 +168,7 @@ $(BINARIES): $(OUTDIR_BIN)/%: \
 	@echo Linking ./$@
 	$(CXX) -o ./$@ $< $(LFLAGS)
 
-# Object files. References dependencies that must be built before their header
-# files are available.
-$(OUTDIR_TMP)/%.o: \
-  $(OUTDIR_TMP)/%.build $(OUTDIR_TMP)/%.mkdir $(OBJECT_FILE_PREREQS)
-	SOURCE_FILE=$(subst $(OUTDIR_TMP)/,,./$(<:.build=)); \
-	    echo Compiling $$SOURCE_FILE; \
-	    $(CXX) -c $(CFLAGS) $(if $(findstring /./gen/,$@),,$(WFLAGS)) \
-	    -o $@ $$SOURCE_FILE
-
 # Flex/YACC files.
-.PRECIOUS: $(CC_GENERATED_FILES)
 $(GENDIR)/%.l.h: \
   $(GENDIR)/%.l.cc
 	touch $@ $<
@@ -259,9 +210,3 @@ $(DOCS)/html/index.html: \
   $(DEPENDENCIES)/sphinx.build $(DOC_FILES) $(AUTODOC_FILES) \
   $(DEPENDENCIES)/pygments.build
 	$(SPHINX_BUILD) -b html $(SPHINX_BUILD_OPTS) $(DOCS)/html
-
-# Ensure a directory exists.
-.PRECIOUS: ./%.mkdir
-./%.mkdir:
-	mkdir -p $(dir $@)
-	touch $@

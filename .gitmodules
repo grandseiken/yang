@@ -17,3 +17,6 @@
 [submodule "dependencies/pygments"]
 	path = dependencies/pygments
 	url = https://github.com/zmughal/pygments-mirror
+[submodule "dependencies/makelib"]
+	path = dependencies/makelib
+	url = https://github.com/grandseiken/makelib.git
