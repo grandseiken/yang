@@ -149,7 +149,8 @@ LLVM_LIBS=\
 
 # Library archiving. For speed, don't rearchive LLVM libraries.
 $(LIB): \
-  $(LLVM_BUILD) $(OUTDIR_LIB)/.mkdir $(SOURCE_OBJECT_FILES)
+  $(LLVM_BUILD) $(SOURCE_OBJECT_FILES)
+	$(MKDIR)
 	@echo Archiving ./$@
 	[ -f ./$@ ]; \
 	EXIST=$$?; \
@@ -164,7 +165,8 @@ $(LIB): \
 
 # Tool binary linking.
 $(BINARIES): $(OUTDIR_BIN)/%: \
-  $(OUTDIR_TMP)/$(SOURCE)/%.cpp.o $(OUTDIR_BIN)/%.mkdir $(LIB)
+  $(OUTDIR_TMP)/$(SOURCE)/%.cpp.o $(LIB)
+	$(MKDIR)
 	@echo Linking ./$@
 	$(CXX) -o ./$@ $< $(LFLAGS)
 
@@ -173,20 +175,23 @@ $(GENDIR)/%.l.h: \
   $(GENDIR)/%.l.cc
 	touch $@ $<
 $(GENDIR)/%.l.cc: \
-  $(SOURCE)/%.l $(GENDIR)/%.mkdir $(DEPENDENCIES)/flex.build
+  $(SOURCE)/%.l $(DEPENDENCIES)/flex.build
+	$(MKDIR)
 	@echo Compiling ./$<
 	$(FLEX) -P yang_ -o $@ --header-file=$(@:.cc=.h) $<
 $(GENDIR)/%.y.h: \
   $(GENDIR)/%.y.cc
 	touch $@ $<
 $(GENDIR)/%.y.cc: \
-  $(SOURCE)/%.y $(GENDIR)/%.mkdir $(DEPENDENCIES)/byacc.build
+  $(SOURCE)/%.y $(DEPENDENCIES)/byacc.build
+	$(MKDIR)
 	@echo Compiling ./$<
 	$(YACC) -p yang_ -d -v -o $@ $<
 
 # Test binary.
 $(TESTS_BINARY): $(OUTDIR_BIN)/%: \
-  $(TEST_OBJECT_FILES) $(OUTDIR_BIN)/%.mkdir $(DEPENDENCIES)/gtest.build $(LIB)
+  $(TEST_OBJECT_FILES) $(DEPENDENCIES)/gtest.build $(LIB)
+	$(MKDIR)
 	@echo Linking ./$@
 	$(CXX) -o ./$@ $(TEST_OBJECT_FILES) $(LFLAGS) \
 	    -L$(GTEST_DIR)/lib -Wl,-Bstatic -lgtest -Wl,-Bdynamic -lpthread
@@ -197,7 +202,8 @@ $(TESTS_BINARY): $(OUTDIR_BIN)/%: \
 
 # Documentation generation.
 $(DOCGEN)/%.rst: \
-  $(INCLUDE)/yang/%.h $(AUTODOC) $(DOCGEN)/.mkdir
+  $(INCLUDE)/yang/%.h $(AUTODOC)
+	$(MKDIR)
 	$(PYTHON) $(AUTODOC) $< $@
 
 # Documentation.
