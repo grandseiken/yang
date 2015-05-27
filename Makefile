@@ -9,7 +9,7 @@
 #   test - build and run unit tests
 #   clean - delete all outputs
 #   clean_all - delete all outputs and clean dependencies
-# Pass DBG=1 to make debug binaries.
+# Pass DEBUG=1 to make debug binaries.
 #
 # Utilities:
 #   todo - print todo lines in all code files
@@ -23,25 +23,18 @@ first: all
 include dependencies/Makefile
 
 # Debug options.
-ifeq ($(DBG), 1)
-OUTDIR=./Debug
-WFLAGS=-Werror -Wall -Wextra -Wpedantic
-CFLAGS_CONFIG=-Og -g -ggdb -DDEBUG
+ifdef $(DEBUG)
 LLVM_LIB_DIR=$(LLVM_DIR)/Debug+Asserts/lib
 LLVM_BUILD=$(DEPENDENCIES)/llvm_debug.build
 else
-OUTDIR=./Release
-CFLAGS_CONFIG=-O3
 LLVM_LIB_DIR=$(LLVM_DIR)/Release/lib
 LLVM_BUILD=$(DEPENDENCIES)/llvm_release.build
 endif
 CC_OBJECT_FILE_PREREQS=$(LLVM_BUILD)
 
 # Output directories.
-GENDIR=./gen
 OUTDIR_BIN=$(OUTDIR)/bin
 OUTDIR_LIB=$(OUTDIR)/lib
-OUTDIR_TMP=$(OUTDIR)/build
 
 INCLUDE=./include
 SOURCE=./src
@@ -58,9 +51,8 @@ export FLEX=$(FLEX_DIR)/flex
 export YACC=$(BYACC_DIR)/yacc
 export PYTHON=python
 
-CFLAGS_11=-std=c++11
-CFLAGS=\
-  $(CFLAGS_EXTRA) $(CFLAGS_11) $(CFLAGS_CONFIG) -I$(INCLUDE) \
+CFLAGS_EXTRA=\
+  -std=c++11 -I$(INCLUDE) \
   -isystem $(LLVM_DIR)/include -isystem $(GTEST_DIR)/include
 LFLAGS=\
   $(LFLAGS_EXTRA) -L$(OUTDIR_LIB) \
@@ -75,25 +67,26 @@ L_OUTPUTS=$(subst $(SOURCE)/,$(GENDIR)/,$(L_FILES:.l=.l.cc))
 Y_OUTPUTS=$(subst $(SOURCE)/,$(GENDIR)/,$(Y_FILES:.y=.y.cc))
 CC_GENERATED_FILES=$(L_OUTPUTS) $(Y_OUTPUTS)
 
-H_FILES=\
-  $(wildcard $(SOURCE)/*.h) \
-  $(wildcard $(INCLUDE)/yang/*.h) $(wildcard $(TESTS)/*.h)
 TOOL_CC_FILES=$(wildcard $(SOURCE)/tools/*.cpp)
 TEST_CC_FILES=$(wildcard $(TESTS)/*.cpp)
-TEST_OBJECT_FILES=$(addprefix $(OUTDIR_TMP)/,$(TEST_CC_FILES:.cpp=.cpp.o))
+TEST_OBJECT_FILES=$(call src_to_o,$(TEST_CC_FILES))
 CC_SOURCE_FILES=$(wildcard $(SOURCE)/*.cpp) $(TOOL_CC_FILES) $(TEST_CC_FILES)
+SOURCE_OBJECT_FILES=\
+  $(call src_to_o,$(wildcard $(SOURCE)/*.cpp) $(CC_GENERATED_FILES))
 
-SOURCE_OBJECT_FILES=$(addprefix $(OUTDIR_TMP)/,$(addsuffix .o,$(wildcard $(SOURCE)/*.cpp) $(CC_GENERATED_FILES)))
 INCLUDE_FILES=$(wildcard $(INCLUDE)/*/*.h)
 AUTODOC_FILES=\
   $(subst $(INCLUDE)/yang/,$(DOCGEN)/,$(INCLUDE_FILES:.h=.rst))
-
 AUTODOC=$(DOCS)/source/autodoc.py
 DOC_FILES=\
   $(DOCS)/source/conf.py \
   $(wildcard $(DOCS)/source/*.rst) \
   $(wildcard $(DOCS)/source/yang/*.*) \
   $(wildcard $(DOCS)/source/yang/*/*)
+
+H_FILES=\
+  $(wildcard $(SOURCE)/*.h) \
+  $(wildcard $(INCLUDE)/yang/*.h) $(wildcard $(TESTS)/*.h)
 MISC_FILES=\
   $(AUTODOC) Makefile README.md LICENSE .gitignore dependencies/Makefile
 ALL_FILES=\
